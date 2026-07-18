@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('guests', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->foreignUuid('hotel_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->string('email')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('preferred_language', 10)->default('en');
+            $table->string('nationality')->nullable();
+            $table->json('preferences')->nullable();
+            $table->string('loyalty_status')->nullable();
+            $table->boolean('marketing_consent')->default(false);
+            $table->timestamps();
+            $table->softDeletes();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('guests');
+    }
+};
