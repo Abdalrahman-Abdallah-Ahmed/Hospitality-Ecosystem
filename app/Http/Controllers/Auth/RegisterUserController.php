@@ -8,9 +8,8 @@ use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 
-class RegisteredUserController extends Controller
+class RegisterUserController extends Controller
 {
     public function store(Request $request)
     {
@@ -47,7 +46,7 @@ class RegisteredUserController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'User registered successfully.',
+            'message' => 'User Register successfully.',
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
