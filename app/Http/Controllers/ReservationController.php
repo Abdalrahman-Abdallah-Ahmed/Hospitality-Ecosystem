@@ -123,7 +123,7 @@ class ReservationController extends Controller
                 'children' => (int) ($data['children'] ?? 0),
                 'source' => 'excel_import',
                 'special_requests' => $data['special_requests'] ?? null,
-                'booking_value' => (float) ($data['booking_value'] ?? 0),
+                'reservation_value' => (float) ($data['reservation_value'] ?? 0),
                 'currency' => $data['currency'] ?? $hotel->currency,
             ]);
 

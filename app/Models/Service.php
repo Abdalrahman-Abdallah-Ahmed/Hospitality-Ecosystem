@@ -26,7 +26,7 @@ class Service extends Model
         'currency',
         'is_active',
         'availability',
-        'booking_rules',
+        'reservation_rules',
         'recommended_audiences',
         'business_priority',
         'ai_metadata',
@@ -36,7 +36,7 @@ class Service extends Model
         'price' => 'decimal:2',
         'is_active' => 'boolean',
         'availability' => 'array',
-        'booking_rules' => 'array',
+        'reservation_rules' => 'array',
         'recommended_audiences' => 'array',
         'ai_metadata' => 'array',
     ];

@@ -29,7 +29,7 @@ class Reservation extends Model
         'children',
         'source',
         'special_requests',
-        'booking_value',
+        'reservation_value',
         'currency',
     ];
 
@@ -37,7 +37,7 @@ class Reservation extends Model
         'arrival_date' => 'date',
         'departure_date' => 'date',
         'status' => ReservationStatus::class,
-        'booking_value' => 'decimal:2',
+        'reservation_value' => 'decimal:2',
         'adults' => 'integer',
         'children' => 'integer',
     ];

@@ -22,7 +22,7 @@ return new class extends Migration
             $table->unsignedInteger('children')->default(0);
             $table->string('source')->nullable();
             $table->text('special_requests')->nullable();
-            $table->decimal('booking_value', 12, 2)->default(0);
+            $table->decimal('reservation_value', 12, 2)->default(0);
             $table->string('currency', 3)->default('USD');
             $table->timestamps();
             $table->softDeletes();
@@ -31,6 +31,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('bookings');
+        Schema::dropIfExists('reservations');
     }
 };

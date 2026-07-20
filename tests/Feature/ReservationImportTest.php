@@ -13,7 +13,7 @@ it('imports reservations from an uploaded csv file', function () {
 
     $file = UploadedFile::fake()->createWithContent(
         'reservations.csv',
-        "reservation_id,hotel_name,guest_name,room_number,arrival_date,departure_date,status,adults,children,booking_value,currency\nABC123,Demo Hotel,Jane Doe,101,2026-07-20,2026-07-25,confirmed,2,1,250.50,USD\n"
+        "reservation_id,hotel_name,guest_name,room_number,arrival_date,departure_date,status,adults,children,reservation_value,currency\nABC123,Demo Hotel,Jane Doe,101,2026-07-20,2026-07-25,confirmed,2,1,250.50,USD\n"
     );
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')

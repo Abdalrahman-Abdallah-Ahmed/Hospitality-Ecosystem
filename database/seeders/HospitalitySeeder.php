@@ -74,7 +74,7 @@ class HospitalitySeeder extends Seeder
                     'days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
                     'time_window' => '09:00-22:00',
                 ],
-                'booking_rules' => [
+                'reservation_rules' => [
                     'advance_hours' => 24,
                     'requires_confirmation' => true,
                 ],
