@@ -12,8 +12,7 @@ class GlopalIndexRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        testttt();
-        return false;
+        return apiAuth();
     }
 
     /**

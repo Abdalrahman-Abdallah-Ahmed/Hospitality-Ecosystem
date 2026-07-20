@@ -11,6 +11,7 @@ use App\Models\Room;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use ZipArchive;
 
 class ReservationController extends Controller
 {
@@ -19,7 +20,10 @@ class ReservationController extends Controller
      */
     public function index(GlopalIndexRequest $request)
     {
-        //
+        $reservations = Reservation::with(['hotel', 'guest', 'room'])
+        ->where('hotel_id', $request->user()->hotel_id)
+        ->get();
+        return response()->json($reservations);
     }
 
     public function importFromExcel(Request $request)
@@ -29,29 +33,51 @@ class ReservationController extends Controller
         ]);
 
         $file = $request->file('file');
-        $handle = fopen($file->getRealPath(), 'r');
+        $extension = strtolower($file->getClientOriginalExtension());
+        $imported = 0;
 
-        if ($handle === false) {
-            throw ValidationException::withMessages([
-                'file' => 'Unable to read the uploaded file.',
-            ]);
+        if ($extension === 'xlsx') {
+            $rows = $this->readXlsxRows($file->getRealPath());
+        } else {
+            $handle = fopen($file->getRealPath(), 'r');
+            if ($handle === false) {
+                throw ValidationException::withMessages([
+                    'file' => 'Unable to read the uploaded file.',
+                ]);
+            }
+
+            $rows = [];
+            while (($row = fgetcsv($handle)) !== false) {
+                $rows[] = $row;
+            }
+            fclose($handle);
         }
 
-        $header = fgetcsv($handle);
-        if ($header === false) {
-            fclose($handle);
-
+        if (empty($rows)) {
             throw ValidationException::withMessages([
                 'file' => 'The uploaded file is empty.',
             ]);
         }
 
-        $imported = 0;
-        $headerMap = array_map(fn ($column) => strtolower(trim($column)), $header);
+        $header = array_map(fn ($column) => strtolower(trim((string) $column)), $rows[0]);
+        $headerMap = array_values(array_filter($header, fn ($value) => $value !== ''));
 
-        while (($row = fgetcsv($handle)) !== false) {
+        foreach (array_slice($rows, 1) as $row) {
+            if ($row === [null] || $row === false) {
+                continue;
+            }
+
             if (empty(array_filter($row, fn ($value) => $value !== null && $value !== ''))) {
                 continue;
+            }
+
+            $rowCount = count($row);
+            $headerCount = count($headerMap);
+            if ($rowCount !== $headerCount) {
+                $row = array_pad($row, $headerCount, null);
+                if ($rowCount > $headerCount) {
+                    $row = array_slice($row, 0, $headerCount);
+                }
             }
 
             $data = array_combine($headerMap, $row);
@@ -130,12 +156,118 @@ class ReservationController extends Controller
             $imported++;
         }
 
-        fclose($handle);
-
         return response()->json([
             'message' => 'Reservations imported successfully.',
             'imported' => $imported,
         ]);
+    }
+
+    protected function readXlsxRows(string $path): array
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($path) !== true) {
+            return [];
+        }
+        
+        
+        $sharedStrings = [];
+        $sharedStringsPath = 'xl/sharedStrings.xml';
+        if ($zip->locateName($sharedStringsPath) !== false) {
+            $sharedStringsXml = $zip->getFromName($sharedStringsPath);
+            if ($sharedStringsXml !== false) {
+                $sharedStringsXml = simplexml_load_string($sharedStringsXml);
+                if ($sharedStringsXml !== false) {
+                    foreach ($sharedStringsXml->si as $si) {
+                        $text = [];
+                        foreach ($si->t as $t) {
+                            $text[] = (string) $t;
+                        }
+                        $sharedStrings[] = implode('', $text);
+                    }
+                }
+            }
+        }
+
+        $sheetXml = $zip->getFromName('xl/workbook.xml');
+        if ($sheetXml === false) {
+            $zip->close();
+
+            return [];
+        }
+
+        $sheetXml = simplexml_load_string($sheetXml);
+        if ($sheetXml === false) {
+            $zip->close();
+
+            return [];
+        }
+
+        $sheetName = (string) $sheetXml->sheets->sheet[0]['name'];
+        $sheetId = (string) $sheetXml->sheets->sheet[0]['sheetId'];
+        $relationshipsXml = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        $relationships = simplexml_load_string($relationshipsXml);
+
+        $sheetPath = null;
+        if ($relationships !== false) {
+            foreach ($relationships->Relationship as $relationship) {
+                if ((string) $relationship['Id'] === 'rId' . $sheetId) {
+                    $sheetPath = (string) $relationship['Target'];
+                    break;
+                }
+            }
+        }
+
+        if ($sheetPath === null) {
+            $zip->close();
+
+            return [];
+        }
+
+        $sheetXml = $zip->getFromName('xl/' . ltrim($sheetPath, '/'));
+        if ($sheetXml === false) {
+            $zip->close();
+
+            return [];
+        }
+
+        $sheetXml = simplexml_load_string($sheetXml);
+        if ($sheetXml === false) {
+            $zip->close();
+
+            return [];
+        }
+
+        $rows = [];
+        $mainNamespace = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+        $sheetData = $sheetXml->children($mainNamespace)->sheetData;
+
+        foreach ($sheetData->row as $row) {
+            $values = [];
+            foreach ($row->children($mainNamespace)->c as $cell) {
+                $cellType = (string) $cell->attributes()['t'];
+                $value = '';
+
+                if ($cellType === 'inlineStr') {
+                    $textNodes = [];
+                    foreach ($cell->children($mainNamespace)->is->children($mainNamespace)->t as $textNode) {
+                        $textNodes[] = (string) $textNode;
+                    }
+                    $value = implode('', $textNodes);
+                } elseif ($cellType === 's') {
+                    $sharedIndex = (int) (string) $cell->children($mainNamespace)->v;
+                    $value = $sharedStrings[$sharedIndex] ?? '';
+                } elseif (isset($cell->children($mainNamespace)->v)) {
+                    $value = (string) $cell->children($mainNamespace)->v;
+                }
+
+                $values[] = $value;
+            }
+            $rows[] = $values;
+        }
+
+        $zip->close();
+
+        return $rows;
     }
 
     protected function normalizeStatus(?string $status): string

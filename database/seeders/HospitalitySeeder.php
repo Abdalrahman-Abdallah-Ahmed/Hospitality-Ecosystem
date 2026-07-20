@@ -16,6 +16,7 @@ class HospitalitySeeder extends Seeder
         $user = User::factory()->create([
             'name' => 'Hospitality Admin',
             'email' => 'admin@hospitality.test',
+            'password' => bcrypt('123123123')
         ]);
 
         $hotel = Hotel::create([

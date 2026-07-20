@@ -1,5 +1,5 @@
 <?php
 
-function testttt(){
-    dd("a7a");
+function apiAuth(){
+    return request()->header('X-API-KEY') === config('app.api_key');
 }
