@@ -34,12 +34,15 @@ it('logs in an existing user', function () {
 });
 
 it('registers a user through the api endpoint', function () {
-    $response = $this->postJson('/api/register', [
-        'name' => 'Api User',
-        'email' => 'api@example.com',
-        'password' => 'Password123!',
-        'password_confirmation' => 'Password123!',
-    ]);
+    putenv('API_KEY=test-api-key');
+
+    $response = $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/register', [
+            'name' => 'Api User',
+            'email' => 'api@example.com',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ]);
 
     $response->assertStatus(201)
         ->assertJsonPath('user.email', 'api@example.com');
