@@ -1,6 +1,6 @@
 <?php
 
-use App\Enums\BookingStatus;
+use App\Enums\ReservationStatus;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -9,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('bookings', function (Blueprint $table) {
+        Schema::create('reservations', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('guest_id')->constrained()->cascadeOnDelete();
@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('reservation_id')->unique();
             $table->date('arrival_date');
             $table->date('departure_date');
-            $table->string('status')->default(BookingStatus::PENDING->value);
+            $table->string('status')->default(ReservationStatus::PENDING->value);
             $table->unsignedInteger('adults')->default(1);
             $table->unsignedInteger('children')->default(0);
             $table->string('source')->nullable();

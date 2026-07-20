@@ -19,7 +19,7 @@ class Message extends Model
     protected $fillable = [
         'conversation_id',
         'sender_id',
-        'booking_id',
+        'reservation_id',
         'content',
         'message_type',
         'is_ai_generated',
@@ -44,8 +44,8 @@ class Message extends Model
         return $this->belongsTo(User::class, 'sender_id');
     }
 
-    public function booking(): BelongsTo
+    public function reservation(): BelongsTo
     {
-        return $this->belongsTo(Booking::class);
+        return $this->belongsTo(Reservation::class);
     }
 }

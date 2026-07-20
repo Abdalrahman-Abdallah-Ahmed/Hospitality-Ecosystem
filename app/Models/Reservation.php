@@ -2,14 +2,14 @@
 
 namespace App\Models;
 
-use App\Enums\BookingStatus;
+use App\Enums\ReservationStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Booking extends Model
+class Reservation extends Model
 {
     use HasUuids, SoftDeletes;
 
@@ -36,7 +36,7 @@ class Booking extends Model
     protected $casts = [
         'arrival_date' => 'date',
         'departure_date' => 'date',
-        'status' => BookingStatus::class,
+        'status' => ReservationStatus::class,
         'booking_value' => 'decimal:2',
         'adults' => 'integer',
         'children' => 'integer',
@@ -74,7 +74,7 @@ class Booking extends Model
 
     public function scopeConfirmed($query)
     {
-        return $query->where('status', BookingStatus::CONFIRMED);
+        return $query->where('status', ReservationStatus::CONFIRMED);
     }
 
     public function scopeUpcoming($query)

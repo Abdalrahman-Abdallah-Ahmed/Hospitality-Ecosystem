@@ -14,7 +14,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('guest_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
-            $table->foreignUuid('booking_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignUuid('reservation_id')->nullable()->constrained()->nullOnDelete();
             $table->string('status')->default(ConversationStatus::OPEN->value);
             $table->string('channel')->default(ConversationChannel::WHATSAPP->value);
             $table->timestamp('started_at')->useCurrent();

@@ -39,9 +39,9 @@ class Guest extends Model
         return $this->belongsTo(Hotel::class);
     }
 
-    public function bookings(): HasMany
+    public function reservations(): HasMany
     {
-        return $this->hasMany(Booking::class);
+        return $this->hasMany(Reservation::class);
     }
 
     public function conversations(): HasMany

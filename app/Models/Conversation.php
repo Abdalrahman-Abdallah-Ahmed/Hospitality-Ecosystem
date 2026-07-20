@@ -21,7 +21,7 @@ class Conversation extends Model
     protected $fillable = [
         'guest_id',
         'hotel_id',
-        'booking_id',
+        'reservation_id',
         'status',
         'channel',
         'started_at',
@@ -47,9 +47,9 @@ class Conversation extends Model
         return $this->belongsTo(Hotel::class);
     }
 
-    public function booking(): BelongsTo
+    public function reservation(): BelongsTo
     {
-        return $this->belongsTo(Booking::class);
+        return $this->belongsTo(Reservation::class);
     }
 
     public function messages(): HasMany

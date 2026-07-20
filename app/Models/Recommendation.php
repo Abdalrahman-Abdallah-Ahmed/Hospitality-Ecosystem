@@ -18,7 +18,7 @@ class Recommendation extends Model
 
     protected $fillable = [
         'conversation_id',
-        'booking_id',
+        'reservation_id',
         'service_id',
         'reason',
         'confidence',
@@ -45,9 +45,9 @@ class Recommendation extends Model
         return $this->belongsTo(Conversation::class);
     }
 
-    public function booking(): BelongsTo
+    public function reservation(): BelongsTo
     {
-        return $this->belongsTo(Booking::class);
+        return $this->belongsTo(Reservation::class);
     }
 
     public function service(): BelongsTo

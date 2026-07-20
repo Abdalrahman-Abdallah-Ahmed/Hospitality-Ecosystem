@@ -14,7 +14,7 @@ return new class extends Migration
             $table->uuid('id')->primary();
             $table->foreignUuid('conversation_id')->constrained()->cascadeOnDelete();
             $table->foreignId('sender_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->foreignUuid('booking_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignUuid('reservation_id')->nullable()->constrained()->nullOnDelete();
             $table->text('content');
             $table->string('message_type')->default(MessageType::TEXT->value);
             $table->boolean('is_ai_generated')->default(false);
