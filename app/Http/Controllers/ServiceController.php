@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\service;
+use App\Models\Service;
 use Illuminate\Http\Request;
 
 class ServiceController extends Controller
@@ -12,7 +12,7 @@ class ServiceController extends Controller
      */
     public function index()
     {
-        dd(service::all());
+        return apiResponse('Services fetched successfully.', 200, Service::all());
     }
 
     /**
@@ -26,7 +26,7 @@ class ServiceController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(service $service)
+    public function show(Service $service)
     {
         //
     }
@@ -34,7 +34,7 @@ class ServiceController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, service $service)
+    public function update(Request $request, Service $service)
     {
         //
     }
@@ -42,7 +42,7 @@ class ServiceController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(service $service)
+    public function destroy(Service $service)
     {
         //
     }

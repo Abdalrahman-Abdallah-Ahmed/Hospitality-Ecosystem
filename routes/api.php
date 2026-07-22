@@ -18,13 +18,11 @@ Route::middleware('api.key')->group(function () {
     Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
         Route::get('/user', function (Request $request) {
-            return $request->user();
+            return apiResponse('Authenticated user fetched successfully.', 200, $request->user());
         });
 
         Route::resource('/service', ServiceController::class)->except(['edit', 'create']);
 
-        //TODO: Not working correctly, need to fix the import functionality
-        // Route::post('/reservation/import', [ReservationController::class, 'importFromExcel']);
         Route::resource('reservation', ReservationController::class)->except(['edit', 'create']);
         Route::resource('hotel',HotelController::class)->except(['edit', 'create']);
 

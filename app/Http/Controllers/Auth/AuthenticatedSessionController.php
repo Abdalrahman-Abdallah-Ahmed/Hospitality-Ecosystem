@@ -35,14 +35,13 @@ class AuthenticatedSessionController extends Controller
         ]);
 
         if (! Auth::attempt($credentials)) {
-            return response()->json(['message' => 'Invalid credentials.'], 401);
+            return apiResponse('Invalid credentials.', 401);
         }
 
         $user = Auth::user();
         $token = $user->createToken('api-token')->plainTextToken;
 
-        return response()->json([
-            'message' => 'Authenticated successfully.',
+        return apiResponse('Authenticated successfully.', 200, [
             'token' => $token,
             'token_type' => 'Bearer',
             'user' => [
@@ -57,7 +56,7 @@ class AuthenticatedSessionController extends Controller
     {
         $request->user()->currentAccessToken()->delete();
 
-        return response()->json(['message' => 'Logged out successfully.']);
+        return apiResponse('Logged out successfully.');
     }
 
     public function destroy(Request $request)

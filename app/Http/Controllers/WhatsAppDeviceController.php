@@ -14,9 +14,9 @@ class WhatsAppDeviceController extends Controller
     {
         $user = $request->user();
         $token = $user->createToken('whatsapp_device_token')->plainTextToken;
-        // Logic to connect the WhatsApp device
-        // This could involve sending a request to the WhatsApp API or performing some other action
-        return response()->json(['token' => $token]);
+        return apiResponse('WhatsApp device token created successfully.', 200, [
+            'token' => $token,
+        ]);
     }
     public function pair(WhatsAppDevicePairRequest $request)
     {
@@ -25,16 +25,16 @@ class WhatsAppDeviceController extends Controller
         $accessToken = PersonalAccessToken::findToken($validated['token'] ?? '');
 
         if (! $accessToken) {
-            return response()->json(['message' => 'Invalid token.'], 401);
+            return apiResponse('Invalid token.', 401);
         }
 
         $user = $accessToken->tokenable;
-        if (! $user || ! $user->hotel->id) {
-            return response()->json(['message' => 'User is not associated with any hotel.'], 400);
+        if (! $user || ! $user->hotel?->id) {
+            return apiResponse('User is not associated with any hotel.', 400);
         }
 
         if ($user->whatsappDevice) {
-            return response()->json(['message' => 'User already has a paired WhatsApp device.'], 400);
+            return apiResponse('User already has a paired WhatsApp device.', 400);
         }
 
         $device = WhatsAppDevice::create([
@@ -45,9 +45,6 @@ class WhatsAppDeviceController extends Controller
             'status' => 'active',
         ]);
 
-        return response()->json([
-            'message' => 'WhatsApp device paired successfully.',
-            'data' => $device,
-        ]);
+        return apiResponse('WhatsApp device paired successfully.', 201, $device);
     }
 }

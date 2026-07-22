@@ -45,7 +45,7 @@ it('registers a user through the api endpoint', function () {
         ]);
 
     $response->assertStatus(201)
-        ->assertJsonPath('user.email', 'api@example.com');
+        ->assertJsonPath('body.user.email', 'api@example.com');
 
     expect(User::where('email', 'api@example.com')->exists())->toBeTrue();
 });

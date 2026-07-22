@@ -45,13 +45,12 @@ class RegisterUserController extends Controller
             'password' => Hash::make($request->password),
         ]);
 
-        return response()->json([
-            'message' => 'User Register successfully.',
+        return apiResponse('User registered successfully.', 201, [
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
             ],
-        ], 201);
+        ]);
     }
 }
