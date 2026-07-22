@@ -30,4 +30,14 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function hotel()
+    {
+        return $this->hasOne(Hotel::class, 'owner_id', 'id');
+    }
+
+    public function whatsappDevice()
+    {
+        return $this->hasOne(WhatsAppDevice::class);
+    }
 }
