@@ -20,7 +20,7 @@ jobs:
 
             git pull origin main
 
-            composer install --no-dev --optimize-autoloader --no-interaction
+            composer install --optimize-autoloader --no-interaction
 
             php artisan migrate:fresh --seed --force
 
