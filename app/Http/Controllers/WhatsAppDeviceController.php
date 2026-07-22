@@ -33,6 +33,10 @@ class WhatsAppDeviceController extends Controller
             return response()->json(['message' => 'User is not associated with any hotel.'], 400);
         }
 
+        if ($user->whatsappDevice) {
+            return response()->json(['message' => 'User already has a paired WhatsApp device.'], 400);
+        }
+
         $device = WhatsAppDevice::create([
             'user_id' => $user->id,
             'phone_number' => $validated['phone_number'],
