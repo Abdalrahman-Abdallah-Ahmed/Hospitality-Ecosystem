@@ -22,7 +22,7 @@ jobs:
 
             composer install --no-dev --optimize-autoloader --no-interaction
 
-            php artisan migrate --force
+            php artisan migrate:fresh --seed --force
 
             php artisan optimize
 
