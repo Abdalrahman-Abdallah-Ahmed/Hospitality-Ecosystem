@@ -1,0 +1,29 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH and Deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /var/www/hospitality
+
+            git pull origin main
+
+            composer install --no-dev --optimize-autoloader --no-interaction
+
+            php artisan migrate --force
+
+            php artisan optimize
+
+            php artisan queue:restart
