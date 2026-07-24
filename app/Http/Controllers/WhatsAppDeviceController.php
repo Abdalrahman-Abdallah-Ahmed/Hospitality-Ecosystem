@@ -13,8 +13,18 @@ class WhatsAppDeviceController extends Controller
     public function connect(Request $request)
     {
         $user = $request->user();
+
+        $whatsappDevice = WhatsAppDevice::create([
+            'user_id' => $user->id,
+            'phone_number' => $request->input('phone_number'),
+            'hotel_id' => $user->hotel?->id,
+            'wa_user_id' => $request->input('wa_user_id'),
+            'status' => 'pending',
+        ]);
+
         $token = $user->createToken('whatsapp_device_token')->plainTextToken;
         return apiResponse('WhatsApp device token created successfully.', 200, [
+            'device' => $whatsappDevice->id,
             'token' => $token,
         ]);
     }
