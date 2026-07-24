@@ -27,16 +27,16 @@ class WhatsAppDeviceController extends Controller
         $accessToken = PersonalAccessToken::findToken($validated['token'] ?? '');
 
         if (! $accessToken) {
-            return apiResponse('Invalid token.', 401);
+            return apiResponse('Invalid token.', 201);
         }
 
         $user = $accessToken->tokenable;
         if (! $user || ! $user->hotel?->id) {
-            return apiResponse('User is not associated with any hotel.', 400);
+            return apiResponse('User is not associated with any hotel.', 202);
         }
 
         if ($user->whatsappDevice) {
-            return apiResponse('User already has a paired WhatsApp device.', 400);
+            return apiResponse('User already has a paired WhatsApp device.', 203);
         }
 
         $device = WhatsAppDevice::create([
@@ -47,7 +47,7 @@ class WhatsAppDeviceController extends Controller
             'status' => 'active',
         ]);
 
-        return apiResponse('WhatsApp device paired successfully.', 201, $device);
+        return apiResponse('WhatsApp device paired successfully.', 200, $device);
     }
 
     public function checkPaired(Request $request)
