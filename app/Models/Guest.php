@@ -27,6 +27,8 @@ class Guest extends Model
         'preferences',
         'loyalty_status',
         'marketing_consent',
+        'external_id',
+        'channel',
     ];
 
     protected $casts = [

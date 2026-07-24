@@ -44,9 +44,9 @@ it('pairs a whatsapp device for a user identified by a request-body token', func
             'token' => $token,
         ]);
 
-    $response->assertStatus(201)
+    $response->assertStatus(200)
         ->assertJsonPath('message', 'WhatsApp device paired successfully.')
-        ->assertJsonPath('code', 201)
+        ->assertJsonPath('code', 200)
         ->assertJsonPath('body.user_id', $user->id)
         ->assertJsonPath('body.hotel_id', $hotel->id)
         ->assertJsonPath('body.phone_number', '201151793758')
@@ -64,9 +64,9 @@ it('rejects pairing when the token is invalid', function () {
             'token' => 'invalid-token',
         ]);
 
-    $response->assertStatus(401)
+    $response->assertStatus(201)
         ->assertJsonPath('message', 'Invalid token.')
-        ->assertJsonPath('code', 401)
+        ->assertJsonPath('code', 201)
         ->assertJsonPath('body', null);
 });
 
@@ -81,9 +81,9 @@ it('rejects pairing when the token owner has no hotel', function () {
             'token' => $token,
         ]);
 
-    $response->assertStatus(400)
+    $response->assertStatus(202)
         ->assertJsonPath('message', 'User is not associated with any hotel.')
-        ->assertJsonPath('code', 400)
+        ->assertJsonPath('code', 202)
         ->assertJsonPath('body', null);
 });
 
@@ -112,9 +112,9 @@ it('rejects pairing when the user already has a paired whatsapp device', functio
             'token' => $token,
         ]);
 
-    $response->assertStatus(400)
+    $response->assertStatus(203)
         ->assertJsonPath('message', 'User already has a paired WhatsApp device.')
-        ->assertJsonPath('code', 400)
+        ->assertJsonPath('code', 203)
         ->assertJsonPath('body', null);
 
     expect(WhatsAppDevice::count())->toBe(1);

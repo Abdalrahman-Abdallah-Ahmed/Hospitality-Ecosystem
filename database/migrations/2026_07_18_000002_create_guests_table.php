@@ -20,8 +20,12 @@ return new class extends Migration
             $table->json('preferences')->nullable();
             $table->string('loyalty_status')->nullable();
             $table->boolean('marketing_consent')->default(false);
+            $table->string('external_id')->nullable();
+            $table->string('channel')->nullable();
             $table->timestamps();
             $table->softDeletes();
+
+            $table->unique(['hotel_id', 'channel', 'external_id']);
         });
     }
 
