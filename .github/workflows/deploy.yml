@@ -16,6 +16,8 @@ jobs:
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            set -euo pipefail
+
             cd /var/www/hospitality
 
             git pull origin main
