@@ -18,7 +18,7 @@ class HospitalitySeeder extends Seeder
             'email' => 'admin@hospitality.test',
             'password' => bcrypt('123123123'),
             'role' => 'admin',
-            'phone_number' => '+201151793758',
+            'phone_number' => '201151793758',
         ]);
 
         $hotel = Hotel::create([

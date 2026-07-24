@@ -11,9 +11,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('conversations', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->foreignUuid('guest_id')->constrained()->cascadeOnDelete();
-            $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
+            $table->string('id')->primary();
+            $table->uuid('sender_id')->nullable();
+            $table->string('sender_type')->nullable();
+            $table->foreignUuid('hotel_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignUuid('reservation_id')->nullable()->constrained()->nullOnDelete();
             $table->string('status')->default(ConversationStatus::OPEN->value);
             $table->string('channel')->default(ConversationChannel::WHATSAPP->value);

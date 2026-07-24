@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\SenderRecognitionController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\WhatsAppDeviceController;
 use Illuminate\Http\Request;
@@ -14,6 +15,7 @@ Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore']);
     Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->name('login');
     Route::post('/pair', [WhatsAppDeviceController::class, 'pair']);
+    Route::post('/whatsapp/identify', [SenderRecognitionController::class, 'identify']);
     Route::post('/message', [MessagesController::class, 'store']);
 
 

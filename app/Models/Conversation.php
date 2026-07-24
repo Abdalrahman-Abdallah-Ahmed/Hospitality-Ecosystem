@@ -4,22 +4,24 @@ namespace App\Models;
 
 use App\Enums\ConversationChannel;
 use App\Enums\ConversationStatus;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Conversation extends Model
 {
-    use HasUuids, SoftDeletes;
+    use SoftDeletes;
 
     protected $keyType = 'string';
 
     public $incrementing = false;
 
     protected $fillable = [
-        'guest_id',
+        'id',
+        'sender_id',
+        'sender_type',
         'hotel_id',
         'reservation_id',
         'status',
@@ -37,9 +39,9 @@ class Conversation extends Model
         'context' => 'array',
     ];
 
-    public function guest(): BelongsTo
+    public function sender(): MorphTo
     {
-        return $this->belongsTo(Guest::class);
+        return $this->morphTo();
     }
 
     public function hotel(): BelongsTo

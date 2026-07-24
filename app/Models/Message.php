@@ -7,6 +7,7 @@ use App\Enums\MessageType;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Message extends Model
 {
@@ -19,6 +20,7 @@ class Message extends Model
     protected $fillable = [
         'conversation_id',
         'sender_id',
+        'sender_type',
         'reservation_id',
         'content',
         'message_type',
@@ -39,9 +41,9 @@ class Message extends Model
         return $this->belongsTo(Conversation::class);
     }
 
-    public function sender(): BelongsTo
+    public function sender(): MorphTo
     {
-        return $this->belongsTo(User::class, 'sender_id');
+        return $this->morphTo();
     }
 
     public function reservation(): BelongsTo
