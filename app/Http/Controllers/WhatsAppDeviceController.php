@@ -61,7 +61,7 @@ class WhatsAppDeviceController extends Controller
 
         if ($whatsappDevice) {
             if($whatsappDevice->status !== 'active') {
-                return apiResponse('User has a paired WhatsApp device, but it is not active.', 403, [
+                return apiResponse('User has a paired WhatsApp device, but it is not active.', 202, [
                     'paired' => true,
                     'device' => $whatsappDevice,
                 ]);
@@ -72,7 +72,7 @@ class WhatsAppDeviceController extends Controller
             ]);
         }
 
-        return apiResponse('User not paired.', 404, [
+        return apiResponse('User not paired.', 201, [
             'paired' => false,
             'user_role'=> $user?->role,
             'user_name'=> $user?->name,
