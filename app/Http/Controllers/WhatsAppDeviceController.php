@@ -48,4 +48,25 @@ class WhatsAppDeviceController extends Controller
 
         return apiResponse('WhatsApp device paired successfully.', 201, $device);
     }
+
+    public function checkPaired(Request $request)
+    {
+        $validated = $request->validate([
+            'phone_number' => 'required|string|exists:whats_app_devices,phone_number',
+        ]);
+
+        $whatsappDevice = WhatsAppDevice::where('phone_number', $validated['phone_number'])->first();
+
+
+        if($whatsappDevice->status !== 'active') {
+            return apiResponse('User has a paired WhatsApp device, but it is not active.', 403, [
+                'paired' => true,
+                'device' => $whatsappDevice,
+            ]);
+        }
+        return apiResponse('User has a paired WhatsApp device.', 200, [
+            'paired' => true,
+            'device' => $whatsappDevice,
+        ]);
+    }
 }

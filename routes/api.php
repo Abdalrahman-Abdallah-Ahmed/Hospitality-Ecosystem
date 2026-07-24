@@ -17,6 +17,7 @@ Route::middleware('api.key')->group(function () {
     Route::post('/pair', [WhatsAppDeviceController::class, 'pair']);
     Route::post('/whatsapp/identify', [SenderRecognitionController::class, 'identify']);
     Route::post('/message', [MessagesController::class, 'store']);
+    Route::get('/check-paired', [WhatsAppDeviceController::class, 'checkPaired']);
 
 
     Route::middleware(['auth:sanctum'])->group(function () {
