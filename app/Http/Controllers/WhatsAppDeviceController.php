@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\WhatsAppDevicePairRequest;
+use App\Models\User;
 use App\Models\WhatsAppDevice;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -52,21 +53,29 @@ class WhatsAppDeviceController extends Controller
     public function checkPaired(Request $request)
     {
         $validated = $request->validate([
-            'phone_number' => 'required|string|exists:whats_app_devices,phone_number',
+            'phone_number' => 'required|string|max:12',
         ]);
 
         $whatsappDevice = WhatsAppDevice::where('phone_number', $validated['phone_number'])->first();
+        $user = User::where('phone_number', $validated['phone_number'])->first();
 
-
-        if($whatsappDevice->status !== 'active') {
-            return apiResponse('User has a paired WhatsApp device, but it is not active.', 403, [
+        if ($whatsappDevice) {
+            if($whatsappDevice->status !== 'active') {
+                return apiResponse('User has a paired WhatsApp device, but it is not active.', 403, [
+                    'paired' => true,
+                    'device' => $whatsappDevice,
+                ]);
+            }
+            return apiResponse('User has a paired WhatsApp device.', 200, [
                 'paired' => true,
                 'device' => $whatsappDevice,
             ]);
         }
-        return apiResponse('User has a paired WhatsApp device.', 200, [
-            'paired' => true,
-            'device' => $whatsappDevice,
+
+        return apiResponse('User not paired.', 404, [
+            'paired' => false,
+            'user_role'=> $user?->role,
+            'user_name'=> $user?->name,
         ]);
     }
 }
