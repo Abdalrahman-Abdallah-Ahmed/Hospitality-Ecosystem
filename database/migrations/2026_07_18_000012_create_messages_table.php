@@ -13,7 +13,7 @@ return new class extends Migration
         Schema::create('messages', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('conversation_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('sender_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignUuid('sender_id')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignUuid('reservation_id')->nullable()->constrained()->nullOnDelete();
             $table->text('content');
             $table->string('message_type')->default(MessageType::TEXT->value);

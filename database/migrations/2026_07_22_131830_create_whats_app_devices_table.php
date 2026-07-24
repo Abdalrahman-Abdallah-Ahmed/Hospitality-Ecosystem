@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('whats_app_devices', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignUuid('user_id')->constrained()->onDelete('cascade');
             $table->string('wa_user_id')->unique();
             $table->string('phone_number');
             $table->uuid('hotel_id');
