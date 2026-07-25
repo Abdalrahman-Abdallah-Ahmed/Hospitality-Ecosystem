@@ -26,8 +26,8 @@ return [
     |
     */
 
-    'env' => env('APP_ENV', 'production'),
-    'api_key' => env('API_KEY', 'your-default-api-key'),
+    'env' => env('APP_ENV', 'local'),
+    'api_key' => env('API_KEY'),
 
     /*
     |--------------------------------------------------------------------------

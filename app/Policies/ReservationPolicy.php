@@ -12,7 +12,7 @@ class ReservationPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->isAdmin();
     }
 
     /**
@@ -20,7 +20,7 @@ class ReservationPolicy
      */
     public function view(User $user, Reservation $reservation): bool
     {
-        return $reservation->hotel_id === $user->hotel_id && $user->role === 'admin';
+        return $user->isAdmin() && $reservation->hotel_id === $user->hotel?->id;
     }
 
     /**
@@ -28,7 +28,7 @@ class ReservationPolicy
      */
     public function create(User $user): bool
     {
-        return $user->role === 'admin';
+        return $user->isAdmin();
     }
 
     /**
@@ -36,7 +36,7 @@ class ReservationPolicy
      */
     public function update(User $user, Reservation $reservation): bool
     {
-        return $reservation->hotel_id === $user->hotel_id && $user->role === 'admin';
+        return $user->isAdmin() && $reservation->hotel_id === $user->hotel?->id;
     }
 
     /**
@@ -44,7 +44,7 @@ class ReservationPolicy
      */
     public function delete(User $user, Reservation $reservation): bool
     {
-        return $reservation->hotel_id === $user->hotel_id && $user->role === 'admin';
+        return $user->isAdmin() && $reservation->hotel_id === $user->hotel?->id;
     }
 
     /**

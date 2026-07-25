@@ -3,15 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ReservationStatus;
-use App\Http\Requests\GlopalIndexRequest;
-use App\Http\Requests\ReservationStoreRequest;
+use App\Http\Requests\Generic\GenericIndexRequest;
+use App\Http\Requests\Generic\GenericStoreRequest;
+use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Requests\WhatsAppReservationStoreRequest;
 use App\Models\Guest;
-use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\WhatsAppDevice;
+use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class ReservationController extends Controller
@@ -19,23 +20,36 @@ class ReservationController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(GlopalIndexRequest $request)
+    public function index(GenericIndexRequest $request)
     {
         $this->authorize('viewAny', Reservation::class);
 
-        $reservations = Reservation::with(['hotel', 'guest', 'room'])
-        ->where('hotel_id', $request->user()->hotel_id)
-        ->get();
+        $reservations = GenericQuery::apply(
+            Reservation::with(['hotel', 'guest', 'room'])
+                ->where('hotel_id', $request->user()->hotel?->id),
+            $request
+        );
+
         return apiResponse('Reservations fetched successfully.', 200, $reservations);
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(ReservationStoreRequest $request): JsonResponse
+    public function store(GenericStoreRequest $request)
     {
         $this->authorize('create', Reservation::class);
 
+        $reservation = Reservation::create($request->validated());
+
+        return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
+    }
+
+    /**
+     * Store a newly sent resource from whatsapp in storage.
+     */
+    public function storeFromWhatsApp(WhatsAppReservationStoreRequest $request): JsonResponse
+    {
         $validated = $request->validated();
 
         $device = WhatsAppDevice::where('phone_number', $validated['phone_number'])->first();
@@ -91,22 +105,11 @@ class ReservationController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Reservation $reservation)
+    public function update(GenericUpdateRequest $request, Reservation $reservation)
     {
         $this->authorize('update', $reservation);
 
-        $validated = $request->validate([
-            'arrival_date' => 'sometimes|date',
-            'departure_date' => 'sometimes|date|after_or_equal:arrival_date',
-            'status' => 'sometimes|string|in:pending,confirmed,cancelled,completed',
-            'adults' => 'sometimes|integer|min:1',
-            'children' => 'sometimes|integer|min:0',
-            'special_requests' => 'sometimes|string|nullable',
-            'reservation_value' => 'sometimes|numeric|min:0',
-            'currency' => 'sometimes|string|max:3',
-        ]);
-
-        $reservation->update($validated);
+        $reservation->update($request->validated());
         return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));
     }
 

@@ -39,7 +39,7 @@ it('creates a guest and reservation from AI-extracted screenshot data', function
     [$hotel] = pairedDevice();
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
-        ->postJson('/api/reservation', [
+        ->postJson('/api/whatsapp-reservation', [
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',
@@ -68,7 +68,7 @@ it('reuses the existing guest for the same external id and channel', function ()
     pairedDevice();
 
     $first = $this->withHeader('X-API-KEY', 'test-api-key')
-        ->postJson('/api/reservation', [
+        ->postJson('/api/whatsapp-reservation', [
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',
@@ -77,7 +77,7 @@ it('reuses the existing guest for the same external id and channel', function ()
         ]);
 
     $second = $this->withHeader('X-API-KEY', 'test-api-key')
-        ->postJson('/api/reservation', [
+        ->postJson('/api/whatsapp-reservation', [
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',
@@ -93,7 +93,7 @@ it('reuses the existing guest for the same external id and channel', function ()
 it('creates a separate guest for the same external id on a different channel', function () {
     pairedDevice();
 
-    $this->withHeader('X-API-KEY', 'test-api-key')->postJson('/api/reservation', [
+    $this->withHeader('X-API-KEY', 'test-api-key')->postJson('/api/whatsapp-reservation', [
         'phone_number' => '201000000001',
         'guest_id' => 'shared-id-1',
         'channel' => 'booking_com',
@@ -101,7 +101,7 @@ it('creates a separate guest for the same external id on a different channel', f
         'departure_date' => '2026-09-04',
     ]);
 
-    $this->withHeader('X-API-KEY', 'test-api-key')->postJson('/api/reservation', [
+    $this->withHeader('X-API-KEY', 'test-api-key')->postJson('/api/whatsapp-reservation', [
         'phone_number' => '201000000001',
         'guest_id' => 'shared-id-1',
         'channel' => 'airbnb',
@@ -114,7 +114,7 @@ it('creates a separate guest for the same external id on a different channel', f
 
 it('rejects the request when the whatsapp device is not paired', function () {
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
-        ->postJson('/api/reservation', [
+        ->postJson('/api/whatsapp-reservation', [
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',
@@ -146,7 +146,7 @@ it('rejects the request when the whatsapp device is paired but inactive', functi
     ]);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
-        ->postJson('/api/reservation', [
+        ->postJson('/api/whatsapp-reservation', [
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',
@@ -174,7 +174,7 @@ it('rejects a room that does not belong to the resolved hotel', function () {
     ]);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
-        ->postJson('/api/reservation', [
+        ->postJson('/api/whatsapp-reservation', [
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',

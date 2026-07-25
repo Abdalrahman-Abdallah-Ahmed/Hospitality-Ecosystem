@@ -18,7 +18,7 @@ Route::middleware('api.key')->group(function () {
     Route::post('/whatsapp/identify', [SenderRecognitionController::class, 'identify']);
     Route::post('/message', [MessagesController::class, 'store']);
     Route::get('/check-paired', [WhatsAppDeviceController::class, 'checkPaired']);
-    Route::post('/reservation', [ReservationController::class, 'store']);
+    Route::post('/whatsapp-reservation', [ReservationController::class, 'storeFromWhatsApp']);
 
 
     Route::middleware(['auth:sanctum'])->group(function () {
@@ -29,7 +29,7 @@ Route::middleware('api.key')->group(function () {
 
         Route::resource('/service', ServiceController::class)->except(['edit', 'create']);
 
-        Route::resource('reservation', ReservationController::class)->except(['edit', 'create', 'store']);
+        Route::resource('reservation', ReservationController::class)->except(['edit', 'create']);
         Route::resource('hotel',HotelController::class)->except(['edit', 'create']);
 
         Route::post('/connect', [WhatsAppDeviceController::class, 'connect']);

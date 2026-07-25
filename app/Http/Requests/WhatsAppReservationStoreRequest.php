@@ -6,7 +6,7 @@ use App\Enums\ReservationStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class ReservationStoreRequest extends FormRequest
+class WhatsAppReservationStoreRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
