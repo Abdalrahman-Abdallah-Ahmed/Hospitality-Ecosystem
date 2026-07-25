@@ -13,8 +13,6 @@ use App\Models\WhatsAppDevice;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
-use ZipArchive;
 
 class ReservationController extends Controller
 {
@@ -23,6 +21,8 @@ class ReservationController extends Controller
      */
     public function index(GlopalIndexRequest $request)
     {
+        $this->authorize('viewAny', Reservation::class);
+
         $reservations = Reservation::with(['hotel', 'guest', 'room'])
         ->where('hotel_id', $request->user()->hotel_id)
         ->get();
@@ -34,6 +34,8 @@ class ReservationController extends Controller
      */
     public function store(ReservationStoreRequest $request): JsonResponse
     {
+        $this->authorize('create', Reservation::class);
+
         $validated = $request->validated();
 
         $device = WhatsAppDevice::where('phone_number', $validated['phone_number'])->first();
@@ -75,6 +77,49 @@ class ReservationController extends Controller
         return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
     }
 
+    /**
+     * Display the specified resource.
+     */
+    public function show(Reservation $reservation)
+    {
+        $this->authorize('view', $reservation);
+
+        $reservation->load(['hotel', 'guest', 'room']);
+        return apiResponse('Reservation fetched successfully.', 200, $reservation);
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, Reservation $reservation)
+    {
+        $this->authorize('update', $reservation);
+
+        $validated = $request->validate([
+            'arrival_date' => 'sometimes|date',
+            'departure_date' => 'sometimes|date|after_or_equal:arrival_date',
+            'status' => 'sometimes|string|in:pending,confirmed,cancelled,completed',
+            'adults' => 'sometimes|integer|min:1',
+            'children' => 'sometimes|integer|min:0',
+            'special_requests' => 'sometimes|string|nullable',
+            'reservation_value' => 'sometimes|numeric|min:0',
+            'currency' => 'sometimes|string|max:3',
+        ]);
+
+        $reservation->update($validated);
+        return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(Reservation $reservation)
+    {
+        $this->authorize('delete', $reservation);
+        $reservation->delete();
+        return apiResponse('Reservation deleted successfully.', 200);
+    }
+
     private function findOrCreateGuest(string $hotelId, string $externalId, string $channel, array $guestDetails): Guest
     {
         return Guest::firstOrCreate(
@@ -90,29 +135,5 @@ class ReservationController extends Controller
                 'email' => $guestDetails['email'] ?? null,
             ]
         );
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Reservation $reservation)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Reservation $reservation)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Reservation $reservation)
-    {
-        //
     }
 }

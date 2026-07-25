@@ -7,7 +7,6 @@ use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 class HospitalitySeeder extends Seeder
 {
