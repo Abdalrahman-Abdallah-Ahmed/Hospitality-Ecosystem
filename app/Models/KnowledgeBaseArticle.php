@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\KnowledgeBaseCategory;
+use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class KnowledgeBaseArticle extends Model
 {
-    use HasUuids, SoftDeletes;
+    use Filterable, HasUuids, SoftDeletes;
 
     protected $table = 'knowledge_base_articles';
 

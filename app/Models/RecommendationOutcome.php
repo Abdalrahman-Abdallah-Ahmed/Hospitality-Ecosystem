@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class RecommendationOutcome extends Model
 {
-    use HasUuids;
+    use Filterable, HasUuids;
 
     protected $keyType = 'string';
 

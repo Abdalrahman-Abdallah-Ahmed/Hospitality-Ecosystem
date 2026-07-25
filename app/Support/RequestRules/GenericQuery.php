@@ -14,9 +14,8 @@ class GenericQuery
 {
     public static function apply(Builder $query, GenericIndexRequest $request): LengthAwarePaginator
     {
-        foreach ((array) $request->input('filter', []) as $column => $value) {
-            $query->where($column, $value);
-        }
+        $query->filter((array) $request->input('filter', []))
+            ->search($request->string('search')->toString() ?: null);
 
         if ($sort = $request->string('sort')->toString()) {
             $query->orderBy(ltrim($sort, '-'), str_starts_with($sort, '-') ? 'desc' : 'asc');

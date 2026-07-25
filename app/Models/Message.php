@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageType;
+use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Message extends Model
 {
-    use HasUuids;
+    use Filterable, HasUuids;
 
     protected $keyType = 'string';
 

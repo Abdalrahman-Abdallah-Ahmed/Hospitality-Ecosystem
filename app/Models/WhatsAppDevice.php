@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Model;
 
 class WhatsAppDevice extends Model
 {
+    use Filterable;
+
     protected $fillable = [
         'user_id',
         'phone_number',
