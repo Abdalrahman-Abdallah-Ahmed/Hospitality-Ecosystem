@@ -129,14 +129,7 @@ it('rejects a reservation with an invalid status enum value', function () {
     $response->assertStatus(422)->assertJsonValidationErrors(['status']);
 });
 
-/**
- * BUG: store() only checks Reservation::class-level "create" authorization
- * (admin role), and GenericStoreRequest only validates that guest_id/room_id
- * *exist somewhere*, not that they belong to the same hotel as hotel_id.
- * An admin can therefore attach a guest or room from a hotel they do not
- * own to a reservation. This test documents the current (insecure) behavior.
- */
-it('BUG: allows creating a reservation with a guest from a different hotel', function () {
+it('rejects creating a reservation with a guest from a different hotel', function () {
     [$admin, $hotel] = adminWithHotel();
     [, $otherHotel] = adminWithHotel();
     $foreignGuest = Guest::create(['hotel_id' => $otherHotel->id, 'external_id' => 'ext-foreign', 'channel' => 'booking_com']);
@@ -150,15 +143,11 @@ it('BUG: allows creating a reservation with a guest from a different hotel', fun
             'departure_date' => '2026-09-04',
         ]);
 
-    $response->assertStatus(201);
-    expect(Reservation::where('reservation_id', 'RES-ABC99999')->first()->guest_id)->toBe($foreignGuest->id);
+    $response->assertStatus(422)->assertJsonPath('message', 'The selected guest does not belong to this hotel.');
+    expect(Reservation::where('reservation_id', 'RES-ABC99999')->exists())->toBeFalse();
 });
 
-/**
- * BUG: same root cause as above — room_id is only checked with
- * exists:rooms,id, not that the room belongs to hotel_id.
- */
-it('BUG: allows creating a reservation with a room from a different hotel', function () {
+it('rejects creating a reservation with a room from a different hotel', function () {
     [$admin, $hotel] = adminWithHotel();
     [, $otherHotel] = adminWithHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
@@ -174,8 +163,8 @@ it('BUG: allows creating a reservation with a room from a different hotel', func
             'departure_date' => '2026-09-04',
         ]);
 
-    $response->assertStatus(201);
-    expect(Reservation::where('reservation_id', 'RES-ABC88888')->first()->room_id)->toBe($foreignRoom->id);
+    $response->assertStatus(422)->assertJsonPath('message', 'The selected room does not belong to this hotel.');
+    expect(Reservation::where('reservation_id', 'RES-ABC88888')->exists())->toBeFalse();
 });
 
 // show
@@ -247,14 +236,7 @@ it('does not flag the reservation unique id rule against itself on update', func
         ->assertOk();
 });
 
-/**
- * BUG: the authorize('update', $reservation) check only validates the
- * CURRENT hotel_id of the reservation being updated. GenericUpdateRequest
- * exposes hotel_id as an updatable column (exists:hotels,id only), so an
- * admin authorized to update their own reservation can reassign it to a
- * hotel they do not own.
- */
-it('BUG: allows an admin to reassign a reservation to a hotel they do not own', function () {
+it('rejects reassigning a reservation to a different hotel on update', function () {
     [$admin, $hotel] = adminWithHotel();
     [, $otherHotel] = adminWithHotel();
     $reservation = reservationFor($hotel);
@@ -264,8 +246,23 @@ it('BUG: allows an admin to reassign a reservation to a hotel they do not own', 
             'hotel_id' => $otherHotel->id,
         ]);
 
-    $response->assertOk();
-    expect($reservation->fresh()->hotel_id)->toBe($otherHotel->id);
+    $response->assertStatus(422)->assertJsonPath('message', 'Reassigning a reservation to a different hotel is not allowed.');
+    expect($reservation->fresh()->hotel_id)->toBe($hotel->id);
+});
+
+it('rejects updating a reservation with a guest from a different hotel', function () {
+    [$admin, $hotel] = adminWithHotel();
+    [, $otherHotel] = adminWithHotel();
+    $reservation = reservationFor($hotel);
+    $foreignGuest = Guest::create(['hotel_id' => $otherHotel->id, 'external_id' => 'ext-foreign', 'channel' => 'booking_com']);
+
+    $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/reservation/{$reservation->id}", [
+            'guest_id' => $foreignGuest->id,
+        ]);
+
+    $response->assertStatus(422)->assertJsonPath('message', 'The selected guest does not belong to this hotel.');
+    expect($reservation->fresh()->guest_id)->not->toBe($foreignGuest->id);
 });
 
 // destroy

@@ -36,11 +36,17 @@ class ReservationController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(GenericStoreRequest $request)
+    public function store(GenericStoreRequest $request): JsonResponse
     {
         $this->authorize('create', Reservation::class);
 
-        $reservation = Reservation::create($request->validated());
+        $validated = $request->validated();
+
+        if ($error = $this->guardHotelScopedReferences($validated, $validated['hotel_id'])) {
+            return $error;
+        }
+
+        $reservation = Reservation::create($validated);
 
         return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
     }
@@ -105,11 +111,22 @@ class ReservationController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(GenericUpdateRequest $request, Reservation $reservation)
+    public function update(GenericUpdateRequest $request, Reservation $reservation): JsonResponse
     {
         $this->authorize('update', $reservation);
 
-        $reservation->update($request->validated());
+        $validated = $request->validated();
+
+        if (array_key_exists('hotel_id', $validated) && $validated['hotel_id'] !== $reservation->hotel_id) {
+            return apiResponse('Reassigning a reservation to a different hotel is not allowed.', 422);
+        }
+
+        if ($error = $this->guardHotelScopedReferences($validated, $reservation->hotel_id)) {
+            return $error;
+        }
+
+        $reservation->update($validated);
+
         return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));
     }
 
@@ -121,6 +138,24 @@ class ReservationController extends Controller
         $this->authorize('delete', $reservation);
         $reservation->delete();
         return apiResponse('Reservation deleted successfully.', 200);
+    }
+
+    /**
+     * Ensure any guest_id/room_id present in a validated payload actually
+     * belongs to the given hotel, since exists:guests,id / exists:rooms,id
+     * alone only confirm the row exists somewhere, not that it's in scope.
+     */
+    private function guardHotelScopedReferences(array $validated, string $hotelId): ?JsonResponse
+    {
+        if (! empty($validated['guest_id']) && ! Guest::where('id', $validated['guest_id'])->where('hotel_id', $hotelId)->exists()) {
+            return apiResponse('The selected guest does not belong to this hotel.', 422);
+        }
+
+        if (! empty($validated['room_id']) && ! Room::where('id', $validated['room_id'])->where('hotel_id', $hotelId)->exists()) {
+            return apiResponse('The selected room does not belong to this hotel.', 422);
+        }
+
+        return null;
     }
 
     private function findOrCreateGuest(string $hotelId, string $externalId, string $channel, array $guestDetails): Guest
