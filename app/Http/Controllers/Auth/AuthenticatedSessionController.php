@@ -48,6 +48,8 @@ class AuthenticatedSessionController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
+                'role' => $user->role,
+                'hotel'=> $user->hotel ?? null,
             ],
         ]);
     }
