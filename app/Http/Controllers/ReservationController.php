@@ -66,8 +66,8 @@ class ReservationController extends Controller
 
         $hotel = $device->hotel;
 
-        if (! empty($validated['room_id'])) {
-            $roomBelongsToHotel = Room::where('id', $validated['room_id'])
+        if (! empty($validated['room_number'])) {
+            $roomBelongsToHotel = Room::where('room_number', $validated['room_number'])
                 ->where('hotel_id', $hotel->id)
                 ->exists();
 
