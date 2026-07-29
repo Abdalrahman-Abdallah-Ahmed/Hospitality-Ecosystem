@@ -25,6 +25,16 @@ class RegisterUserRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            'hotel' => ['required', 'array'],
+            'hotel.name' => ['required', 'string', 'max:255', 'unique:hotels,name'],
+            'hotel.city' => ['required', 'string', 'max:255'],
+            'hotel.country_code' => ['nullable', 'string', 'size:2'],
+            'hotel.address' => ['nullable', 'string', 'max:255'],
+            'hotel.timezone' => ['nullable', 'string', 'max:255'],
+            'hotel.currency' => ['nullable', 'string', 'size:3'],
+            'hotel.email' => ['nullable', 'string', 'email', 'max:255', 'unique:hotels,email'],
+            'hotel.phone' => ['nullable', 'string', 'max:255'],
+            'hotel.whatsapp_number' => ['nullable', 'string', 'max:255'],
             'password' => ['required', 'confirmed', 'min:8'],
         ];
     }
