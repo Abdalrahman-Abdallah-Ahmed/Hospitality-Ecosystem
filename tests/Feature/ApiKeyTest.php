@@ -25,6 +25,10 @@ it('accepts api requests with a valid api key', function () {
             'email' => 'test-' . uniqid() . '@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
+            'hotel' => [
+                'name' => 'Test Hotel ' . uniqid(),
+                'city' => 'Cairo',
+            ],
         ]);
 
     $response->assertStatus(201);

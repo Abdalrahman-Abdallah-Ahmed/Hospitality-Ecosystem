@@ -14,6 +14,10 @@ it('registers a new user through the api', function () {
             'email' => 'alice@example.com',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
+            'hotel' => [
+                'name' => 'Alice Hotel',
+                'city' => 'Cairo',
+            ],
         ]);
 
     $response->assertStatus(201);
@@ -47,6 +51,10 @@ it('registers a user through the api endpoint', function () {
             'email' => 'api@example.com',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
+            'hotel' => [
+                'name' => 'Api Hotel',
+                'city' => 'Cairo',
+            ],
         ]);
 
     $response->assertStatus(201)
