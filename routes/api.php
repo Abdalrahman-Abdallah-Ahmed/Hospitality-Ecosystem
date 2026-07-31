@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
+use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\ReservationController;
@@ -30,9 +31,10 @@ Route::middleware('api.key')->group(function () {
         Route::post('/connect', [WhatsAppDeviceController::class, 'connect']);
 
         Route::resource('/service', ServiceController::class)->except(['edit', 'create']);
-        Route::resource('reservation', ReservationController::class)->except(['edit', 'create']);
-        Route::resource('hotel',HotelController::class)->except(['edit', 'create']);
-        Route::resource('room', RoomController::class)->except(['edit', 'create']);
+        Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
+        Route::resource('/hotel',HotelController::class)->except(['edit', 'create']);
+        Route::resource('/room', RoomController::class)->except(['edit', 'create']);
+        Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
 
     });
 });
