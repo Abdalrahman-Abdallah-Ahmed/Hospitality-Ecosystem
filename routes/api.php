@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SenderRecognitionController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\WhatsAppDeviceController;
@@ -26,12 +27,12 @@ Route::middleware('api.key')->group(function () {
         Route::get('/user', function (Request $request) {
             return apiResponse('Authenticated user fetched successfully.', 200, $request->user());
         });
+        Route::post('/connect', [WhatsAppDeviceController::class, 'connect']);
 
         Route::resource('/service', ServiceController::class)->except(['edit', 'create']);
-
         Route::resource('reservation', ReservationController::class)->except(['edit', 'create']);
         Route::resource('hotel',HotelController::class)->except(['edit', 'create']);
+        Route::resource('room', RoomController::class)->except(['edit', 'create']);
 
-        Route::post('/connect', [WhatsAppDeviceController::class, 'connect']);
     });
 });
