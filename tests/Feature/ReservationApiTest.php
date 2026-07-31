@@ -180,7 +180,7 @@ it('rejects a room that does not belong to the resolved hotel', function () {
             'phone_number' => '201000000001',
             'guest_id' => 'booking-ext-98231',
             'channel' => 'booking_com',
-            'room_id' => $foreignRoom->id,
+            'room_number' => $foreignRoom->room_number,
             'arrival_date' => '2026-09-01',
             'departure_date' => '2026-09-04',
         ]);
