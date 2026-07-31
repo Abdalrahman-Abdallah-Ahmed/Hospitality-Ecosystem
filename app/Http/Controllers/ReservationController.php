@@ -57,6 +57,7 @@ class ReservationController extends Controller
     public function storeFromWhatsApp(WhatsAppReservationStoreRequest $request): JsonResponse
     {
         $validated = $request->validated();
+        $room = null;
 
         $device = WhatsAppDevice::where('phone_number', $validated['phone_number'])->first();
 
@@ -67,11 +68,11 @@ class ReservationController extends Controller
         $hotel = $device->hotel;
 
         if (! empty($validated['room_number'])) {
-            $roomBelongsToHotel = Room::where('room_number', $validated['room_number'])
-                ->where('hotel_id', $hotel->id)
-                ->exists();
+            $room = Room::where('hotel_id', $hotel->id)
+                ->where('room_number', $validated['room_number'])
+                ->first();
 
-            if (! $roomBelongsToHotel) {
+            if (! $room) {
                 return apiResponse('The selected room does not belong to this hotel.', 422);
             }
         }
@@ -81,7 +82,7 @@ class ReservationController extends Controller
         $reservation = Reservation::create([
             'hotel_id' => $hotel->id,
             'guest_id' => $guest->id,
-            'room_id' => $validated['room_id'] ?? null,
+            'room_id' => $room?->id,
             'reservation_id' => $validated['reservation_id'] ?? 'RES-'.strtoupper(Str::random(8)),
             'arrival_date' => $validated['arrival_date'],
             'departure_date' => $validated['departure_date'],

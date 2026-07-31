@@ -12,11 +12,13 @@ return new class extends Migration
         Schema::create('rooms', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
-            $table->string('room_number')->unique()->nullable();
+            $table->string('room_number')->nullable();
             $table->string('room_type')->nullable();
             $table->string('floor')->nullable();
             $table->enum('status', RoomStatusesEnum::cases())->default('available');
             $table->timestamps();
+
+            $table->unique(['hotel_id', 'room_number']);
         });
     }
 

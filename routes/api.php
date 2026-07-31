@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ReservationChannels;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\GuestController;
@@ -21,6 +22,12 @@ Route::middleware('api.key')->group(function () {
     Route::post('/message', [MessagesController::class, 'store']);
     Route::get('/check-paired', [WhatsAppDeviceController::class, 'checkPaired']);
     Route::post('/whatsapp-reservation', [ReservationController::class, 'storeFromWhatsApp']);
+    Route::get('/available-channels', function(){
+        return apiResponse('Available channels fetched successfully.', 200, [
+            'channels' => ReservationChannels::cases()
+            ]
+            );
+    });
 
 
     Route::middleware(['auth:sanctum'])->group(function () {

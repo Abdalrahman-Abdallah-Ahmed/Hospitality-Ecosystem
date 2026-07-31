@@ -51,6 +51,8 @@ it('creates a guest and reservation from AI-extracted screenshot data', function
             ],
             'arrival_date' => '2026-09-01',
             'departure_date' => '2026-09-04',
+            'status' => 'confirmed',
+            'reservation_value' => 500.00,
         ]);
 
     $response->assertStatus(201)
