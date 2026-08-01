@@ -167,6 +167,33 @@ it('rejects creating a reservation with a room from a different hotel', function
     expect(Reservation::where('reservation_id', 'RES-ABC88888')->exists())->toBeFalse();
 });
 
+it('restores a soft-deleted reservation instead of throwing a duplicate-key error on recreation', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
+    $reservation = reservationFor($hotel, ['reservation_id' => 'RES-REUSED01', 'guest_id' => $guest->id, 'adults' => 1]);
+    $reservation->delete();
+
+    expect(Reservation::withTrashed()->count())->toBe(1);
+
+    $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', [
+            'hotel_id' => $hotel->id,
+            'guest_id' => $guest->id,
+            'reservation_id' => 'RES-REUSED01',
+            'arrival_date' => '2026-10-01',
+            'departure_date' => '2026-10-04',
+            'adults' => 4,
+        ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('body.id', $reservation->id)
+        ->assertJsonPath('body.adults', 4);
+
+    expect(Reservation::count())->toBe(1);
+    expect(Reservation::withTrashed()->count())->toBe(1);
+    expect($reservation->fresh()->trashed())->toBeFalse();
+});
+
 // show
 
 it('lets an admin view a reservation belonging to their own hotel', function () {

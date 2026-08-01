@@ -28,8 +28,23 @@ class HotelController extends Controller
      */
     public function store(GenericStoreRequest $request)
     {
+        $validated = $request->validated();
+
+        $trashed = Hotel::onlyTrashed()->where('slug', $validated['slug'])->first();
+
+        if ($trashed) {
+            if ($trashed->owner_id !== $request->user()->id) {
+                return apiResponse('The slug has already been taken.', 422);
+            }
+
+            $trashed->restore();
+            $trashed->update($validated);
+
+            return apiResponse('Hotel created successfully.', 201, $trashed);
+        }
+
         $hotel = Hotel::create([
-            ...$request->validated(),
+            ...$validated,
             'owner_id' => $request->user()->id,
         ]);
 

@@ -48,6 +48,7 @@ class ModelColumnRules
         $uniqueColumns = static::uniqueColumns($table);
         $foreignKeys = static::foreignKeys($table);
         $casts = $model->getCasts();
+        $deletedAtColumn = method_exists($model, 'getDeletedAtColumn') ? $model->getDeletedAtColumn() : null;
 
         $rules = [];
 
@@ -67,6 +68,7 @@ class ModelColumnRules
                 foreignKey: $foreignKeys[$column] ?? null,
                 table: $table,
                 ignore: $ignore,
+                deletedAtColumn: $deletedAtColumn,
             );
         }
 
@@ -82,6 +84,7 @@ class ModelColumnRules
         ?array $foreignKey,
         string $table,
         ?Model $ignore,
+        ?string $deletedAtColumn,
     ): array {
         $nullable = (bool) ($meta['nullable'] ?? false);
         $hasDefault = ($meta['default'] ?? null) !== null;
@@ -108,6 +111,10 @@ class ModelColumnRules
 
             if ($ignore) {
                 $unique = $unique->ignore($ignore->getKey(), $ignore->getKeyName());
+            }
+
+            if ($deletedAtColumn) {
+                $unique = $unique->withoutTrashed($deletedAtColumn);
             }
 
             $rules[] = $unique;

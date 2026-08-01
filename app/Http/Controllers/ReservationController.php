@@ -46,7 +46,7 @@ class ReservationController extends Controller
             return $error;
         }
 
-        $reservation = Reservation::create($validated);
+        $reservation = $this->createOrRestoreReservation($validated);
 
         return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
     }
@@ -79,7 +79,7 @@ class ReservationController extends Controller
 
         $guest = $this->findOrCreateGuest($hotel->id, $validated['guest_id'], $validated['channel'], $validated['guest'] ?? []);
 
-        $reservation = Reservation::create([
+        $reservation = $this->createOrRestoreReservation([
             'hotel_id' => $hotel->id,
             'guest_id' => $guest->id,
             'room_id' => $room?->id,
@@ -159,9 +159,28 @@ class ReservationController extends Controller
         return null;
     }
 
+    /**
+     * A trashed reservation is not visible through normal queries, but its
+     * unique reservation_id row still exists, so blindly creating would
+     * throw a duplicate-key error. Restore and update it instead.
+     */
+    private function createOrRestoreReservation(array $attributes): Reservation
+    {
+        $trashed = Reservation::onlyTrashed()->where('reservation_id', $attributes['reservation_id'])->first();
+
+        if ($trashed) {
+            $trashed->restore();
+            $trashed->update($attributes);
+
+            return $trashed;
+        }
+
+        return Reservation::create($attributes);
+    }
+
     private function findOrCreateGuest(string $hotelId, string $externalId, string $channel, array $guestDetails): Guest
     {
-        return Guest::firstOrCreate(
+        $guest = Guest::withTrashed()->firstOrCreate(
             [
                 'hotel_id' => $hotelId,
                 'external_id' => $externalId,
@@ -174,5 +193,10 @@ class ReservationController extends Controller
                 'email' => $guestDetails['email'] ?? null,
             ]
         );
+
+        if($guest->trashed()) {
+            $guest->restore();
+        }
+        return $guest;
     }
 }

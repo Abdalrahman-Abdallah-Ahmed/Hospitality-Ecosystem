@@ -33,7 +33,7 @@ class WhatsAppReservationStoreRequest extends FormRequest
             'guest.phone_number' => ['nullable', 'string', 'max:255'],
             'guest.email' => ['nullable', 'string', 'email', 'max:255'],
             'room_number' => ['nullable', 'string', 'exists:rooms,room_number'],
-            'reservation_id' => ['nullable', 'string', 'max:255', 'unique:reservations,reservation_id'],
+            'reservation_id' => ['nullable', 'string', 'max:255', Rule::unique('reservations', 'reservation_id')->withoutTrashed()],
             'arrival_date' => ['required', 'date'],
             'departure_date' => ['required', 'date', 'after:arrival_date'],
             'status' => ['nullable', Rule::enum(ReservationStatus::class)],

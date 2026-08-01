@@ -40,6 +40,29 @@ class GuestController extends Controller
             return apiResponse('The selected hotel does not belong to you.', 403);
         }
 
+        // The (hotel_id, channel, external_id) unique index is composite, so the
+        // generic schema-derived rules can't validate it. A trashed guest's row
+        // still occupies that key, so look for it and restore instead of
+        // letting Guest::create() hit a duplicate-key error.
+        if (! empty($validated['channel']) && ! empty($validated['external_id'])) {
+            $existing = Guest::withTrashed()
+                ->where('hotel_id', $validated['hotel_id'])
+                ->where('channel', $validated['channel'])
+                ->where('external_id', $validated['external_id'])
+                ->first();
+
+            if ($existing && ! $existing->trashed()) {
+                return apiResponse('A guest with this channel and external id already exists.', 422);
+            }
+
+            if ($existing) {
+                $existing->restore();
+                $existing->update($validated);
+
+                return apiResponse('Guest created successfully.', 201, $existing->load(['hotel', 'reservations', 'conversations']));
+            }
+        }
+
         $guest = Guest::create($validated);
 
         return apiResponse('Guest created successfully.', 201, $guest->load(['hotel', 'reservations', 'conversations']));
