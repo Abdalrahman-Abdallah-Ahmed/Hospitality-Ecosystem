@@ -210,3 +210,39 @@ it('rejects an admin deleting a room belonging to a different hotel', function (
 
     expect(Room::find($room->id))->not->toBeNull();
 });
+
+// super admin bypass
+
+it('lets a super admin view a room belonging to any hotel', function () {
+    [, $hotel] = adminWithOwnHotel();
+    $room = roomFor($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->getJson("/api/room/{$room->id}")
+        ->assertOk()
+        ->assertJsonPath('body.id', $room->id);
+});
+
+it('lets a super admin update a room belonging to any hotel', function () {
+    [, $hotel] = adminWithOwnHotel();
+    $room = roomFor($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->putJson("/api/room/{$room->id}", ['status' => 'maintenance'])
+        ->assertOk()
+        ->assertJsonPath('body.status', 'maintenance');
+});
+
+it('lets a super admin delete a room belonging to any hotel', function () {
+    [, $hotel] = adminWithOwnHotel();
+    $room = roomFor($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->deleteJson("/api/room/{$room->id}")
+        ->assertOk();
+
+    expect(Room::find($room->id))->toBeNull();
+});

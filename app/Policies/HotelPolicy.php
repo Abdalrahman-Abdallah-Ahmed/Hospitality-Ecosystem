@@ -8,11 +8,19 @@ use App\Models\User;
 class HotelPolicy
 {
     /**
+     * Super admins bypass every ability below.
+     */
+    public function before(User $user, string $ability): ?bool
+    {
+        return $user->isSuperAdmin() ? true : null;
+    }
+
+    /**
      * Determine whether the user can view any models.
      */
     public function viewAny(User $user): bool
     {
-        return $user->isSuperAdmin();
+        return false;
     }
 
     /**
@@ -20,7 +28,7 @@ class HotelPolicy
      */
     public function view(User $user, Hotel $hotel): bool
     {
-        return $user->isSuperAdmin() || ($user->isAdmin() && $hotel->owner_id === $user->id);
+        return $user->isAdmin() && $hotel->owner_id === $user->id;
     }
 
     /**
@@ -28,7 +36,7 @@ class HotelPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isSuperAdmin();
+        return false;
     }
 
     /**
@@ -44,7 +52,7 @@ class HotelPolicy
      */
     public function delete(User $user, Hotel $hotel): bool
     {
-        return $user->isSuperAdmin();
+        return false;
     }
 
     /**

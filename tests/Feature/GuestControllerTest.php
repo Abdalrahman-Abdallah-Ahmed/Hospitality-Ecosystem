@@ -111,3 +111,43 @@ it('allows creating multiple guests without channel or external id', function ()
 
     expect(Guest::count())->toBe(2);
 });
+
+// show
+
+it('lets a super admin view a guest belonging to any hotel', function () {
+    [, $hotel] = adminWithGuestHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->getJson("/api/guest/{$guest->id}")
+        ->assertOk()
+        ->assertJsonPath('body.id', $guest->id);
+});
+
+// update
+
+it('lets a super admin update a guest belonging to any hotel', function () {
+    [, $hotel] = adminWithGuestHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Old Name', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['first_name' => 'New Name'])
+        ->assertOk()
+        ->assertJsonPath('body.first_name', 'New Name');
+});
+
+// destroy
+
+it('lets a super admin delete a guest belonging to any hotel', function () {
+    [, $hotel] = adminWithGuestHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->deleteJson("/api/guest/{$guest->id}")
+        ->assertOk();
+
+    expect(Guest::find($guest->id))->toBeNull();
+});

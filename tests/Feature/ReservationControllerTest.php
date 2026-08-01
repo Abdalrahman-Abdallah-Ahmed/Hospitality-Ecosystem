@@ -316,3 +316,39 @@ it('rejects an admin deleting a reservation belonging to a different hotel', fun
 
     expect(Reservation::find($reservation->id))->not->toBeNull();
 });
+
+// super admin bypass
+
+it('lets a super admin view a reservation belonging to any hotel', function () {
+    [, $hotel] = adminWithHotel();
+    $reservation = reservationFor($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(apiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->getJson("/api/reservation/{$reservation->id}")
+        ->assertOk()
+        ->assertJsonPath('body.id', $reservation->id);
+});
+
+it('lets a super admin update a reservation belonging to any hotel', function () {
+    [, $hotel] = adminWithHotel();
+    $reservation = reservationFor($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(apiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->putJson("/api/reservation/{$reservation->id}", ['adults' => 3])
+        ->assertOk()
+        ->assertJsonPath('body.adults', 3);
+});
+
+it('lets a super admin delete a reservation belonging to any hotel', function () {
+    [, $hotel] = adminWithHotel();
+    $reservation = reservationFor($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(apiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->deleteJson("/api/reservation/{$reservation->id}")
+        ->assertOk();
+
+    expect(Reservation::find($reservation->id))->toBeNull();
+});

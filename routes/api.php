@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HotelController;
+use App\Http\Controllers\HotelPolicyController;
 use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
@@ -42,6 +43,7 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/hotel',HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
+        Route::resource('/hotel-policy', HotelPolicyController::class)->except(['edit', 'create', 'show']);
 
     });
 });
