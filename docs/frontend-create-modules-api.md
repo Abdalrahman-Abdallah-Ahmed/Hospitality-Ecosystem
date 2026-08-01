@@ -103,18 +103,19 @@ The frontend should treat these as form-level errors.
 
 ### Purpose
 
-Creates a hotel owned by the currently authenticated user.
+Creates a hotel on behalf of another user. **This is a super-admin-only endpoint**, not a self-service "create my hotel" flow — see [Hotel API Documentation](/D:/Hospitality%20Ecosystem/docs/hotel-api-documentation.md) for the full authorization model. A regular admin gets their hotel by registering via `POST /api/register` (nested `hotel` object — see [Register API Update](/D:/Hospitality%20Ecosystem/docs/register-api-update.md)), not through this endpoint.
 
 ### Important Backend Behavior
 
-- `owner_id` is set automatically from the logged-in user.
-- The frontend should not send `owner_id`.
-- This endpoint is the only create flow here that is not scoped by an existing `hotel_id`.
+- Caller must have `role: "super_admin"` — any other role gets `403`.
+- `owner_id` must be sent explicitly (it identifies who the hotel is being created for) — it is **not** auto-filled from the caller, since the caller (a super admin) is generally not the intended owner.
+- Recreating a soft-deleted hotel's `slug` with the same `owner_id` restores that hotel instead of erroring or creating a duplicate; with a different `owner_id` it's rejected. See the full doc for details.
 
 ### Request Body
 
 ```json
 {
+  "owner_id": "019f9b37-c260-7abc-9000-1234567890ab",
   "name": "Grand Harbor Hotel",
   "slug": "grand-harbor-hotel",
   "timezone": "Africa/Cairo",
@@ -138,7 +139,8 @@ Creates a hotel owned by the currently authenticated user.
 ### Field Notes
 
 - `name` is required.
-- `slug` is required and must be unique.
+- `owner_id` is required in practice (see above), must exist in `users.id`.
+- `slug` is required and must be unique among active hotels.
 - `timezone` defaults to `UTC` if omitted.
 - `currency` defaults to `USD` and must be a 3-character string.
 - `country_code` should be a 2-character string.
@@ -147,6 +149,8 @@ Creates a hotel owned by the currently authenticated user.
 
 ### Frontend Recommendations
 
+- Build this as a super-admin-only "provision a hotel" form, not part of the regular admin onboarding flow.
+- Include an owner picker (search/select an existing user) since `owner_id` must be sent explicitly.
 - Validate `slug` format client-side before submit.
 - Validate `email` format client-side even if the generic backend validation is permissive.
 - Use a timezone dropdown instead of free text if possible.
@@ -389,7 +393,7 @@ For the frontend create modules, this setup will map well to the backend:
 ## Most Important Gotchas
 
 - Never let the frontend submit another hotel's `hotel_id` for `service`, `reservation`, `room`, or `guest`.
-- Do not send `owner_id` when creating a hotel.
+- `POST /api/hotel` is super-admin-only and requires an explicit `owner_id` — it is not the regular hotel-onboarding flow (that's `POST /api/register`).
 - Do not expect the reservation create endpoint to generate `reservation_id`.
 - Do not rely on the backend to validate all product rules like room-status options or reservation date ordering.
 - Use form-level handling for wrapped business-rule errors like `"The selected hotel does not belong to you."`
@@ -397,6 +401,9 @@ For the frontend create modules, this setup will map well to the backend:
 ## Related Docs
 
 - [Auth API Documentation](/D:/Hospitality%20Ecosystem/docs/auth-api-documentation.md)
+- [Register API Update](/D:/Hospitality%20Ecosystem/docs/register-api-update.md)
+- [Hotel API Documentation](/D:/Hospitality%20Ecosystem/docs/hotel-api-documentation.md)
+- [Hotel Policy API Documentation](/D:/Hospitality%20Ecosystem/docs/hotel-policy-api-documentation.md)
 - [Guest API Documentation](/D:/Hospitality%20Ecosystem/docs/guest-api-documentation.md)
 - [Reservations API Documentation](/D:/Hospitality%20Ecosystem/docs/reservations-api-documentation.md)
 - [Room API Documentation](/D:/Hospitality%20Ecosystem/docs/room-api-documentation.md)
