@@ -99,10 +99,11 @@ it('rejects an unknown filter column on the index endpoint', function () {
 
 it('searches hotels by name through the index endpoint', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
     Hotel::create(['owner_id' => $admin->id, 'name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
     Hotel::create(['owner_id' => $admin->id, 'name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
 
-    $response = $this->withHeader('X-API-KEY', 'test-api-key')->actingAs($admin, 'sanctum')
+    $response = $this->withHeader('X-API-KEY', 'test-api-key')->actingAs($superAdmin, 'sanctum')
         ->getJson('/api/hotel?search=Harbor');
 
     $response->assertOk();

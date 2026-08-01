@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -22,9 +23,11 @@ function asUser(User $user)
 }
 
 it('creates a hotel with generic store rules derived from the hotels table', function () {
-    $owner = User::factory()->create();
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
 
-    $response = asUser($owner)->postJson('/api/hotel', [
+    $response = asUser($superAdmin)->postJson('/api/hotel', [
+        'owner_id' => $owner->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -37,10 +40,23 @@ it('creates a hotel with generic store rules derived from the hotels table', fun
     expect(Hotel::where('slug', 'grand-harbor-hotel')->exists())->toBeTrue();
 });
 
-it('rejects a hotel missing a required column and an invalid boolean cast', function () {
-    $owner = User::factory()->create();
+it('rejects a non-super-admin from creating a hotel', function () {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
 
     $response = asUser($owner)->postJson('/api/hotel', [
+        'owner_id' => $owner->id,
+        'name' => 'Grand Harbor Hotel',
+        'slug' => 'grand-harbor-hotel',
+        'currency' => 'USD',
+    ]);
+
+    $response->assertStatus(403);
+});
+
+it('rejects a hotel missing a required column and an invalid boolean cast', function () {
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $response = asUser($superAdmin)->postJson('/api/hotel', [
         'slug' => 'missing-name-hotel',
         'is_active' => 'not-a-boolean',
     ]);
@@ -49,22 +65,31 @@ it('rejects a hotel missing a required column and an invalid boolean cast', func
         ->assertJsonValidationErrors(['name', 'is_active']);
 });
 
-it('only lists hotels owned by the authenticated user', function () {
-    $owner = User::factory()->create();
-    $other = User::factory()->create();
+it('lists all hotels for a super admin', function () {
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $ownerA = User::factory()->role(UserRole::ADMIN)->create();
+    $ownerB = User::factory()->role(UserRole::ADMIN)->create();
 
+    Hotel::create(['owner_id' => $ownerA->id, 'name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
+    Hotel::create(['owner_id' => $ownerB->id, 'name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
+
+    $response = asUser($superAdmin)->getJson('/api/hotel');
+
+    $response->assertOk();
+    expect($response->json('body.data'))->toHaveCount(2);
+});
+
+it('rejects a non-super-admin from listing hotels', function () {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
     Hotel::create(['owner_id' => $owner->id, 'name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
-    Hotel::create(['owner_id' => $other->id, 'name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
 
     $response = asUser($owner)->getJson('/api/hotel');
 
-    $response->assertOk();
-    expect($response->json('body.data'))->toHaveCount(1);
-    expect($response->json('body.data.0.slug'))->toBe('mine');
+    $response->assertStatus(403);
 });
 
 it('updates a hotel partially via the generic update request', function () {
-    $owner = User::factory()->create();
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Old Name', 'slug' => 'old-slug', 'currency' => 'USD']);
 
     $response = asUser($owner)->putJson("/api/hotel/{$hotel->id}", [
@@ -76,7 +101,7 @@ it('updates a hotel partially via the generic update request', function () {
 });
 
 it('does not flag a hotel unique slug rule against itself on update', function () {
-    $owner = User::factory()->create();
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $response = asUser($owner)->putJson("/api/hotel/{$hotel->id}", [
@@ -87,13 +112,15 @@ it('does not flag a hotel unique slug rule against itself on update', function (
 });
 
 it('restores a soft-deleted hotel instead of throwing a duplicate-key error on recreation', function () {
-    $owner = User::factory()->create();
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Old Name', 'slug' => 'reused-slug', 'currency' => 'USD']);
     $hotel->delete();
 
     expect(Hotel::withTrashed()->count())->toBe(1);
 
-    $response = asUser($owner)->postJson('/api/hotel', [
+    $response = asUser($superAdmin)->postJson('/api/hotel', [
+        'owner_id' => $owner->id,
         'name' => 'New Name',
         'slug' => 'reused-slug',
         'currency' => 'EUR',
@@ -109,13 +136,15 @@ it('restores a soft-deleted hotel instead of throwing a duplicate-key error on r
 });
 
 it('rejects recreating a hotel whose slug belongs to a soft-deleted hotel owned by someone else', function () {
-    $originalOwner = User::factory()->create();
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $originalOwner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $originalOwner->id, 'name' => 'Original', 'slug' => 'shared-slug', 'currency' => 'USD']);
     $hotel->delete();
 
-    $newOwner = User::factory()->create();
+    $newOwner = User::factory()->role(UserRole::ADMIN)->create();
 
-    $response = asUser($newOwner)->postJson('/api/hotel', [
+    $response = asUser($superAdmin)->postJson('/api/hotel', [
+        'owner_id' => $newOwner->id,
         'name' => 'Hijack Attempt',
         'slug' => 'shared-slug',
         'currency' => 'USD',
@@ -126,8 +155,8 @@ it('rejects recreating a hotel whose slug belongs to a soft-deleted hotel owned 
 });
 
 it('rejects a hotel update for a non-owner', function () {
-    $owner = User::factory()->create();
-    $stranger = User::factory()->create();
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $stranger = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $response = asUser($stranger)->putJson("/api/hotel/{$hotel->id}", [

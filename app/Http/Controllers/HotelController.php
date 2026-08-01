@@ -15,8 +15,9 @@ class HotelController extends Controller
      */
     public function index(GenericIndexRequest $request)
     {
+        $this->authorize('viewAny', Hotel::class);
         $hotels = GenericQuery::apply(
-            Hotel::where('owner_id', $request->user()->id),
+            Hotel::query(),
             $request
         );
 
@@ -28,12 +29,13 @@ class HotelController extends Controller
      */
     public function store(GenericStoreRequest $request)
     {
+        $this->authorize('create', Hotel::class);
         $validated = $request->validated();
 
         $trashed = Hotel::onlyTrashed()->where('slug', $validated['slug'])->first();
 
         if ($trashed) {
-            if ($trashed->owner_id !== $request->user()->id) {
+            if ($trashed->owner_id !== ($validated['owner_id'] ?? null)) {
                 return apiResponse('The slug has already been taken.', 422);
             }
 
@@ -43,10 +45,7 @@ class HotelController extends Controller
             return apiResponse('Hotel created successfully.', 201, $trashed);
         }
 
-        $hotel = Hotel::create([
-            ...$validated,
-            'owner_id' => $request->user()->id,
-        ]);
+        $hotel = Hotel::create($validated);
 
         return apiResponse('Hotel created successfully.', 201, $hotel);
     }
@@ -56,9 +55,7 @@ class HotelController extends Controller
      */
     public function show(Hotel $hotel)
     {
-        if ($hotel->owner_id !== request()->user()->id) {
-            return apiResponse('You do not have access to this hotel.', 403);
-        }
+        $this->authorize('view', $hotel);
 
         return apiResponse('Hotel fetched successfully.', 200, $hotel);
     }
@@ -68,9 +65,7 @@ class HotelController extends Controller
      */
     public function update(GenericUpdateRequest $request, Hotel $hotel)
     {
-        if ($hotel->owner_id !== $request->user()->id) {
-            return apiResponse('You do not have access to this hotel.', 403);
-        }
+        $this->authorize('update', $hotel);
 
         $hotel->update($request->validated());
 
@@ -82,9 +77,7 @@ class HotelController extends Controller
      */
     public function destroy(Hotel $hotel)
     {
-        if ($hotel->owner_id !== request()->user()->id) {
-            return apiResponse('You do not have access to this hotel.', 403);
-        }
+        $this->authorize('delete', $hotel);
 
         $hotel->delete();
 
