@@ -14,7 +14,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role', 'phone_number'])]
+#[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -42,6 +42,11 @@ class User extends Authenticatable
     public function hotel()
     {
         return $this->hasOne(Hotel::class, 'owner_id', 'id');
+    }
+
+    public function team()
+    {
+        return $this->belongsTo(Team::class);
     }
 
     public function whatsappDevice()
