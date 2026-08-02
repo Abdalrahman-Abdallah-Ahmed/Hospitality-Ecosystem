@@ -14,7 +14,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id'])]
+#[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id', 'hotel_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -41,6 +41,10 @@ class User extends Authenticatable
 
     public function hotel()
     {
+        if ($this->hotel_id) {
+            return $this->belongsTo(Hotel::class);
+        }
+
         return $this->hasOne(Hotel::class, 'owner_id', 'id');
     }
 
@@ -64,8 +68,8 @@ class User extends Authenticatable
         return $this->role === UserRole::ADMIN;
     }
 
-    public function isWorker(): bool
+    public function isEmployee(): bool
     {
-        return $this->role === UserRole::WORKER;
+        return $this->role === UserRole::EMPLOYEE;
     }
 }

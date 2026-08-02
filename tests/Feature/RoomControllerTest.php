@@ -50,7 +50,7 @@ it('rejects an unauthenticated index request', function () {
 });
 
 it('rejects a non-admin user from listing rooms', function () {
-    $worker = User::factory()->role(UserRole::WORKER)->create();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
 
     $this->withHeaders(roomApiHeaders())->actingAs($worker, 'sanctum')
         ->getJson('/api/room')
@@ -105,7 +105,7 @@ it('rejects a room missing the required schema-derived hotel_id', function () {
 });
 
 it('rejects a non-admin user from creating a room', function () {
-    $worker = User::factory()->role(UserRole::WORKER)->create();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
     $hotel = Hotel::create(['owner_id' => $worker->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $this->withHeaders(roomApiHeaders())->actingAs($worker, 'sanctum')

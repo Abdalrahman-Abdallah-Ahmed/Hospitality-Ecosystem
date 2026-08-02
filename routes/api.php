@@ -11,6 +11,9 @@ use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\SenderRecognitionController;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\TaskCategoryController;
+use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TeamController;
 use App\Http\Controllers\WhatsAppDeviceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +47,10 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
         Route::resource('/hotel-policy', HotelPolicyController::class)->except(['edit', 'create', 'show']);
+        Route::resource('/team', TeamController::class)->except(['edit', 'create']);
+        Route::post('/team/{team}/members', [TeamController::class, 'addMember']);
+        Route::resource('/task-category', TaskCategoryController::class)->except(['edit', 'create']);
+        Route::resource('/task', TaskController::class)->except(['edit', 'create']);
 
     });
 });

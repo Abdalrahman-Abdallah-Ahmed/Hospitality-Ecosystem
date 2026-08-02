@@ -48,7 +48,7 @@ it('rejects an unauthenticated index request', function () {
 });
 
 it('rejects a worker from listing hotel policies', function () {
-    $worker = User::factory()->role(UserRole::WORKER)->create();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
 
     $this->withHeaders(hotelPolicyApiHeaders())->actingAs($worker, 'sanctum')
         ->getJson('/api/hotel-policy')
@@ -75,7 +75,7 @@ it('only lists hotel policies belonging to the admin own hotel', function () {
 
 it('rejects a worker from creating a hotel policy', function () {
     [, $hotel] = adminWithOwnedHotel();
-    $worker = User::factory()->role(UserRole::WORKER)->create();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
 
     $this->withHeaders(hotelPolicyApiHeaders())->actingAs($worker, 'sanctum')
         ->postJson('/api/hotel-policy', [

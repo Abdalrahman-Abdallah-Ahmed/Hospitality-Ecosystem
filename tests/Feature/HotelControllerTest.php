@@ -142,7 +142,7 @@ it('rejects an admin viewing a hotel they do not own', function () {
 
 it('rejects a worker from viewing a hotel', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $worker = User::factory()->role(UserRole::WORKER)->create();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
     $hotel = hotelFor($owner);
 
     $this->withHeaders(hotelApiHeaders())->actingAs($worker, 'sanctum')

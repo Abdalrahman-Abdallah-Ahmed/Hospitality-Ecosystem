@@ -45,6 +45,26 @@ class Hotel extends Model
         return $this->belongsTo(User::class, 'owner_id');
     }
 
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
+    public function teams(): HasMany
+    {
+        return $this->hasMany(Team::class);
+    }
+
+    public function taskCategories(): HasMany
+    {
+        return $this->hasMany(TaskCategory::class);
+    }
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class);
+    }
+
     public function guests(): HasMany
     {
         return $this->hasMany(Guest::class);

@@ -58,7 +58,7 @@ it('rejects an unauthenticated index request', function () {
 });
 
 it('rejects a non-admin user from listing reservations', function () {
-    $worker = User::factory()->role(UserRole::WORKER)->create();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
 
     $this->withHeaders(apiHeaders())->actingAs($worker, 'sanctum')
         ->getJson('/api/reservation')

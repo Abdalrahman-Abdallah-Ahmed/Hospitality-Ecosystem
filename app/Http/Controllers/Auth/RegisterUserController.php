@@ -62,6 +62,10 @@ class RegisterUserController extends Controller
                 'whatsapp_number' => $validated['hotel']['whatsapp_number'] ?? null,
             ]);
 
+            $user->update([
+                'hotel_id' => $hotel->id,
+            ]);
+
             return [$user, $hotel];
         });
 
