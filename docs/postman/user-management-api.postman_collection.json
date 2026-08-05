@@ -1,0 +1,235 @@
+{
+  "info": {
+    "_postman_id": "c4a7d1e2-9f3b-4c5d-8e6f-1a2b3c4d5e6f",
+    "name": "Hospitality Ecosystem - User Management API",
+    "description": "User management endpoints (App\\Http\\Controllers\\UserController). Admin & super admin can create, read, update, and delete users. Only super admin can index every user in the system — an admin's index is scoped to their own hotel. Each admin can only manage users belonging to their own hotel.\n\n## How to run this\n\n1. Set the `base_url` and `api_key` collection variables (see Variables tab).\n2. Run **Auth > Register Admin + Hotel**, then **Auth > Login** — these set `token` and `hotel_id` for every other request automatically via test scripts.\n3. Run the **User** folder top to bottom: Create User sets `user_id` automatically.\n4. `team_id` is optional on Create/Update User. If you want to exercise that path, create a team first (see the Task Management collection's **Team > Create Team** request, or `php artisan tinker`) and paste its id into the `team_id` collection variable — if set, it must belong to the same hotel as the caller (admin) or the target user, or the request returns 403.\n5. There is no API endpoint that creates a super admin — `/api/register` only creates an `admin` plus a brand-new hotel. Seed one directly (e.g. `php artisan tinker`) and log in as them manually (set `token` yourself) to exercise the super-admin-only requests in this collection (List All Users, cross-hotel Get/Update/Delete).\n\nEvery request needs `X-API-KEY` and (except Register/Login) `Authorization: Bearer {{token}}` — both are pre-filled on every request in this collection from collection variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000/api", "type": "string" },
+    { "key": "api_key", "value": "", "type": "string" },
+    { "key": "admin_email", "value": "", "type": "string" },
+    { "key": "admin_password", "value": "Password123!", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "hotel_id", "value": "", "type": "string" },
+    { "key": "team_id", "value": "", "type": "string" },
+    { "key": "user_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Not part of the user-management APIs themselves, but every request below needs a bearer token from these two calls first. See docs/auth-api-documentation.md for full details.",
+      "item": [
+        {
+          "name": "Register Admin + Hotel",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('admin_email', 'admin.' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body && json.body.hotel) {",
+                  "    pm.collectionVariables.set('hotel_id', json.body.hotel.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Grand Harbor Admin\",\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\",\n  \"password_confirmation\": \"{{admin_password}}\",\n  \"hotel\": {\n    \"name\": \"Grand Harbor Hotel\",\n    \"city\": \"Cairo\",\n    \"country_code\": \"EG\",\n    \"currency\": \"USD\",\n    \"timezone\": \"UTC\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": ["{{base_url}}"],
+              "path": ["register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body) {",
+                  "    if (json.body.token) pm.collectionVariables.set('token', json.body.token);",
+                  "    if (json.body.user && json.body.user.hotel && json.body.user.hotel.id) {",
+                  "        pm.collectionVariables.set('hotel_id', json.body.user.hotel.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "List Users (own hotel)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users?per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["users"],
+              "query": [{ "key": "per_page", "value": "15" }]
+            },
+            "description": "As an admin, this returns only users belonging to your own hotel. As a super admin (see collection description), it returns every user in the system, unscoped."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body && json.body.id) {",
+                  "    pm.collectionVariables.set('user_id', json.body.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotel_id\": \"{{hotel_id}}\",\n  \"name\": \"New Hire\",\n  \"email\": \"new.hire+{{$timestamp}}@example.com\",\n  \"password\": \"Password123!\",\n  \"phone_number\": \"+201000000000\",\n  \"role\": \"employee\",\n  \"team_id\": \"{{team_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["users"]
+            },
+            "description": "`hotel_id` is accepted by validation but always overwritten server-side with the caller's own hotel when the caller is an admin (a spoofed value is ignored); only a super admin's `hotel_id` is actually used. `team_id` is optional — leave it blank to skip, or set the `team_id` collection variable to a team that belongs to the same hotel (a cross-hotel team returns 403). Returns 403 with \"User does not have an associated hotel.\" if the calling admin has none."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            },
+            "description": "403 if the target user belongs to a different hotel than the caller (admins only — super admins can view anyone)."
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Hire (Updated)\",\n  \"team_id\": \"{{team_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            },
+            "description": "Sending `hotel_id` here is silently ignored — a user can never be reassigned to a different hotel through this endpoint. `team_id`, if sent, must belong to the target user's own hotel or this returns 403."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{user_id}}"]
+            },
+            "description": "Hard delete. 403 if the target user belongs to a different hotel than the caller (admins only — super admins can delete anyone)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
