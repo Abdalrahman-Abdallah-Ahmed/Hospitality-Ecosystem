@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ReservationChannels;
+use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\GuestController;
@@ -53,6 +54,6 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/task-category', TaskCategoryController::class)->except(['edit', 'create']);
         Route::resource('/task', TaskController::class)->except(['edit', 'create']);
         Route::resource('/users', UserController::class)->except(['edit', 'create']);
-
+        Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
     });
 });

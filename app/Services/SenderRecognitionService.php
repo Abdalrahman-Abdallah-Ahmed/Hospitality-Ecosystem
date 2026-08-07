@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\SenderType;
+use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\User;
@@ -19,7 +20,9 @@ class SenderRecognitionService
      */
     public function resolve(string $phoneNumber): RecognizedSender
     {
-        $user = User::where('phone_number', $phoneNumber)->first();
+        $user = User::where('phone_number', $phoneNumber)
+        ->where('role', UserRole::ADMIN)
+        ->first();
 
         if ($user) {
             return new RecognizedSender(

@@ -2,10 +2,12 @@
 
 namespace App\Http\Requests\Generic;
 
+use App\Enums\InsightTypes;
 use App\Http\Requests\Concerns\ResolvesModelFromRoute;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 /**
  * Drop-in "index" request for any resource controller: validates the
@@ -32,6 +34,7 @@ class GenericIndexRequest extends FormRequest
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'filter' => ['nullable', 'array'],
+            'insight_type' => ['nullable', 'string', Rule::enum(InsightTypes::class)],
         ];
     }
 
