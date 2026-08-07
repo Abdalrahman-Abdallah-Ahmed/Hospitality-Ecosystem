@@ -1,13 +1,19 @@
 <?php
 
 use App\Models\Hotel;
+use Illuminate\Http\Resources\Json\JsonResource;
 
 function apiAuth(){
     return request()->header('X-API-KEY') === config('app.api_key');
 }
 
+
 function apiResponse(string $message, int $code = 200, mixed $body = null)
 {
+    if ($body instanceof JsonResource) {
+        $body = $body->response()->getData(true);
+    }
+
     return response()->json([
         'message' => $message,
         'code' => $code,

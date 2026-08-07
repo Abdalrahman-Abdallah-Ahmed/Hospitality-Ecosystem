@@ -41,11 +41,7 @@ class User extends Authenticatable
 
     public function hotel()
     {
-        if ($this->hotel_id) {
-            return $this->belongsTo(Hotel::class);
-        }
-
-        return $this->hasOne(Hotel::class, 'owner_id', 'id');
+        return $this->belongsTo(Hotel::class);
     }
 
     public function team()

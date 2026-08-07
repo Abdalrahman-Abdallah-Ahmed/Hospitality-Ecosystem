@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Support\RequestRules\GenericQuery;
@@ -35,7 +36,7 @@ class UserController extends Controller
 
         $users = GenericQuery::apply($query, $request);
 
-        return apiResponse('Users fetched successfully.', 200, $users);
+        return apiResponse('Users fetched successfully.', 200, UserResource::collection($users));
     }
 
     /**
@@ -65,7 +66,7 @@ class UserController extends Controller
 
         $user = User::create([...$validated, 'hotel_id' => $hotel?->id]);
 
-        return apiResponse('User created successfully.', 201, $user->load('hotel'));
+        return apiResponse('User created successfully.', 201, UserResource::collection([$user->load('hotel')]));
     }
 
     /**
@@ -75,7 +76,7 @@ class UserController extends Controller
     {
         $this->authorize('view', $user);
 
-        return apiResponse('User fetched successfully.', 200, $user->load('hotel'));
+        return apiResponse('User fetched successfully.', 200, UserResource::collection([$user->load('hotel')]));
     }
 
     /**
@@ -96,7 +97,7 @@ class UserController extends Controller
 
         $user->update([...$validated, 'hotel_id' => $user->hotel_id]);
 
-        return apiResponse('User updated successfully.', 200, $user->load('hotel'));
+        return apiResponse('User updated successfully.', 200, UserResource::collection([$user->load('hotel')]));
     }
 
     /**

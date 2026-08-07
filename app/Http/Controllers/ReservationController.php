@@ -8,6 +8,7 @@ use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Requests\WhatsAppReservationStoreRequest;
 use App\Models\Guest;
+use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\WhatsAppDevice;
@@ -148,12 +149,13 @@ class ReservationController extends Controller
      */
     private function guardHotelScopedReferences(array $validated, string $hotelId): ?JsonResponse
     {
-        if (! empty($validated['guest_id']) && ! Guest::where('id', $validated['guest_id'])->where('hotel_id', $hotelId)->exists()) {
-            return apiResponse('The selected guest does not belong to this hotel.', 422);
-        }
+        $invalidRelation = invalidRelation(Hotel::findOrFail($hotelId), [
+            'guests' => $validated['guest_id'] ?? null,
+            'rooms' => $validated['room_id'] ?? null,
+        ]);
 
-        if (! empty($validated['room_id']) && ! Room::where('id', $validated['room_id'])->where('hotel_id', $hotelId)->exists()) {
-            return apiResponse('The selected room does not belong to this hotel.', 422);
+        if ($invalidRelation) {
+            return apiResponse("The selected {$invalidRelation} does not belong to this hotel.", 422);
         }
 
         return null;
