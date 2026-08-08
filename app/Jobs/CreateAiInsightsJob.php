@@ -1,0 +1,103 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Ai\Agents\InsightsAgent;
+use App\Enums\AiInsightCategories;
+use App\Enums\InsightTypes;
+use App\Models\AiInsights;
+use App\Models\Hotel;
+use App\Models\Message;
+use App\Models\Reservation;
+use App\Models\Task;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\SerializesModels;
+
+class CreateAiInsightsJob implements ShouldQueue
+{
+    use Queueable, SerializesModels;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct(
+        public array $data,
+    ) {}
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        $user = $this->data['user'];
+        $hotel = $user->hotel;
+        $insightType = $this->data['insight_type'] ?? InsightTypes::GENERAL->value;
+
+        $agent = InsightsAgent::make(
+            user: $user,
+        );
+
+        $response = match ($insightType) {
+            InsightTypes::GENERAL->value => $this->generalInsights($agent),
+            InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
+            InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
+            default => $agent->prompt('You are a helpful insights agent.'),
+        };
+
+        collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
+            $modelClass = $this->insightableModelFor($insight['category']);
+            $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
+
+            AiInsights::create([
+                'title' => $insight['title'],
+                'hotel_id' => $hotel->id,
+                'description' => $insight['description'],
+                'category' => $insight['category'],
+                'insight_type' => $insightType,
+                'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
+                'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
+            ]);
+        });
+    }
+
+    private function generalInsights(InsightsAgent $agent)
+    {
+        return $agent->prompt('Provide up to 5 actionable insights about overall hotel operations, drawing from today\'s reservations, open tasks, and recent guest messages.');
+    }
+
+    private function reservationInsights(InsightsAgent $agent)
+    {
+        return $agent->prompt('provide insights about today\'s reservations.');
+    }
+
+    private function insightableModelFor(string $category): ?string
+    {
+        return match ($category) {
+            AiInsightCategories::RESERVATION->value => Reservation::class,
+            AiInsightCategories::TASK->value => Task::class,
+            AiInsightCategories::GUEST_MESSAGE->value => Message::class,
+            AiInsightCategories::GENERAL->value => Hotel::class,
+            default => null,
+        };
+    }
+
+    /**
+     * Verify a model-supplied source_id actually belongs to the given hotel,
+     * since a hallucinated (or guest-message-injected) id could otherwise
+     * point at another hotel's record despite existing in the database.
+     */
+    private function sourceBelongsToHotel(string $category, string $sourceId, Hotel $hotel): bool
+    {
+        return match ($category) {
+            AiInsightCategories::RESERVATION->value => Reservation::where('hotel_id', $hotel->id)->whereKey($sourceId)->exists(),
+            AiInsightCategories::TASK->value => Task::where('hotel_id', $hotel->id)->whereKey($sourceId)->exists(),
+            AiInsightCategories::GUEST_MESSAGE->value => Message::whereHas(
+                'conversation',
+                fn ($query) => $query->where('hotel_id', $hotel->id)
+            )->whereKey($sourceId)->exists(),
+            AiInsightCategories::GENERAL->value => $sourceId === (string) $hotel->id,
+            default => false,
+        };
+    }
+}
