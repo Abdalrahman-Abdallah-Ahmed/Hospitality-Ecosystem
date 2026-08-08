@@ -285,7 +285,6 @@ The intended flow, per product: **title + description → choose team → choose
   "assigned_to_team_id": "019fc000-1111-7000-9000-abcdef123456",
   "task_category_id": "019fc000-2222-7000-9000-abcdef123456",
   "room_id": null,
-  "guest_id": null,
   "reservation_id": null,
   "assigned_to_user_id": null,
   "created_by_user_id": null,
@@ -299,10 +298,11 @@ The intended flow, per product: **title + description → choose team → choose
 | `hotel_id` | Required by validation, but **always ignored/overwritten** with the caller's own hotel. |
 | `title` | required, string, max 255. |
 | `description` | optional, string. |
-| `room_id`, `reservation_id`, `guest_id` | optional, uuid, must `exist` in their respective tables **and** belong to the caller's hotel. |
+| `room_id`, `reservation_id` | optional, uuid, must `exist` in their respective tables **and** belong to the caller's hotel. |
+| `guest_id` | **Do not send this — it's not a client-settable field.** It's always resolved server-side from `reservation_id`: if you send a `reservation_id`, `guest_id` is silently overwritten with that reservation's own `guest_id` (so if the reservation has no guest, the task won't either). If you don't send `reservation_id`, `guest_id` is `null`. This applies to both `store` and `update` — the frontend never chooses which guest a task is assigned to; it's implied entirely by the reservation. |
 | `assigned_to_team_id` | optional, uuid, must be a team belonging to the caller's hotel. |
 | `assigned_to_user_id` | optional, uuid, must be a user belonging to the caller's hotel (any role with `hotel_id` set — not restricted to `employee`, unlike team membership). |
-| `created_by_user_id` | optional, uuid, must be a user belonging to the caller's hotel. Same hotel-ownership check as `assigned_to_user_id`, just for a different field. |
+| `created_by_user_id` | **Do not send this on create — as of the latest backend change, it's silently discarded and always forced to the caller's own user id.** Sending someone else's id here has no effect; you'll get the authenticated user's id back regardless. (This only applies to `store`; see the [update caveat](#34-update-a-task) below — `update` still accepts it from the client.) |
 | `task_category_id` | optional, uuid, must be a category belonging to the caller's hotel, **and must belong to the chosen `assigned_to_team_id`** — see below. |
 | `created_by`, `status`, `priority` | optional, must be one of the enum values listed under [The Task Object](#the-task-object). |
 | `due_date` | optional, ISO 8601 datetime. |
@@ -347,6 +347,10 @@ All fields optional (partial update). `hotel_id` is still forced server-side to 
 - Send only `assigned_to_team_id` → the task's *existing* `task_category_id` (if any) is checked against the *new* team, and rejected if it doesn't belong there. You cannot reassign a task to a different team while leaving behind a category that belonged only to the old team — clear or update `task_category_id` in the same request.
 
 Same hotel-ownership and enum-value validation as create applies to whichever fields you include. (`hotel_id` on update is likewise always overwritten with the caller's own hotel, not read from the payload — for a regular admin this can't differ from the task's real hotel anyway, since the policy already required a match to get this far. See [Super Admin Caveats](#super-admin-caveats) for the one case where it matters.)
+
+**`created_by_user_id` behaves differently here than on create:** unlike `store` (which now always forces it to the caller's own id — see [create](#32-create-a-task)), `update` still accepts whatever `created_by_user_id` you send, subject to the normal hotel-ownership check. This asymmetry is current backend behavior, not a documentation typo — don't let a client-side form component share validation assumptions between the create and edit forms for this one field.
+
+**`guest_id` on update is only re-derived when you send `reservation_id` in that same request.** If your `PUT` payload omits `reservation_id` entirely (e.g. you're only changing `status` or `priority`), the task's existing `guest_id` is left as-is — it isn't wiped to `null` just because you didn't resend the reservation. If you do send `reservation_id` (including explicitly sending `null` to detach it), `guest_id` is recalculated from it, same as on create.
 
 Success: `200`, `body` is the updated [task object](#the-task-object).
 
@@ -433,4 +437,5 @@ curl -X POST http://your-domain.com/api/task \
 - Task's `status`/`priority`/`created_by` are real server-side enums (see [The Task Object](#the-task-object) for the fixed value lists) — safe to drive a `<select>` directly from them.
 - None of Task's relation ids (`assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `room_id`, `guest_id`, `reservation_id`, `created_by_user_id`) come back with the related object embedded — resolve names from data you already have.
 - Task deletion is soft (`deleted_at`); Team and TaskCategory deletion is permanent.
+- **Don't show a guest picker on the task form.** `guest_id` is never client-settable — it's always derived server-side from `reservation_id` (the reservation's own guest). Only expose a reservation picker; the guest shows up as a side effect.
 - A cross-hotel ownership `403` names a *relation* (`rooms`, `teams`, `users`, `taskCategories`, `guests`, `reservations`), not a specific form field — show it as a form-level error, not tied to one input.

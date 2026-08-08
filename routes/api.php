@@ -4,6 +4,7 @@ use App\Enums\ReservationChannels;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
@@ -42,6 +43,7 @@ Route::middleware('api.key')->group(function () {
             return apiResponse('Authenticated user fetched successfully.', 200, $request->user());
         });
         Route::post('/connect', [WhatsAppDeviceController::class, 'connect']);
+        Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         Route::resource('/service', ServiceController::class)->except(['edit', 'create']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);

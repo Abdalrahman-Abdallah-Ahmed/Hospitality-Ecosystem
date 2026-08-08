@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ReservationStatus;
+use App\Enums\RoomStatusesEnum;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
@@ -48,6 +49,8 @@ class ReservationController extends Controller
         }
 
         $reservation = $this->createOrRestoreReservation($validated);
+
+        $this->syncRoomOccupancy($reservation);
 
         return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
     }
@@ -96,6 +99,8 @@ class ReservationController extends Controller
             'currency' => $validated['currency'] ?? $hotel->currency,
         ]);
 
+        $this->syncRoomOccupancy($reservation);
+
         return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
     }
 
@@ -129,6 +134,8 @@ class ReservationController extends Controller
 
         $reservation->update($validated);
 
+        $this->syncRoomOccupancy($reservation);
+
         return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));
     }
 
@@ -159,6 +166,17 @@ class ReservationController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * A confirmed reservation implies its room is now taken, so reflect
+     * that on the room itself rather than leaving it "available".
+     */
+    private function syncRoomOccupancy(Reservation $reservation): void
+    {
+        if ($reservation->status === ReservationStatus::CONFIRMED && $reservation->room_id) {
+            Room::whereKey($reservation->room_id)->update(['status' => RoomStatusesEnum::OCCUPIED->value]);
+        }
     }
 
     /**

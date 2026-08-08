@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+use App\Models\Reservation;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Http\Requests\Generic\GenericIndexRequest;
@@ -34,7 +35,7 @@ class TaskController extends Controller
     {
         $this->authorize('create', Task::class);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+        $validated = unsetAttributes($request->validated(), ['hotel_id', 'created_by_user_id', 'guest_id']);
 
         $hotel = $request->user()->hotel;
         if (! $hotel) {
@@ -43,7 +44,6 @@ class TaskController extends Controller
 
         $invalidRelation = invalidRelation($hotel, [
             'rooms' => $validated['room_id'] ?? null,
-            'guests' => $validated['guest_id'] ?? null,
             'reservations' => $validated['reservation_id'] ?? null,
             'teams' => $validated['assigned_to_team_id'] ?? null,
             'users' => $validated['assigned_to_user_id'] ?? null,
@@ -63,7 +63,12 @@ class TaskController extends Controller
             return apiResponse('The selected task category does not belong to the chosen team.', 403);
         }
 
-        $task = Task::create([...$validated, 'hotel_id' => $hotel->id]);
+        $task = Task::create([
+            ...$validated,
+            'hotel_id' => $hotel->id,
+            'guest_id' => $this->guestIdForReservation($validated['reservation_id'] ?? null),
+            'created_by_user_id'=> $request->user()->id
+        ]);
 
         return apiResponse('Task created successfully.', 201, $task->load(['hotel', 'guest', 'room']));
     }
@@ -86,7 +91,7 @@ class TaskController extends Controller
     {
         $this->authorize('update', $task);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+        $validated = unsetAttributes($request->validated(), ['hotel_id', 'guest_id']);
 
         $hotel = $request->user()->hotel;
         if (! $hotel) {
@@ -95,7 +100,6 @@ class TaskController extends Controller
 
         $invalidRelation = invalidRelation($hotel, [
             'rooms' => $validated['room_id'] ?? null,
-            'guests' => $validated['guest_id'] ?? null,
             'reservations' => $validated['reservation_id'] ?? null,
             'teams' => $validated['assigned_to_team_id'] ?? null,
             'users' => $validated['assigned_to_user_id'] ?? null,
@@ -115,6 +119,10 @@ class TaskController extends Controller
             return apiResponse('The selected task category does not belong to the chosen team.', 403);
         }
 
+        if (array_key_exists('reservation_id', $validated)) {
+            $validated['guest_id'] = $this->guestIdForReservation($validated['reservation_id']);
+        }
+
         $task->update([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Task updated successfully.', 200, $task->load(['hotel', 'guest', 'room']));
@@ -128,6 +136,19 @@ class TaskController extends Controller
         $this->authorize('delete', $task);
         $task->delete();
         return apiResponse('Task deleted successfully.', 200);
+    }
+
+    /**
+     * The guest a task is about is never chosen by the client — it's
+     * always resolved from the reservation the task references.
+     */
+    private function guestIdForReservation(?string $reservationId): ?string
+    {
+        if (! $reservationId) {
+            return null;
+        }
+
+        return Reservation::find($reservationId)?->guest_id;
     }
 
     private function taskCategoryBelongsToTeam(?string $teamId, ?string $taskCategoryId): bool

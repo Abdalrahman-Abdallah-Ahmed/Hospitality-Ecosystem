@@ -118,6 +118,11 @@ Field notes for the UI:
 
 Any other string is rejected by the API with a `422` on `status`.
 
+**Side effect (new): setting `status` to `confirmed` occupies the room.** On both create (`POST /api/reservation`, plus the WhatsApp ingestion endpoint) and update (`PUT /api/reservation/{id}`), if the resulting reservation has `status: confirmed` **and** a non-null `room_id`, the backend automatically sets that room's own `status` to `occupied` (`GET /api/room` will reflect this on the next fetch). This is one-directional as of this writing:
+
+- Cancelling, checking out, or otherwise moving a reservation away from `confirmed` does **not** free the room back to `available` — that's still a manual step through the room API.
+- If your UI shows room availability, don't assume it self-corrects when a reservation is cancelled; you may need a separate "release room" action until the backend adds the reverse sync.
+
 ## 1. List Reservations
 
 ### Endpoint
@@ -468,3 +473,4 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - The API does **not** enforce `departure_date >= arrival_date` yet — validate that client-side.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Don't use this document for the WhatsApp reservation-creation flow — that's `POST /api/whatsapp-reservation`, unauthenticated (API-key only), and out of scope here.
+- Confirming a reservation (`status: confirmed`) with a `room_id` set auto-occupies the room server-side — but nothing frees it back up on cancel/checkout yet. See [Status Values](#status-values).
