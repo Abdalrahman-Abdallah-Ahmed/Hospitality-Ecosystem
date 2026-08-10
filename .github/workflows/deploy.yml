@@ -22,9 +22,11 @@ jobs:
 
             git pull origin main
 
+            chmod -R ug+rwX storage bootstrap/cache
+
             composer install --optimize-autoloader --no-interaction
 
-            php artisan migrate:fresh --seed --force
+            php artisan migrate:fresh --force
 
             php artisan optimize
 
