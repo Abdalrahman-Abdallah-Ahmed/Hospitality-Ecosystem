@@ -43,6 +43,10 @@ class HospitalitySeeder extends Seeder
             'is_active' => true,
         ]);
 
+        $user = $user->update([
+            "hotel_id" => $hotel->id,
+        ]);
+
         $category = ServiceCategory::create([
             'hotel_id' => $hotel->id,
             'name' => 'Wellness',
