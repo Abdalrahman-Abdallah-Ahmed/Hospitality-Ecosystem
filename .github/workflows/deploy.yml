@@ -18,7 +18,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            cd /var/www/hospitality
+            cd /var/www/api-hospitality
 
             git pull origin main
 
