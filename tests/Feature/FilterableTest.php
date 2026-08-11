@@ -73,6 +73,7 @@ it('returns everything when the search term is empty', function () {
 it('filters reservations by status through the index endpoint', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $admin->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $admin->update(['hotel_id' => $hotel->id]);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     Reservation::create(['hotel_id' => $hotel->id, 'guest_id' => $guest->id, 'reservation_id' => 'RES-1', 'arrival_date' => '2026-09-01', 'departure_date' => '2026-09-04', 'status' => 'checked_in']);

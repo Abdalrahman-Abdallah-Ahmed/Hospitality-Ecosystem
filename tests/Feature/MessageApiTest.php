@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Conversation;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -94,7 +95,7 @@ it('resolves the guest hotel through their current reservation instead of their 
 });
 
 it('recognizes a phone number belonging to a user as an admin sender', function () {
-    $user = User::factory()->create([
+    $user = User::factory()->role(UserRole::ADMIN)->create([
         'phone_number' => '+201151793758',
     ]);
     $hotel = Hotel::create([
@@ -103,6 +104,7 @@ it('recognizes a phone number belonging to a user as an admin sender', function 
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
     ]);
+    $user->update(['hotel_id' => $hotel->id]);
     Guest::create([
         'hotel_id' => $hotel->id,
         'phone_number' => '+201151793758',

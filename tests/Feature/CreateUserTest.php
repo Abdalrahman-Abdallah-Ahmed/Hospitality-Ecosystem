@@ -108,10 +108,10 @@ it('only lists users belonging to the admin own hotel', function () {
     expect($data->pluck('id'))->toContain($admin->id, $mine->id);
 });
 
-it('lets an admin see themself when their own hotel_id column is not set', function () {
-    // Mirrors an admin whose hotel was created without backfilling their
-    // hotel_id column (e.g. via POST /api/hotel rather than /api/register) —
-    // User::hotel() still resolves the hotel through the owner_id fallback.
+it('lets an admin see only themself when their own hotel_id column is not set', function () {
+    // hotel_id is the single source of truth for a user's hotel — owning a
+    // hotel via Hotel.owner_id does not associate the admin with its staff
+    // unless hotel_id is also backfilled (as /api/register does).
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
         'owner_id' => $admin->id,
@@ -119,13 +119,15 @@ it('lets an admin see themself when their own hotel_id column is not set', funct
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
     ]);
-    $mine = staffForUsers($hotel);
+    $notMine = staffForUsers($hotel);
 
     $response = $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/users');
 
     $response->assertOk();
-    expect(collect($response->json('body.data'))->pluck('id'))->toContain($admin->id, $mine->id);
+    $ids = collect($response->json('body.data'))->pluck('id');
+    expect($ids)->toContain($admin->id);
+    expect($ids)->not->toContain($notMine->id);
 });
 
 it('lets a super admin index every user in the system', function () {

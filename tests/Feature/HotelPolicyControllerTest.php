@@ -27,8 +27,9 @@ function adminWithOwnedHotel(): array
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
     ]);
+    $admin->update(['hotel_id' => $hotel->id]);
 
-    return [$admin, $hotel];
+    return [$admin->fresh(), $hotel];
 }
 
 function hotelPolicyFor(Hotel $hotel, array $overrides = []): HotelPolicy

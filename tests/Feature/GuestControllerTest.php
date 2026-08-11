@@ -27,8 +27,9 @@ function adminWithGuestHotel(): array
         'slug' => 'grand-harbor-hotel-'.$admin->id,
         'currency' => 'USD',
     ]);
+    $admin->update(['hotel_id' => $hotel->id]);
 
-    return [$admin, $hotel];
+    return [$admin->fresh(), $hotel];
 }
 
 it('creates a guest for the admin own hotel', function () {

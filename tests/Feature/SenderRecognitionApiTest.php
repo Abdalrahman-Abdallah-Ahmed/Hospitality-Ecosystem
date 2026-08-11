@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -14,7 +15,7 @@ beforeEach(function () {
 });
 
 it('identifies a user phone number as an admin', function () {
-    $user = User::factory()->create([
+    $user = User::factory()->role(UserRole::ADMIN)->create([
         'phone_number' => '+201151793758',
     ]);
     $hotel = Hotel::create([
@@ -23,6 +24,7 @@ it('identifies a user phone number as an admin', function () {
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
     ]);
+    $user->update(['hotel_id' => $hotel->id]);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
         ->postJson('/api/whatsapp/identify', [

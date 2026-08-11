@@ -35,7 +35,8 @@ class TaskController extends Controller
     {
         $this->authorize('create', Task::class);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id', 'created_by_user_id', 'guest_id']);
+        $validated = unsetAttributes($request->validated(), ['hotel_id', 'guest_id']);
+        $validated['created_by_user_id'] = $validated['created_by_user_id'] ?? $request->user()->id;
 
         $hotel = $request->user()->hotel;
         if (! $hotel) {
@@ -67,7 +68,6 @@ class TaskController extends Controller
             ...$validated,
             'hotel_id' => $hotel->id,
             'guest_id' => $this->guestIdForReservation($validated['reservation_id'] ?? null),
-            'created_by_user_id'=> $request->user()->id
         ]);
 
         return apiResponse('Task created successfully.', 201, $task->load(['hotel', 'guest', 'room']));

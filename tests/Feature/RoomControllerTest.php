@@ -27,8 +27,9 @@ function adminWithOwnHotel(): array
         'slug' => 'grand-harbor-hotel-'.$admin->id,
         'currency' => 'USD',
     ]);
+    $admin->update(['hotel_id' => $hotel->id]);
 
-    return [$admin, $hotel];
+    return [$admin->fresh(), $hotel];
 }
 
 function roomFor(Hotel $hotel, array $overrides = []): Room

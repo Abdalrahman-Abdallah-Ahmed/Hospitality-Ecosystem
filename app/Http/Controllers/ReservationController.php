@@ -162,7 +162,7 @@ class ReservationController extends Controller
         ]);
 
         if ($invalidRelation) {
-            return apiResponse("The selected {$invalidRelation} does not belong to this hotel.", 422);
+            return apiResponse('The selected '.Str::singular($invalidRelation).' does not belong to this hotel.', 422);
         }
 
         return null;

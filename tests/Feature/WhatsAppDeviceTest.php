@@ -35,6 +35,7 @@ it('pairs a whatsapp device for a user identified by a request-body token', func
         'slug' => 'demo-hotel',
         'currency' => 'USD',
     ]);
+    $user->update(['hotel_id' => $hotel->id]);
     $token = $user->createToken('whatsapp_device_token')->plainTextToken;
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
@@ -95,6 +96,7 @@ it('rejects pairing when the user already has a paired whatsapp device', functio
         'slug' => 'demo-hotel',
         'currency' => 'USD',
     ]);
+    $user->update(['hotel_id' => $hotel->id]);
     $token = $user->createToken('whatsapp_device_token')->plainTextToken;
 
     WhatsAppDevice::create([

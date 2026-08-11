@@ -169,6 +169,7 @@ it('rejects a hotel update for a non-owner', function () {
 it('creates a service for the caller hotel with json/decimal columns validated generically', function () {
     $owner = User::factory()->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
 
     $response = asUser($owner)->postJson('/api/service', [
         'hotel_id' => $hotel->id,
