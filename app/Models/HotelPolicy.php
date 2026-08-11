@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Enums\KnowledgeBaseCategory;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class HotelPolicy extends Model
@@ -26,6 +28,7 @@ class HotelPolicy extends Model
     ];
 
     protected $casts = [
+        'category' => KnowledgeBaseCategory::class,
         'keywords' => 'array',
         'is_active' => 'boolean',
     ];
@@ -33,5 +36,10 @@ class HotelPolicy extends Model
     public function hotel(): BelongsTo
     {
         return $this->belongsTo(Hotel::class);
+    }
+
+    public function chunks(): MorphMany
+    {
+        return $this->morphMany(KnowledgeChunk::class, 'chunkable');
     }
 }

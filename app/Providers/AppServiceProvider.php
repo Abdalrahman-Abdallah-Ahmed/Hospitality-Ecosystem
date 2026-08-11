@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\HotelPolicy;
+use App\Models\KnowledgeBaseArticle;
+use App\Observers\HotelPolicyObserver;
+use App\Observers\KnowledgeBaseArticleObserver;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        KnowledgeBaseArticle::observe(KnowledgeBaseArticleObserver::class);
+        HotelPolicy::observe(HotelPolicyObserver::class);
     }
 }

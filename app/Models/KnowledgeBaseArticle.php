@@ -7,6 +7,7 @@ use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class KnowledgeBaseArticle extends Model
@@ -38,5 +39,10 @@ class KnowledgeBaseArticle extends Model
     public function hotel(): BelongsTo
     {
         return $this->belongsTo(Hotel::class);
+    }
+
+    public function chunks(): MorphMany
+    {
+        return $this->morphMany(KnowledgeChunk::class, 'chunkable');
     }
 }
