@@ -3,6 +3,8 @@ services:
     image: pgvector/pgvector:pg17
     container_name: hospitality-postgres
 
+    restart: unless-stopped
+
     environment:
       POSTGRES_DB: Hospitality_Ecosystem
       POSTGRES_USER: root
