@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
+use App\Http\Controllers\KnowledgeBaseArticleController;
 use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
@@ -57,5 +58,6 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/task', TaskController::class)->except(['edit', 'create']);
         Route::resource('/users', UserController::class)->except(['edit', 'create']);
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
+        Route::resource('/knowledge-base-articles',KnowledgeBaseArticleController::class)->except(['edit', 'create']);
     });
 });
