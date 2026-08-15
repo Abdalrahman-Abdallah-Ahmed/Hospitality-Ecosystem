@@ -84,6 +84,16 @@ class AuthenticatedSessionController extends Controller
 
     public function whatsappWebhook(Request $request)
     {
+        $signature = $request->header('X-Hub-Signature-256', '');
+        $appSecret = config('services.whatsapp.app_secret');
+
+        $expected = 'sha256=' . hash_hmac('sha256', $request->getContent(), (string) $appSecret);
+
+        if (! $appSecret || ! hash_equals($expected, $signature)) {
+            Log::warning('WhatsApp webhook received with invalid signature.');
+            return response('Invalid signature', 403);
+        }
+
         Log::info('WhatsApp webhook payload received.', $request->all());
 
         return response('', 200);
