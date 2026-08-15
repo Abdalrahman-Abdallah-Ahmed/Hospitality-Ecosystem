@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\CreateReservationTool;
 use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetReservationsTool;
 use App\Ai\Tools\GetRoomsTool;
@@ -45,6 +46,7 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             - A tool to fetch this hotel's tasks.
             - A tool to fetch this hotel's recent guest messages.
             - A tool to fetch this hotel's rooms, including room number, type, floor, and status.
+            - A tool to create a reservation for this hotel, matching the guest by phone number.
 
             Always call the relevant tool(s) before answering a question about any of the above — never invent
             or guess data. If none of the tools return anything relevant, say so plainly instead of making up
@@ -65,6 +67,7 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             new GetTasksTool($this->user->hotel),
             new GetGuestMessagesTool($this->user->hotel),
             new GetRoomsTool($this->user->hotel),
+            new CreateReservationTool($this->user->hotel),
         ];
     }
 }

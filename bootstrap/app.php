@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
             'api.key' => \App\Http\Middleware\ApiKeyMiddleware::class,
+            'whatsapp.signature' => \App\Http\Middleware\VerifyWhatsAppWebhookSignature::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

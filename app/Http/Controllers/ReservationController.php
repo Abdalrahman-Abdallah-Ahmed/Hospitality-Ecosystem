@@ -2,18 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\ReservationStatus;
-use App\Enums\RoomStatusesEnum;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
-use App\Http\Requests\WhatsAppReservationStoreRequest;
-use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
-use App\Models\Room;
-use App\Models\WhatsAppDevice;
 use App\Support\RequestRules\GenericQuery;
+use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 
@@ -48,58 +43,9 @@ class ReservationController extends Controller
             return $error;
         }
 
-        $reservation = $this->createOrRestoreReservation($validated);
+        $reservation = ReservationCreator::create($validated);
 
-        $this->syncRoomOccupancy($reservation);
-
-        return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
-    }
-
-    /**
-     * Store a newly sent resource from whatsapp in storage.
-     */
-    public function storeFromWhatsApp(WhatsAppReservationStoreRequest $request): JsonResponse
-    {
-        $validated = $request->validated();
-        $room = null;
-
-        $device = WhatsAppDevice::where('phone_number', $validated['phone_number'])->first();
-
-        if (! $device || $device->status !== 'active') {
-            return apiResponse('WhatsApp device not paired.', 403);
-        }
-
-        $hotel = $device->hotel;
-
-        if (! empty($validated['room_number'])) {
-            $room = Room::where('hotel_id', $hotel->id)
-                ->where('room_number', $validated['room_number'])
-                ->first();
-
-            if (! $room) {
-                return apiResponse('The selected room does not belong to this hotel.', 422);
-            }
-        }
-
-        $guest = $this->findOrCreateGuest($hotel->id, $validated['guest_id'], $validated['channel'], $validated['guest'] ?? []);
-
-        $reservation = $this->createOrRestoreReservation([
-            'hotel_id' => $hotel->id,
-            'guest_id' => $guest->id,
-            'room_id' => $room?->id,
-            'reservation_id' => $validated['reservation_id'] ?? 'RES-'.strtoupper(Str::random(8)),
-            'arrival_date' => $validated['arrival_date'],
-            'departure_date' => $validated['departure_date'],
-            'status' => $validated['status'] ?? ReservationStatus::PENDING->value,
-            'adults' => $validated['adults'] ?? 1,
-            'children' => $validated['children'] ?? 0,
-            'source' => $validated['channel'],
-            'special_requests' => $validated['special_requests'] ?? null,
-            'reservation_value' => $validated['reservation_value'] ?? 0,
-            'currency' => $validated['currency'] ?? $hotel->currency,
-        ]);
-
-        $this->syncRoomOccupancy($reservation);
+        ReservationCreator::syncRoomOccupancy($reservation);
 
         return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
     }
@@ -134,7 +80,7 @@ class ReservationController extends Controller
 
         $reservation->update($validated);
 
-        $this->syncRoomOccupancy($reservation);
+        ReservationCreator::syncRoomOccupancy($reservation);
 
         return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));
     }
@@ -166,57 +112,5 @@ class ReservationController extends Controller
         }
 
         return null;
-    }
-
-    /**
-     * A confirmed reservation implies its room is now taken, so reflect
-     * that on the room itself rather than leaving it "available".
-     */
-    private function syncRoomOccupancy(Reservation $reservation): void
-    {
-        if ($reservation->status === ReservationStatus::CONFIRMED && $reservation->room_id) {
-            Room::whereKey($reservation->room_id)->update(['status' => RoomStatusesEnum::OCCUPIED->value]);
-        }
-    }
-
-    /**
-     * A trashed reservation is not visible through normal queries, but its
-     * unique reservation_id row still exists, so blindly creating would
-     * throw a duplicate-key error. Restore and update it instead.
-     */
-    private function createOrRestoreReservation(array $attributes): Reservation
-    {
-        $trashed = Reservation::onlyTrashed()->where('reservation_id', $attributes['reservation_id'])->first();
-
-        if ($trashed) {
-            $trashed->restore();
-            $trashed->update($attributes);
-
-            return $trashed;
-        }
-
-        return Reservation::create($attributes);
-    }
-
-    private function findOrCreateGuest(string $hotelId, string $externalId, string $channel, array $guestDetails): Guest
-    {
-        $guest = Guest::withTrashed()->firstOrCreate(
-            [
-                'hotel_id' => $hotelId,
-                'external_id' => $externalId,
-                'channel' => $channel,
-            ],
-            [
-                'first_name' => $guestDetails['first_name'] ?? null,
-                'last_name' => $guestDetails['last_name'] ?? null,
-                'phone_number' => $guestDetails['phone_number'] ?? null,
-                'email' => $guestDetails['email'] ?? null,
-            ]
-        );
-
-        if($guest->trashed()) {
-            $guest->restore();
-        }
-        return $guest;
     }
 }

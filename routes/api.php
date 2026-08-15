@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\ReservationChannels;
 use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -10,36 +9,26 @@ use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
 use App\Http\Controllers\KnowledgeBaseArticleController;
-use App\Http\Controllers\MessagesController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
-use App\Http\Controllers\SenderRecognitionController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TaskCategoryController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\WhatsAppDeviceController;
+use App\Http\Controllers\WhatsAppController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/whatsapp', [AuthenticatedSessionController::class, 'whatsappVerify']);
-Route::post('/whatsapp', [AuthenticatedSessionController::class, 'whatsappWebhook']);
+Route::get('/whatsapp', [WhatsAppController::class, 'whatsappVerify']);
+Route::post('/whatsapp', [WhatsAppController::class, 'whatsappWebhook'])
+    ->middleware('whatsapp.signature');
 
 Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore']);
     Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->name('login');
-    Route::post('/pair', [WhatsAppDeviceController::class, 'pair']);
-    Route::post('/whatsapp/identify', [SenderRecognitionController::class, 'identify']);
-    Route::post('/message', [MessagesController::class, 'store']);
-    Route::get('/check-paired', [WhatsAppDeviceController::class, 'checkPaired']);
-    Route::post('/whatsapp-reservation', [ReservationController::class, 'storeFromWhatsApp']);
-    Route::get('/available-channels', function(){
-        return apiResponse('Available channels fetched successfully.', 200, [
-            'channels' => ReservationChannels::cases()
-            ]
-            );
-    });
+    Route::post('/pair', [WhatsAppController::class, 'pair']);
+    Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
 
 
     Route::middleware(['auth:sanctum'])->group(function () {
@@ -47,7 +36,7 @@ Route::middleware('api.key')->group(function () {
         Route::get('/user', function (Request $request) {
             return apiResponse('Authenticated user fetched successfully.', 200, $request->user());
         });
-        Route::post('/connect', [WhatsAppDeviceController::class, 'connect']);
+        Route::post('/connect', [WhatsAppController::class, 'connect']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         Route::resource('/service', ServiceController::class)->except(['edit', 'create']);

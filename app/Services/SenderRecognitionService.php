@@ -7,6 +7,7 @@ use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\User;
+use App\Models\WhatsAppDevice;
 use App\Support\RecognizedSender;
 
 class SenderRecognitionService
@@ -16,7 +17,10 @@ class SenderRecognitionService
      *
      * A phone number matching a user is treated as an admin, a phone number
      * matching a guest is treated as a guest (hotel resolved through their
-     * reservation), and anything else is unknown.
+     * reservation), and anything else is unknown. This is the single place
+     * that decides "who is this" for the WhatsApp flow — including whether
+     * an admin has actually completed device pairing — so callers never
+     * need a separate pairing check.
      */
     public function resolve(string $phoneNumber): RecognizedSender
     {
@@ -29,6 +33,9 @@ class SenderRecognitionService
                 type: SenderType::ADMIN,
                 sender: $user,
                 hotelId: $user->hotel?->id,
+                devicePaired: WhatsAppDevice::where('phone_number', $phoneNumber)
+                    ->where('status', 'active')
+                    ->exists(),
             );
         }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
@@ -120,4 +121,65 @@ it('rejects pairing when the user already has a paired whatsapp device', functio
         ->assertJsonPath('body', null);
 
     expect(WhatsAppDevice::count())->toBe(1);
+});
+
+it('reports an active paired device for check-paired', function () {
+    $user = User::factory()->create();
+    $hotel = Hotel::create([
+        'owner_id' => $user->id,
+        'name' => 'Demo Hotel',
+        'slug' => 'demo-hotel',
+        'currency' => 'USD',
+    ]);
+    WhatsAppDevice::create([
+        'user_id' => $user->id,
+        'phone_number' => '201151793758',
+        'hotel_id' => $hotel->id,
+        'wa_user_id' => 'EG.1586110233134033',
+        'status' => 'active',
+    ]);
+
+    $response = $this->withHeader('X-API-KEY', 'test-api-key')
+        ->getJson('/api/check-paired?phone_number=201151793758');
+
+    $response->assertStatus(200)
+        ->assertJsonPath('message', 'User has a paired WhatsApp device.')
+        ->assertJsonPath('body.paired', true)
+        ->assertJsonPath('body.device.phone_number', '201151793758');
+});
+
+it('reports a paired but inactive device for check-paired', function () {
+    $user = User::factory()->create();
+    $hotel = Hotel::create([
+        'owner_id' => $user->id,
+        'name' => 'Demo Hotel',
+        'slug' => 'demo-hotel',
+        'currency' => 'USD',
+    ]);
+    WhatsAppDevice::create([
+        'user_id' => $user->id,
+        'phone_number' => '201151793758',
+        'hotel_id' => $hotel->id,
+        'wa_user_id' => 'EG.1586110233134033',
+        'status' => 'pending',
+    ]);
+
+    $response = $this->withHeader('X-API-KEY', 'test-api-key')
+        ->getJson('/api/check-paired?phone_number=201151793758');
+
+    $response->assertStatus(202)
+        ->assertJsonPath('message', 'User has a paired WhatsApp device, but it is not active.')
+        ->assertJsonPath('body.paired', true);
+});
+
+it('reports not paired for an unpaired phone number', function () {
+    $user = User::factory()->role(UserRole::ADMIN)->create(['phone_number' => '201151793758']);
+
+    $response = $this->withHeader('X-API-KEY', 'test-api-key')
+        ->getJson('/api/check-paired?phone_number=201151793758');
+
+    $response->assertStatus(201)
+        ->assertJsonPath('message', 'User not paired.')
+        ->assertJsonPath('body.paired', false)
+        ->assertJsonPath('body.user_name', $user->name);
 });

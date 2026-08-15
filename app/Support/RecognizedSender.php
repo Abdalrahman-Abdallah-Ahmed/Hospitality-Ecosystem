@@ -13,5 +13,6 @@ final class RecognizedSender
         public readonly ?Model $sender = null,
         public readonly ?string $hotelId = null,
         public readonly ?Reservation $reservation = null,
+        public readonly bool $devicePaired = false,
     ) {}
 }
