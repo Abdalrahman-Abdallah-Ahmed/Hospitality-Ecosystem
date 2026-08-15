@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class AuthenticatedSessionController extends Controller
@@ -79,5 +80,12 @@ class AuthenticatedSessionController extends Controller
             return response($request->query('hub_challenge'), 200);
         }
         return response('Invalid verify token', 403);
+    }
+
+    public function whatsappWebhook(Request $request)
+    {
+        Log::info('WhatsApp webhook payload received.', $request->all());
+
+        return response('', 200);
     }
 }

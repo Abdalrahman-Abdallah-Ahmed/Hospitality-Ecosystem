@@ -24,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/whatsapp', [AuthenticatedSessionController::class, 'whatsappVerify']);
+Route::post('/whatsapp', [AuthenticatedSessionController::class, 'whatsappWebhook']);
 
 Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore']);
