@@ -73,9 +73,10 @@ class AuthenticatedSessionController extends Controller
 
     public function whatsappVerify(Request $request)
     {
-        if($request->query('hub.verify_token')== 'vibecoding'){
-            return apiResponse("success",200,$request->query('hub.challenge'));
+        if ($request->query('hub.mode') === 'subscribe'
+            && $request->query('hub.verify_token') === config('services.whatsapp.verify_token')) {
+            return response($request->query('hub.challenge'), 200);
         }
-        return apiResponse("fail",403,"Invalid verify token");
+        return response('Invalid verify token', 403);
     }
 }
