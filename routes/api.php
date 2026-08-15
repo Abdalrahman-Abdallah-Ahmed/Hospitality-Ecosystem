@@ -23,6 +23,8 @@ use App\Http\Controllers\WhatsAppDeviceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/whatsapp', [AuthenticatedSessionController::class, 'whatsappVerify']);
+
 Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore']);
     Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->name('login');
@@ -61,6 +63,5 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
         Route::resource('/knowledge-base-articles',KnowledgeBaseArticleController::class)->except(['edit', 'create']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
-        Route::get('/whatsapp', [AuthenticatedSessionController::class, 'whatsappVerify']);
     });
 });
