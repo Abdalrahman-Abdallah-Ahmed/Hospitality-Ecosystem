@@ -61,5 +61,6 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
         Route::resource('/knowledge-base-articles',KnowledgeBaseArticleController::class)->except(['edit', 'create']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
+        Route::get('/whatsapp', [AuthenticatedSessionController::class, 'whatsappVerify']);
     });
 });
