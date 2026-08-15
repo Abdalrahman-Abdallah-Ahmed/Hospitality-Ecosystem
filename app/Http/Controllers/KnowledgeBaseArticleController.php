@@ -34,15 +34,21 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('create', KnowledgeBaseArticle::class);
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
+        $user = $request->user();
 
-        $hotel = $request->user()->hotel;
-        if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+        if ($user->isSuperAdmin()) {
+            $hotelId = null;
+        } else {
+            $hotel = $user->hotel;
+            if (! $hotel) {
+                return apiResponse('You do not belong to any hotel.', 403);
+            }
+            $hotelId = $hotel->id;
         }
 
         $article = KnowledgeBaseArticle::create([
             ...$validated,
-            'hotel_id' => $hotel->id,
+            'hotel_id' => $hotelId,
         ]);
 
         return apiResponse('Article created successfully.', 201, $article->load(['hotel']));
@@ -66,12 +72,17 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('update', $knowledgeBaseArticle);
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
-        $hotel = $request->user()->hotel;
-        if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+        $user = $request->user();
+
+        if (! $user->isSuperAdmin()) {
+            $hotel = $user->hotel;
+            if (! $hotel) {
+                return apiResponse('You do not belong to any hotel.', 403);
+            }
+            $validated['hotel_id'] = $hotel->id;
         }
 
-        $knowledgeBaseArticle->update([...$validated, 'hotel_id' => $hotel->id]);
+        $knowledgeBaseArticle->update($validated);
         return apiResponse('Article updated successfully.', 200, $knowledgeBaseArticle->load(['hotel']));
     }
 

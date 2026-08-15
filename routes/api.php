@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ReservationChannels;
+use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
@@ -59,5 +60,6 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/users', UserController::class)->except(['edit', 'create']);
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
         Route::resource('/knowledge-base-articles',KnowledgeBaseArticleController::class)->except(['edit', 'create']);
+        Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
     });
 });

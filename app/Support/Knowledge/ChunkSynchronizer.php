@@ -20,7 +20,7 @@ class ChunkSynchronizer
      * disagree on default output size (OpenAI: 1536, Gemini: 3072) and the
      * embedding column width is fixed at migration time.
      */
-    private const DIMENSIONS = 1536;
+    public const DIMENSIONS = 1536;
 
     /**
      * @param  array<string, mixed>  $metadata
