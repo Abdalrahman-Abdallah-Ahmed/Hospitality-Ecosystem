@@ -17,11 +17,6 @@ return new class extends Migration
             $table->decimal('price', 12, 2)->default(0);
             $table->string('currency', 3)->default('USD');
             $table->boolean('is_active')->default(true);
-            $table->json('availability')->nullable();
-            $table->json('reservation_rules')->nullable();
-            $table->json('recommended_audiences')->nullable();
-            $table->string('business_priority')->nullable();
-            $table->json('ai_metadata')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

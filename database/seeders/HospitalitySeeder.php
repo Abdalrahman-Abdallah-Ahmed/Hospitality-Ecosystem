@@ -67,7 +67,7 @@ class HospitalitySeeder extends Seeder
             ['name' => 'Dinner Reservation', 'price' => 60, 'description' => 'Table reservation at rooftop restaurant.'],
         ];
 
-        foreach ($services as $index => $serviceData) {
+        foreach ($services as $serviceData) {
             Service::create([
                 'hotel_id' => $hotel->id,
                 'category_id' => $category->id,
@@ -76,20 +76,6 @@ class HospitalitySeeder extends Seeder
                 'price' => $serviceData['price'],
                 'currency' => $hotel->currency,
                 'is_active' => true,
-                'availability' => [
-                    'days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
-                    'time_window' => '09:00-22:00',
-                ],
-                'reservation_rules' => [
-                    'advance_hours' => 24,
-                    'requires_confirmation' => true,
-                ],
-                'recommended_audiences' => ['couples', 'families', 'business'],
-                'business_priority' => $index < 3 ? 'high' : 'medium',
-                'ai_metadata' => [
-                    'tagline' => $serviceData['name'],
-                    'suggestion_reason' => 'Popular guest demand',
-                ],
             ]);
         }
     }

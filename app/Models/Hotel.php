@@ -90,11 +90,6 @@ class Hotel extends Model
         return $this->hasMany(Service::class);
     }
 
-    public function promotions(): HasMany
-    {
-        return $this->hasMany(Promotion::class);
-    }
-
     public function policies(): HasMany
     {
         return $this->hasMany(HotelPolicy::class);

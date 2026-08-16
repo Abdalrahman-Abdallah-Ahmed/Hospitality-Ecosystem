@@ -15,6 +15,8 @@ class ServiceController extends Controller
      */
     public function index(GenericIndexRequest $request)
     {
+        $this->authorize('viewAny', Service::class);
+
         $services = GenericQuery::apply(
             Service::where('hotel_id', $request->user()->hotel?->id),
             $request
@@ -28,13 +30,24 @@ class ServiceController extends Controller
      */
     public function store(GenericStoreRequest $request)
     {
-        $validated = $request->validated();
+        $this->authorize('create', Service::class);
 
-        if ($validated['hotel_id'] !== $request->user()->hotel?->id) {
-            return apiResponse('The selected hotel does not belong to you.', 403);
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+
+        $hotel = $request->user()->hotel;
+        if (! $hotel) {
+            return apiResponse('You do not belong to any hotel.', 403);
         }
 
-        $service = Service::create($validated);
+        $invalidRelation = invalidRelation($hotel, [
+            'serviceCategories' => $validated['category_id'] ?? null,
+        ]);
+
+        if ($invalidRelation) {
+            return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
+        }
+
+        $service = Service::create([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Service created successfully.', 201, $service);
     }
@@ -44,9 +57,7 @@ class ServiceController extends Controller
      */
     public function show(Service $service)
     {
-        if ($service->hotel_id !== request()->user()->hotel?->id) {
-            return apiResponse('You do not have access to this service.', 403);
-        }
+        $this->authorize('view', $service);
 
         return apiResponse('Service fetched successfully.', 200, $service);
     }
@@ -56,11 +67,24 @@ class ServiceController extends Controller
      */
     public function update(GenericUpdateRequest $request, Service $service)
     {
-        if ($service->hotel_id !== $request->user()->hotel?->id) {
-            return apiResponse('You do not have access to this service.', 403);
+        $this->authorize('update', $service);
+
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+
+        $hotel = $request->user()->hotel;
+        if (! $hotel) {
+            return apiResponse('You do not belong to any hotel.', 403);
         }
 
-        $service->update($request->validated());
+        $invalidRelation = invalidRelation($hotel, [
+            'serviceCategories' => $validated['category_id'] ?? null,
+        ]);
+
+        if ($invalidRelation) {
+            return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
+        }
+
+        $service->update([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Service updated successfully.', 200, $service);
     }
@@ -70,9 +94,7 @@ class ServiceController extends Controller
      */
     public function destroy(Service $service)
     {
-        if ($service->hotel_id !== request()->user()->hotel?->id) {
-            return apiResponse('You do not have access to this service.', 403);
-        }
+        $this->authorize('delete', $service);
 
         $service->delete();
 

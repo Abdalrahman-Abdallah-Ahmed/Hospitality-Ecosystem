@@ -168,46 +168,31 @@ Creates a hotel service for the authenticated user's hotel.
 
 ### Important Backend Behavior
 
-- `hotel_id` must match the logged-in user's hotel id.
-- If `hotel_id` belongs to another hotel, the API returns `403`.
-- There is no service-specific policy class here; the controller enforces hotel ownership directly.
+- `hotel_id` is always forced to the logged-in user's hotel, regardless of what's sent in the request body.
+- `category_id`, if sent, must belong to the caller's own hotel or the API returns `403`.
+- Authorization is enforced via `ServicePolicy` (admin-only for view/create/update/delete).
 
 ### Request Body
 
 ```json
 {
-  "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
   "category_id": "019fabcd-1234-7000-9000-123456789abc",
   "name": "Airport Pickup",
   "description": "Private airport transfer for guests.",
   "price": 35.5,
   "currency": "USD",
-  "is_active": true,
-  "availability": {
-    "days": ["mon", "tue", "wed"]
-  },
-  "reservation_rules": {
-    "lead_time_hours": 3
-  },
-  "recommended_audiences": ["families", "business_travelers"],
-  "business_priority": "high",
-  "ai_metadata": {
-    "upsell_score": 90
-  }
+  "is_active": true
 }
 ```
 
 ### Field Notes
 
-- `hotel_id` is required and must exist.
-- `category_id` is optional, but if sent it must exist in `service_categories.id`.
+- `category_id` is optional, but if sent it must belong to the caller's hotel.
 - `name` is required.
 - `description` is optional text.
 - `price` is numeric and defaults to `0`.
 - `currency` is a 3-character string and defaults to `USD`.
 - `is_active` is boolean and defaults to `true`.
-- `availability`, `reservation_rules`, `recommended_audiences`, and `ai_metadata` are JSON fields.
-- `business_priority` is optional text.
 
 ### Frontend Recommendations
 
@@ -407,3 +392,4 @@ For the frontend create modules, this setup will map well to the backend:
 - [Guest API Documentation](/D:/Hospitality%20Ecosystem/docs/guest-api-documentation.md)
 - [Reservations API Documentation](/D:/Hospitality%20Ecosystem/docs/reservations-api-documentation.md)
 - [Room API Documentation](/D:/Hospitality%20Ecosystem/docs/room-api-documentation.md)
+- [Service API Documentation](/D:/Hospitality%20Ecosystem/docs/service-api-documentation.md)

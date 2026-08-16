@@ -6,7 +6,6 @@ use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -26,20 +25,11 @@ class Service extends Model
         'price',
         'currency',
         'is_active',
-        'availability',
-        'reservation_rules',
-        'recommended_audiences',
-        'business_priority',
-        'ai_metadata',
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
         'is_active' => 'boolean',
-        'availability' => 'array',
-        'reservation_rules' => 'array',
-        'recommended_audiences' => 'array',
-        'ai_metadata' => 'array',
     ];
 
     public function hotel(): BelongsTo
@@ -50,11 +40,6 @@ class Service extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ServiceCategory::class, 'category_id');
-    }
-
-    public function promotions(): BelongsToMany
-    {
-        return $this->belongsToMany(Promotion::class);
     }
 
     public function recommendations(): HasMany

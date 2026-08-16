@@ -166,7 +166,7 @@ it('rejects a hotel update for a non-owner', function () {
     $response->assertStatus(403);
 });
 
-it('creates a service for the caller hotel with json/decimal columns validated generically', function () {
+it('creates a service for the caller hotel with decimal columns validated generically', function () {
     $owner = User::factory()->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
@@ -176,12 +176,11 @@ it('creates a service for the caller hotel with json/decimal columns validated g
         'name' => 'Spa Day',
         'price' => 120.5,
         'is_active' => true,
-        'availability' => ['mon', 'tue'],
     ]);
 
     $response->assertStatus(201)
         ->assertJsonPath('body.name', 'Spa Day')
-        ->assertJsonPath('body.availability', ['mon', 'tue']);
+        ->assertJsonPath('body.price', '120.50');
 });
 
 it('rejects a service for a hotel the caller does not own', function () {
