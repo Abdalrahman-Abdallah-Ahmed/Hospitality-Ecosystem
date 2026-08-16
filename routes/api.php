@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActivityCategoryController;
 use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
@@ -40,6 +41,7 @@ Route::middleware('api.key')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
+        Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
         Route::resource('/hotel',HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);

@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Activity;
-use App\Models\ActivityCategory;
 use App\Models\Hotel;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -47,12 +46,8 @@ class HospitalitySeeder extends Seeder
             "hotel_id" => $hotel->id,
         ]);
 
-        $category = ActivityCategory::create([
-            'hotel_id' => $hotel->id,
-            'name' => 'Wellness',
-            'slug' => 'wellness',
-            'description' => 'Spa and wellness experiences.',
-        ]);
+        $categories = (new ActivityCategorySeeder())->seedFor($hotel);
+        $category = $categories->firstWhere('slug', 'wellness-spa');
 
         $activities = [
             ['name' => 'Spa Treatment', 'price' => 120, 'description' => 'Relaxing 60-minute massage.'],

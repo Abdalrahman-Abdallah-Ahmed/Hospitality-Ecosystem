@@ -201,6 +201,40 @@ it('rejects an activity whose category belongs to a different hotel', function (
     $response->assertStatus(403);
 });
 
+it('creates an activity category for the caller hotel', function () {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
+
+    $response = asUser($owner)->postJson('/api/activity-category', [
+        'hotel_id' => $hotel->id,
+        'name' => 'Wellness',
+        'slug' => 'wellness',
+    ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('body.name', 'Wellness')
+        ->assertJsonPath('body.hotel_id', $hotel->id);
+});
+
+it('ignores hotel_id on activity category update and keeps its own hotel', function () {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
+
+    $category = ActivityCategory::create(['hotel_id' => $hotel->id, 'name' => 'Wellness']);
+    $otherHotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
+
+    $response = asUser($owner)->putJson("/api/activity-category/{$category->id}", [
+        'hotel_id' => $otherHotel->id,
+        'name' => 'Wellness & Spa',
+    ]);
+
+    $response->assertStatus(200)
+        ->assertJsonPath('body.name', 'Wellness & Spa')
+        ->assertJsonPath('body.hotel_id', $hotel->id);
+});
+
 it('builds reservation update rules that accept a valid enum status and ignore the record itself for uniqueness', function () {
     $hotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);

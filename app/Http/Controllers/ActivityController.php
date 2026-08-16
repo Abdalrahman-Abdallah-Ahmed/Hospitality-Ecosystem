@@ -18,7 +18,7 @@ class ActivityController extends Controller
         $this->authorize('viewAny', Activity::class);
 
         $activities = GenericQuery::apply(
-            Activity::where('hotel_id', $request->user()->hotel?->id),
+            Activity::where('hotel_id', $request->user()->hotel?->id)->with('category'),
             $request
         );
 
@@ -49,7 +49,7 @@ class ActivityController extends Controller
 
         $activity = Activity::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Activity created successfully.', 201, $activity);
+        return apiResponse('Activity created successfully.', 201, $activity->load('category'));
     }
 
     /**
@@ -59,7 +59,7 @@ class ActivityController extends Controller
     {
         $this->authorize('view', $activity);
 
-        return apiResponse('Activity fetched successfully.', 200, $activity);
+        return apiResponse('Activity fetched successfully.', 200, $activity->load('category'));
     }
 
     /**
@@ -86,7 +86,7 @@ class ActivityController extends Controller
 
         $activity->update([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Activity updated successfully.', 200, $activity);
+        return apiResponse('Activity updated successfully.', 200, $activity->load('category'));
     }
 
     /**

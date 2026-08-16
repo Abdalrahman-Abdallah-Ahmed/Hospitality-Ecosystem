@@ -1,0 +1,354 @@
+{
+  "info": {
+    "_postman_id": "c7a4e8d2-1f3b-4a9c-8e5d-2b6f9a0d4c17",
+    "name": "Hospitality Ecosystem - Activity API",
+    "description": "Activity Category and Activity endpoints (App\\Http\\Controllers\\ActivityCategoryController, ActivityController).\n\n## How to run this\n\n1. Set the `base_url` and `api_key` collection variables (see Variables tab).\n2. Run **Auth > Register Admin + Hotel**, then **Auth > Login** — these set `token` and `hotel_id` for every other request automatically via test scripts.\n3. Run the **Activity Category** folder: Create Activity Category sets `activity_category_id` automatically.\n4. Run the **Activity** folder: Create Activity sets `activity_id` automatically, using `activity_category_id` from step 3.\n\nEvery request needs `X-API-KEY` and (except Register/Login) `Authorization: Bearer {{token}}` — both are pre-filled on every request in this collection from collection variables.\n\nNotes:\n- `hotel_id` is not accepted from the request body on create/update for either resource — it is always taken from the authenticated user's own hotel (Activity) or left unchanged (Activity Category on update).\n- Activity's `category_id` is optional but, if sent, must reference an activity category belonging to the caller's own hotel, or the request returns 403.\n- Activity `price` defaults to 0, `currency` defaults to `USD` (3-char code), `is_active` defaults to true — all three are optional on create.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000/api", "type": "string" },
+    { "key": "api_key", "value": "", "type": "string" },
+    { "key": "admin_email", "value": "", "type": "string" },
+    { "key": "admin_password", "value": "Password123!", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "hotel_id", "value": "", "type": "string" },
+    { "key": "activity_category_id", "value": "", "type": "string" },
+    { "key": "activity_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Not part of the Activity APIs themselves, but every request below needs a bearer token from these two calls first.",
+      "item": [
+        {
+          "name": "Register Admin + Hotel",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('admin_email', 'admin.' + Date.now() + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body && json.body.hotel) {",
+                  "    pm.collectionVariables.set('hotel_id', json.body.hotel.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Grand Harbor Admin\",\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\",\n  \"password_confirmation\": \"{{admin_password}}\",\n  \"hotel\": {\n    \"name\": \"Grand Harbor Hotel\",\n    \"city\": \"Cairo\",\n    \"country_code\": \"EG\",\n    \"currency\": \"USD\",\n    \"timezone\": \"UTC\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": ["{{base_url}}"],
+              "path": ["register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body) {",
+                  "    if (json.body.token) pm.collectionVariables.set('token', json.body.token);",
+                  "    if (json.body.user && json.body.user.hotel && json.body.user.hotel.id) {",
+                  "        pm.collectionVariables.set('hotel_id', json.body.user.hotel.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Activity Category",
+      "item": [
+        {
+          "name": "List Activity Categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/activity-category?per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["activity-category"],
+              "query": [{ "key": "per_page", "value": "15" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Activity Category",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body && json.body.id) {",
+                  "    pm.collectionVariables.set('activity_category_id', json.body.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Spa & Wellness\",\n  \"slug\": \"spa-and-wellness\",\n  \"description\": \"Massages, saunas, and wellness treatments\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/activity-category",
+              "host": ["{{base_url}}"],
+              "path": ["activity-category"]
+            },
+            "description": "`hotel_id` is not accepted from the body — always set to the caller's own hotel. `slug` and `description` are optional."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Activity Category",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/activity-category/{{activity_category_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["activity-category", "{{activity_category_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Activity Category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Spa & Wellness (Updated)\",\n  \"description\": \"Massages, saunas, wellness treatments, and yoga classes\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/activity-category/{{activity_category_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["activity-category", "{{activity_category_id}}"]
+            },
+            "description": "Sending `hotel_id` here is silently ignored — a category can never be reassigned to a different hotel through this endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Activity Category",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/activity-category/{{activity_category_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["activity-category", "{{activity_category_id}}"]
+            },
+            "description": "Hard delete (ActivityCategory has no soft deletes). Any activity referencing this category has category_id nulled automatically."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Activity",
+      "item": [
+        {
+          "name": "List Activities",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/activity?per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["activity"],
+              "query": [{ "key": "per_page", "value": "15" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Activity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.body && json.body.id) {",
+                  "    pm.collectionVariables.set('activity_id', json.body.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": \"{{activity_category_id}}\",\n  \"name\": \"Sunset Yoga Session\",\n  \"description\": \"60-minute guided yoga session on the beach at sunset\",\n  \"price\": 25.00,\n  \"currency\": \"USD\",\n  \"is_active\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/activity",
+              "host": ["{{base_url}}"],
+              "path": ["activity"]
+            },
+            "description": "`hotel_id` is not accepted from the body — always set to the caller's own hotel. `category_id` is optional but, if sent, must belong to the caller's own hotel (403 otherwise). `price` (default 0), `currency` (default USD), and `is_active` (default true) are all optional."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Activity",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/activity/{{activity_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["activity", "{{activity_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Activity",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 30.00,\n  \"is_active\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/activity/{{activity_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["activity", "{{activity_id}}"]
+            },
+            "description": "Sending `hotel_id` here is silently ignored — an activity can never be reassigned to a different hotel through this endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Activity",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/activity/{{activity_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["activity", "{{activity_id}}"]
+            },
+            "description": "Soft delete — sets deleted_at, does not remove the row."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # Activity API Documentation
 
-This document describes the hotel **activity** management API — the admin-facing CRUD endpoints (`index`, `store`, `show`, `update`, `destroy`) defined by `App\Http\Controllers\ActivityController`, gated by `App\Policies\ActivityPolicy`.
+This document describes the hotel **activity** and **activity category** management APIs — the admin-facing CRUD endpoints (`index`, `store`, `show`, `update`, `destroy`) defined by `App\Http\Controllers\ActivityController` / `App\Policies\ActivityPolicy` and `App\Http\Controllers\ActivityCategoryController` / `App\Policies\ActivityCategoryPolicy`.
 
-An activity is something a hotel sells to guests beyond the room itself (spa treatment, airport transfer, breakfast buffet, etc.), optionally grouped under an `ActivityCategory`.
+An activity is something a hotel sells to guests beyond the room itself (spa treatment, airport transfer, breakfast buffet, etc.), optionally grouped under an activity category (e.g. "Wellness", "Transport"). Build the category picker first — an activity's `category_id` references it — but categories aren't required; an activity can exist with none.
 
 ## Base URL
 
@@ -12,11 +12,8 @@ All endpoints below are defined in `routes/api.php`, served under:
 
 Examples:
 
-- `GET /api/activity`
-- `POST /api/activity`
-- `GET /api/activity/{id}`
-- `PUT /api/activity/{id}`
-- `DELETE /api/activity/{id}`
+- `GET /api/activity`, `POST /api/activity`, `GET /api/activity/{id}`, `PUT /api/activity/{id}`, `DELETE /api/activity/{id}`
+- `GET /api/activity-category`, `POST /api/activity-category`, `GET /api/activity-category/{id}`, `PUT /api/activity-category/{id}`, `DELETE /api/activity-category/{id}`
 
 ## Required Headers
 
@@ -35,19 +32,20 @@ Content-Type: application/json
 
 ## Who Can Call These Endpoints
 
-Every action is gated by `App\Policies\ActivityPolicy`, on top of the bearer-token check above. Its `before()` hook lets `super_admin` bypass every rule below unconditionally — but see [Super Admin Caveats](#super-admin-caveats), because two of these endpoints have a separate hotel check that isn't bypassed.
+Both resources follow the same shape: `App\Policies\ActivityPolicy` / `App\Policies\ActivityCategoryPolicy`, each with a `before()` hook that lets `super_admin` bypass every rule below unconditionally — but see [Super Admin Caveats](#super-admin-caveats), because several of these endpoints have a separate hotel check that isn't bypassed.
 
-| Action | Rule (non-super-admin) |
-| --- | --- |
-| `index` (list) | `role` must be `admin`. |
-| `store` (create) | `role` must be `admin`. |
-| `show` / `update` / `destroy` | `role` must be `admin`, **and** the activity's `hotel_id` must equal the caller's own hotel. |
+| Resource | Action | Rule (non-super-admin) |
+| --- | --- | --- |
+| Activity | `index`, `store` | `role` must be `admin`. |
+| Activity | `show`, `update`, `destroy` | `role` must be `admin`, **and** the activity's `hotel_id` must equal the caller's own hotel. |
+| Activity Category | `index`, `store` | `role` must be `admin`. |
+| Activity Category | `show`, `update`, `destroy` | `role` must be `admin`, **and** the category's `hotel_id` must equal the caller's own hotel. |
 
 Practical implications for the UI:
 
-- A non-admin user (`employee`) should never reach this screen — treat any `403` here as "this user shouldn't be able to see this page," not a recoverable in-page error.
-- A `403` on `show`/`update`/`destroy` for a specific activity id most likely means the id belongs to a different hotel (e.g. a stale link/bookmark) — show a "not found or not yours" style message rather than a raw permission error.
-- `index`'s query is separately scoped to `where('hotel_id', <the user's hotel>)`, so the list only ever contains activities for the user's own hotel.
+- A non-admin user (`employee`) should never reach either screen — treat any `403` here as "this user shouldn't be able to see this page," not a recoverable in-page error.
+- A `403` on `show`/`update`/`destroy` for a specific id most likely means the id belongs to a different hotel (e.g. a stale link/bookmark) — show a "not found or not yours" style message rather than a raw permission error.
+- Both `index` queries are separately scoped to `where('hotel_id', <the user's hotel>)`, so the list only ever contains rows for the user's own hotel.
 
 ## Response Format
 
@@ -69,13 +67,13 @@ Successful custom API responses use this structure:
 
 ## The Activity Object
 
-Every endpoint that returns an activity returns it in this shape — **no relations are eager-loaded** (you get raw `hotel_id`/`category_id`, not embedded `hotel`/`category` objects):
+Every endpoint that returns an activity (`index`, `store`, `show`, `update`) eager-loads and embeds its **`category`** — you don't need a separate lookup to show the category name on an activity row/detail view. No other relation (e.g. `hotel`) is eager-loaded:
 
 ```json
 {
   "id": "019fc000-4444-7000-9000-abcdef123456",
   "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
-  "category_id": null,
+  "category_id": "019fabcd-1234-7000-9000-123456789abc",
   "name": "Airport Pickup",
   "description": "Private airport transfer for guests.",
   "price": "35.50",
@@ -83,7 +81,16 @@ Every endpoint that returns an activity returns it in this shape — **no relati
   "is_active": true,
   "created_at": "2026-08-01T10:00:00.000000Z",
   "updated_at": "2026-08-01T10:00:00.000000Z",
-  "deleted_at": null
+  "deleted_at": null,
+  "category": {
+    "id": "019fabcd-1234-7000-9000-123456789abc",
+    "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+    "name": "Wellness & Spa",
+    "slug": "wellness-spa",
+    "description": "Massages, spa treatments, and relaxation sessions.",
+    "created_at": "2026-08-01T10:00:00.000000Z",
+    "updated_at": "2026-08-01T10:00:00.000000Z"
+  }
 }
 ```
 
@@ -93,8 +100,7 @@ Field notes for the UI:
 - `price` is cast as `decimal:2` — it comes back as a **string** (e.g. `"35.50"`), not a JSON number. Parse it before doing math on it.
 - `currency` is a free-text 3-character string, not a restricted enum server-side — the frontend should constrain it to real currency codes.
 - **Activities use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row (unlike rooms, which hard-delete). A deleted activity simply stops showing up in `index`/`show`.
-- `category_id` is nullable — an activity can exist with no category.
-- **There is currently no API endpoint to list or create `ActivityCategory` rows** (`App\Models\ActivityCategory` exists and `category_id` validates against it, but no controller/route exposes it). Until that's added, a category picker can't be populated from the API — either omit `category_id` from the create/edit form entirely, or coordinate with the backend team on how categories should be seeded/managed in the meantime.
+- `category_id` is nullable — an activity can exist with no category, in which case **`category` comes back as `null`**, not an object. Always null-check `activity.category` before reading `activity.category.name`. Populate the category picker itself from [`GET /api/activity-category`](#activity-category-api) (this embedded object is read-only convenience, not a substitute for the picker list).
 
 ## 1. List Activities
 
@@ -327,19 +333,90 @@ HTTP `200 OK`:
 
 Same as [show](#3-get-a-single-activity): `404` if the id doesn't exist, `403` if it belongs to a different hotel or the caller isn't `admin`.
 
+---
+
+## Activity Category API
+
+Endpoints defined by `App\Http\Controllers\ActivityCategoryController`, gated by `App\Policies\ActivityCategoryPolicy`.
+
+### The Activity Category Object
+
+**No relations are eager-loaded** — same convention as the activity object:
+
+```json
+{
+  "id": "019fabcd-1234-7000-9000-123456789abc",
+  "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+  "name": "Wellness",
+  "slug": "wellness",
+  "description": "Spa and wellness experiences.",
+  "created_at": "2026-08-01T10:00:00.000000Z",
+  "updated_at": "2026-08-01T10:00:00.000000Z"
+}
+```
+
+- `slug` and `description` are both nullable free text — no uniqueness constraint on `slug`, and it isn't auto-generated from `name` server-side, so generate/validate it client-side if your UI needs one.
+- **No `SoftDeletes`** — `DELETE` is a hard delete, unlike Activity. Deleting a category that activities still reference does **not** cascade-delete those activities: `activities.category_id` uses `nullOnDelete()`, so they're left with `category_id: null` instead of erroring. Warn the user before deleting a category that's still in use, if your product cares about that.
+
+### C.1 List Activity Categories — `GET /api/activity-category`
+
+Same generic `filter`/`search`/`sort`/`page`/`per_page` params as everywhere else in this API. Filterable/sortable columns: `id`, `hotel_id`, `name`, `slug`, `description`, `created_at`, `updated_at`. Searchable (string/text) columns: `name`, `slug`, `description`.
+
+Success: `200`, `body` is a paginator (same shape as [List Activities](#success-response)) whose `data` is an array of [activity category objects](#the-activity-category-object).
+
+### C.2 Create an Activity Category — `POST /api/activity-category`
+
+```json
+{
+  "hotel_id": "any-valid-hotel-uuid",
+  "name": "Wellness",
+  "slug": "wellness",
+  "description": "Spa and wellness experiences."
+}
+```
+
+| Field | Rules |
+| --- | --- |
+| `hotel_id` | **Required by validation** (`exists:hotels,id`) but **always ignored** — overwritten server-side with the caller's own hotel, exactly like Activity. Send *some* valid hotel id (simplest: the caller's own) or you'll get a `422` for a missing field. |
+| `name` | required, string, max 255. No uniqueness constraint — two categories in the same hotel can share a name. |
+| `slug` | optional, string, max 255. |
+| `description` | optional, string. |
+
+**No associated hotel:** if the caller has no hotel, you get the custom wrapper: `{"message": "You do not belong to any hotel.", "code": 403, "body": null}`.
+
+Success: `201`, `body` is the created [activity category object](#the-activity-category-object).
+
+### C.3 Get a Single Activity Category — `GET /api/activity-category/{id}`
+
+Success: `200`, `body` is the [activity category object](#the-activity-category-object). `404` if the id doesn't exist; `403` (Laravel default, treat as not-found) if it belongs to a different hotel or the caller isn't `admin`.
+
+### C.4 Update an Activity Category — `PUT /api/activity-category/{id}`
+
+Same fields as create, all optional (partial update). **`hotel_id` in the payload is silently ignored** — the record keeps its own existing `hotel_id`; you cannot move a category to a different hotel through this endpoint.
+
+Success: `200`, `body` is the updated [activity category object](#the-activity-category-object).
+
+### C.5 Delete an Activity Category — `DELETE /api/activity-category/{id}`
+
+Hard delete. Activities referencing this category have `category_id` set to `NULL` automatically (see [above](#the-activity-category-object)).
+
+Success: `200`, `body: null`.
+
+---
+
 ## Super Admin Caveats
 
-`ActivityPolicy::before()` lets a `super_admin` pass every *authorization* check unconditionally. But `index` and `store` separately gate on `$request->user()->hotel` for their own business logic — and a super admin typically has no owned hotel. The two checks don't agree, so behavior is inconsistent per endpoint:
+Both policies' `before()` hooks let a `super_admin` pass every *authorization* check unconditionally. But `index` and `store` on **both** controllers separately gate on `$request->user()->hotel` for their own business logic — and a super admin typically has no owned hotel. The two checks don't agree, so behavior is inconsistent per endpoint:
 
 | Endpoint | Super admin can actually use it? |
 | --- | --- |
-| `GET /api/activity` (list) | **No** — the query is hardcoded to `where('hotel_id', <caller's hotel>)`, which is `null` for a super admin, so this returns an **empty list**, not "everything." |
-| `POST /api/activity` | **No** — blocked by the "You do not belong to any hotel." check before the insert. |
-| `GET /api/activity/{id}` | **Yes** — only the (bypassed) policy gates this; a super admin can view any hotel's activity by id. |
-| `PUT /api/activity/{id}` | **Yes** — same reasoning; no hotel check beyond the bypassed policy. |
-| `DELETE /api/activity/{id}` | **Yes** — same reasoning. |
+| `GET /api/activity`, `GET /api/activity-category` (list) | **No** — the query is hardcoded to `where('hotel_id', <caller's hotel>)`, which is `null` for a super admin, so this returns an **empty list**, not "everything." |
+| `POST /api/activity`, `POST /api/activity-category` | **No** — blocked by the "You do not belong to any hotel." check before the insert. |
+| `GET /api/activity/{id}`, `GET /api/activity-category/{id}` | **Yes** — only the (bypassed) policy gates this; a super admin can view any hotel's row by id. |
+| `PUT /api/activity/{id}`, `PUT /api/activity-category/{id}` | **Yes** — same reasoning; no hotel check beyond the bypassed policy. |
+| `DELETE /api/activity/{id}`, `DELETE /api/activity-category/{id}` | **Yes** — same reasoning. |
 
-If a super-admin "manage everything across all hotels" screen is in scope for activities, flag this gap to the backend team — as of this writing a super admin can view/edit/delete an individual activity by id but cannot list or create one.
+If a super-admin "manage everything across all hotels" screen is in scope, flag this gap to the backend team — as of this writing a super admin can view/edit/delete an individual activity or category by id but cannot list or create either.
 
 ## Error Shapes
 
@@ -349,7 +426,7 @@ If a super-admin "manage everything across all hotels" screen is in scope for ac
 | No associated hotel | `403` | Custom wrapper: `{"message": "You do not belong to any hotel.", "code": 403, "body": null}` |
 | Category belongs to a different hotel | `403` | Custom wrapper: `{"message": "The selected activityCategories does not belong to you.", "code": 403, "body": null}` |
 | Wrong role, or record belongs to a different hotel (authorization failure) | `403` | Laravel default: `{"message": "This action is unauthorized."}` |
-| Unknown id | `404` | Laravel default: `{"message": "No query results for model [App\\Models\\Activity] {id}"}` |
+| Unknown id | `404` | Laravel default: `{"message": "No query results for model [App\\Models\\{Activity|ActivityCategory}] {id}"}` |
 | Unknown `filter`/`sort` column | `422` | Laravel default, same shape as field validation |
 
 Always check for an `errors` key to distinguish Laravel's native validation shape from this API's custom `message/code/body` wrapper — both can appear with `422`.
@@ -403,18 +480,35 @@ curl -X DELETE http://your-domain.com/api/activity/019fc000-4444-7000-9000-abcde
   -H "Authorization: Bearer USER_LOGIN_TOKEN"
 ```
 
+### Create an Activity Category
+
+```bash
+curl -X POST http://your-domain.com/api/activity-category \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Authorization: Bearer USER_LOGIN_TOKEN" \
+  -d '{
+    "hotel_id": "YOUR_HOTEL_ID",
+    "name": "Wellness",
+    "slug": "wellness",
+    "description": "Spa and wellness experiences."
+  }'
+```
+
 ## Summary for the Frontend
 
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - `hotel_id` is required in the create request body (send the caller's own hotel id) but is **always overwritten server-side** on both create and update — you can never create or move an activity into a different hotel through this endpoint.
 - List with `GET /api/activity`, filter with `filter[column]=value`, free-text search with `search=` (matches `name`/`description`/`currency` only), sort with `sort=column` / `sort=-column`, paginate with `page`/`per_page`.
-- The activity object has **no** eager-loaded relations — `category_id` is a raw id, not an embedded object. There is currently **no API to list `ActivityCategory` rows**, so a category picker can't be built from this API yet; omit `category_id` from the form until that's addressed.
+- Every activity response embeds its `category` object (`null` if it has none) — no separate lookup needed to show the category name. Build the category *picker* itself from [`GET /api/activity-category`](#activity-category-api).
 - `price` comes back as a **string** (`"35.50"`), not a number, due to the `decimal:2` cast — parse before doing math.
 - `currency` is free-text server-side — enforce a real currency-code list client-side.
 - Deleting an activity is a **soft delete** (`deleted_at`); it simply disappears from list/show results.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours" (or you're not an admin).
 - A cross-hotel `category_id` error names the relation (`"activityCategories"`), not the field — show it as a form-level error, not tied to one input.
 - A `super_admin` can view/edit/delete an individual activity by id, but currently **cannot** list or create activities (see [Super Admin Caveats](#super-admin-caveats)) — don't build a super-admin activity console assuming full parity with a regular admin yet.
+- Activity categories are a separate, simpler resource at `/api/activity-category` — no `SoftDeletes` (hard delete), no cross-hotel FK to validate beyond `hotel_id` itself, and `hotel_id` on update is silently ignored (kept as the record's existing value) rather than re-forced to the caller's hotel. Same super-admin list/create gap applies to it too.
 
 ## Related Docs
 
