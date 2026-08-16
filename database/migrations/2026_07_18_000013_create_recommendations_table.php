@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('conversation_id');
             $table->foreign('conversation_id')->references('id')->on('conversations')->cascadeOnDelete();
             $table->foreignUuid('reservation_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignUuid('service_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('activity_id')->constrained()->cascadeOnDelete();
             $table->text('reason')->nullable();
             $table->decimal('confidence', 5, 2)->default(0);
             $table->unsignedInteger('priority')->default(0);

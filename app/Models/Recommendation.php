@@ -20,7 +20,7 @@ class Recommendation extends Model
     protected $fillable = [
         'conversation_id',
         'reservation_id',
-        'service_id',
+        'activity_id',
         'reason',
         'confidence',
         'priority',
@@ -51,9 +51,9 @@ class Recommendation extends Model
         return $this->belongsTo(Reservation::class);
     }
 
-    public function service(): BelongsTo
+    public function activity(): BelongsTo
     {
-        return $this->belongsTo(Service::class);
+        return $this->belongsTo(Activity::class);
     }
 
     public function outcomes(): HasMany

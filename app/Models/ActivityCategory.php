@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class ServiceCategory extends Model
+class ActivityCategory extends Model
 {
     use Filterable, HasUuids;
 
@@ -28,8 +28,8 @@ class ServiceCategory extends Model
         return $this->belongsTo(Hotel::class);
     }
 
-    public function services(): HasMany
+    public function activities(): HasMany
     {
-        return $this->hasMany(Service::class, 'category_id');
+        return $this->hasMany(Activity::class, 'category_id');
     }
 }

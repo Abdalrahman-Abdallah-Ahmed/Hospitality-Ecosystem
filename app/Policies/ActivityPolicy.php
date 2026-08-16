@@ -2,10 +2,10 @@
 
 namespace App\Policies;
 
-use App\Models\Service;
+use App\Models\Activity;
 use App\Models\User;
 
-class ServicePolicy
+class ActivityPolicy
 {
     /**
      * Super admins bypass every ability below.
@@ -26,9 +26,9 @@ class ServicePolicy
     /**
      * Determine whether the user can view the model.
      */
-    public function view(User $user, Service $service): bool
+    public function view(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $service->hotel_id === $user->hotel?->id;
+        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
     }
 
     /**
@@ -42,23 +42,23 @@ class ServicePolicy
     /**
      * Determine whether the user can update the model.
      */
-    public function update(User $user, Service $service): bool
+    public function update(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $service->hotel_id === $user->hotel?->id;
+        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
     }
 
     /**
      * Determine whether the user can delete the model.
      */
-    public function delete(User $user, Service $service): bool
+    public function delete(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $service->hotel_id === $user->hotel?->id;
+        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
     }
 
     /**
      * Determine whether the user can restore the model.
      */
-    public function restore(User $user, Service $service): bool
+    public function restore(User $user, Activity $activity): bool
     {
         return false;
     }
@@ -66,7 +66,7 @@ class ServicePolicy
     /**
      * Determine whether the user can permanently delete the model.
      */
-    public function forceDelete(User $user, Service $service): bool
+    public function forceDelete(User $user, Activity $activity): bool
     {
         return false;
     }

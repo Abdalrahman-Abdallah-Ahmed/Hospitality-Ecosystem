@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -11,7 +12,6 @@ use App\Http\Controllers\HotelPolicyController;
 use App\Http\Controllers\KnowledgeBaseArticleController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
-use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TaskCategoryController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TeamController;
@@ -39,7 +39,7 @@ Route::middleware('api.key')->group(function () {
         Route::post('/connect', [WhatsAppController::class, 'connect']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
-        Route::resource('/service', ServiceController::class)->except(['edit', 'create']);
+        Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
         Route::resource('/hotel',HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);

@@ -5,24 +5,24 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
-use App\Models\Service;
+use App\Models\Activity;
 use App\Support\RequestRules\GenericQuery;
 
-class ServiceController extends Controller
+class ActivityController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
     public function index(GenericIndexRequest $request)
     {
-        $this->authorize('viewAny', Service::class);
+        $this->authorize('viewAny', Activity::class);
 
-        $services = GenericQuery::apply(
-            Service::where('hotel_id', $request->user()->hotel?->id),
+        $activities = GenericQuery::apply(
+            Activity::where('hotel_id', $request->user()->hotel?->id),
             $request
         );
 
-        return apiResponse('Services fetched successfully.', 200, $services);
+        return apiResponse('Activities fetched successfully.', 200, $activities);
     }
 
     /**
@@ -30,7 +30,7 @@ class ServiceController extends Controller
      */
     public function store(GenericStoreRequest $request)
     {
-        $this->authorize('create', Service::class);
+        $this->authorize('create', Activity::class);
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
@@ -40,34 +40,34 @@ class ServiceController extends Controller
         }
 
         $invalidRelation = invalidRelation($hotel, [
-            'serviceCategories' => $validated['category_id'] ?? null,
+            'activityCategories' => $validated['category_id'] ?? null,
         ]);
 
         if ($invalidRelation) {
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
         }
 
-        $service = Service::create([...$validated, 'hotel_id' => $hotel->id]);
+        $activity = Activity::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Service created successfully.', 201, $service);
+        return apiResponse('Activity created successfully.', 201, $activity);
     }
 
     /**
      * Display the specified resource.
      */
-    public function show(Service $service)
+    public function show(Activity $activity)
     {
-        $this->authorize('view', $service);
+        $this->authorize('view', $activity);
 
-        return apiResponse('Service fetched successfully.', 200, $service);
+        return apiResponse('Activity fetched successfully.', 200, $activity);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(GenericUpdateRequest $request, Service $service)
+    public function update(GenericUpdateRequest $request, Activity $activity)
     {
-        $this->authorize('update', $service);
+        $this->authorize('update', $activity);
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
@@ -77,27 +77,27 @@ class ServiceController extends Controller
         }
 
         $invalidRelation = invalidRelation($hotel, [
-            'serviceCategories' => $validated['category_id'] ?? null,
+            'activityCategories' => $validated['category_id'] ?? null,
         ]);
 
         if ($invalidRelation) {
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
         }
 
-        $service->update([...$validated, 'hotel_id' => $hotel->id]);
+        $activity->update([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Service updated successfully.', 200, $service);
+        return apiResponse('Activity updated successfully.', 200, $activity);
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Service $service)
+    public function destroy(Activity $activity)
     {
-        $this->authorize('delete', $service);
+        $this->authorize('delete', $activity);
 
-        $service->delete();
+        $activity->delete();
 
-        return apiResponse('Service deleted successfully.', 200);
+        return apiResponse('Activity deleted successfully.', 200);
     }
 }

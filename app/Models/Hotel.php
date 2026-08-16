@@ -80,14 +80,14 @@ class Hotel extends Model
         return $this->hasMany(Reservation::class);
     }
 
-    public function serviceCategories(): HasMany
+    public function activityCategories(): HasMany
     {
-        return $this->hasMany(ServiceCategory::class);
+        return $this->hasMany(ActivityCategory::class);
     }
 
-    public function services(): HasMany
+    public function activities(): HasMany
     {
-        return $this->hasMany(Service::class);
+        return $this->hasMany(Activity::class);
     }
 
     public function policies(): HasMany

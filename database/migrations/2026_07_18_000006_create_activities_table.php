@@ -8,18 +8,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('service_categories', function (Blueprint $table) {
+        Schema::create('activities', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('category_id')->nullable()->constrained('activity_categories')->nullOnDelete();
             $table->string('name');
-            $table->string('slug')->nullable();
             $table->text('description')->nullable();
+            $table->decimal('price', 12, 2)->default(0);
+            $table->string('currency', 3)->default('USD');
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('service_categories');
+        Schema::dropIfExists('activities');
     }
 };

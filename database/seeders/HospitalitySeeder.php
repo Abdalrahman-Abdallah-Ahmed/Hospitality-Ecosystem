@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Models\Activity;
+use App\Models\ActivityCategory;
 use App\Models\Hotel;
-use App\Models\Service;
-use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -47,14 +47,14 @@ class HospitalitySeeder extends Seeder
             "hotel_id" => $hotel->id,
         ]);
 
-        $category = ServiceCategory::create([
+        $category = ActivityCategory::create([
             'hotel_id' => $hotel->id,
             'name' => 'Wellness',
             'slug' => 'wellness',
             'description' => 'Spa and wellness experiences.',
         ]);
 
-        $services = [
+        $activities = [
             ['name' => 'Spa Treatment', 'price' => 120, 'description' => 'Relaxing 60-minute massage.'],
             ['name' => 'Airport Transfer', 'price' => 35, 'description' => 'Private airport pickup.'],
             ['name' => 'Kids Club', 'price' => 25, 'description' => 'Fun activities for children.'],
@@ -67,13 +67,13 @@ class HospitalitySeeder extends Seeder
             ['name' => 'Dinner Reservation', 'price' => 60, 'description' => 'Table reservation at rooftop restaurant.'],
         ];
 
-        foreach ($services as $serviceData) {
-            Service::create([
+        foreach ($activities as $activityData) {
+            Activity::create([
                 'hotel_id' => $hotel->id,
                 'category_id' => $category->id,
-                'name' => $serviceData['name'],
-                'description' => $serviceData['description'],
-                'price' => $serviceData['price'],
+                'name' => $activityData['name'],
+                'description' => $activityData['description'],
+                'price' => $activityData['price'],
                 'currency' => $hotel->currency,
                 'is_active' => true,
             ]);

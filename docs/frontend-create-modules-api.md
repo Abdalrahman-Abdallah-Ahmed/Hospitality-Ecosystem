@@ -5,7 +5,7 @@ This document is a frontend-focused guide for the resource create endpoints defi
 It is meant for building the create modules/forms for these resources:
 
 - `hotel`
-- `service`
+- `activity`
 - `reservation`
 - `room`
 - `guest`
@@ -21,7 +21,7 @@ All endpoints below are served under:
 Examples:
 
 - `POST /api/hotel`
-- `POST /api/service`
+- `POST /api/activity`
 - `POST /api/reservation`
 - `POST /api/room`
 - `POST /api/guest`
@@ -91,7 +91,7 @@ The frontend should treat these as form-level errors.
 - Always send `Accept: application/json`.
 - Treat all ids as UUID strings, not integers.
 - For `hotel_id`, always use the logged-in admin's own hotel id unless the resource is `hotel` itself.
-- Do not expose arbitrary hotel selection for `service`, `reservation`, `room`, or `guest`.
+- Do not expose arbitrary hotel selection for `activity`, `reservation`, `room`, or `guest`.
 - For enum-like fields that the backend does not fully restrict, enforce safe options in the frontend.
 - For JSON fields, send real JSON objects/arrays, not stringified JSON blobs.
 
@@ -156,21 +156,21 @@ Creates a hotel on behalf of another user. **This is a super-admin-only endpoint
 - Use a timezone dropdown instead of free text if possible.
 - Use a 3-letter uppercase currency code input.
 
-## 2. Create Service
+## 2. Create Activity
 
 ### Endpoint
 
-`POST /api/service`
+`POST /api/activity`
 
 ### Purpose
 
-Creates a hotel service for the authenticated user's hotel.
+Creates a hotel activity for the authenticated user's hotel.
 
 ### Important Backend Behavior
 
 - `hotel_id` is always forced to the logged-in user's hotel, regardless of what's sent in the request body.
 - `category_id`, if sent, must belong to the caller's own hotel or the API returns `403`.
-- Authorization is enforced via `ServicePolicy` (admin-only for view/create/update/delete).
+- Authorization is enforced via `ActivityPolicy` (admin-only for view/create/update/delete).
 
 ### Request Body
 
@@ -197,7 +197,7 @@ Creates a hotel service for the authenticated user's hotel.
 ### Frontend Recommendations
 
 - Auto-fill `hotel_id` from the logged-in user's hotel and hide it from the form.
-- If the UI has no service-category picker yet, omit `category_id`.
+- If the UI has no activity-category picker yet, omit `category_id`.
 - Treat `price` as numeric input, but expect decimal values to come back as strings in many Laravel JSON responses.
 
 ## 3. Create Reservation
@@ -370,14 +370,14 @@ You can also fetch these from:
 For the frontend create modules, this setup will map well to the backend:
 
 - `hotel`: standalone form, no `hotel_id`, no `owner_id`.
-- `service`: hidden `hotel_id`, optional `category_id`, JSON-capable advanced settings.
+- `activity`: hidden `hotel_id`, optional `category_id`, JSON-capable advanced settings.
 - `reservation`: hidden `hotel_id`, guest picker required, room picker optional.
 - `room`: hidden `hotel_id`, simple text/select fields.
 - `guest`: hidden `hotel_id`, channel select, preferences JSON or structured sub-fields.
 
 ## Most Important Gotchas
 
-- Never let the frontend submit another hotel's `hotel_id` for `service`, `reservation`, `room`, or `guest`.
+- Never let the frontend submit another hotel's `hotel_id` for `activity`, `reservation`, `room`, or `guest`.
 - `POST /api/hotel` is super-admin-only and requires an explicit `owner_id` — it is not the regular hotel-onboarding flow (that's `POST /api/register`).
 - Do not expect the reservation create endpoint to generate `reservation_id`.
 - Do not rely on the backend to validate all product rules like room-status options or reservation date ordering.
@@ -392,4 +392,4 @@ For the frontend create modules, this setup will map well to the backend:
 - [Guest API Documentation](/D:/Hospitality%20Ecosystem/docs/guest-api-documentation.md)
 - [Reservations API Documentation](/D:/Hospitality%20Ecosystem/docs/reservations-api-documentation.md)
 - [Room API Documentation](/D:/Hospitality%20Ecosystem/docs/room-api-documentation.md)
-- [Service API Documentation](/D:/Hospitality%20Ecosystem/docs/service-api-documentation.md)
+- [Activity API Documentation](/D:/Hospitality%20Ecosystem/docs/activity-api-documentation.md)

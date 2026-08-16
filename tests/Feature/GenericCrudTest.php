@@ -1,10 +1,10 @@
 <?php
 
 use App\Enums\UserRole;
+use App\Models\ActivityCategory;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
-use App\Models\Service;
 use App\Models\User;
 use App\Support\RequestRules\ModelColumnRules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -166,12 +166,12 @@ it('rejects a hotel update for a non-owner', function () {
     $response->assertStatus(403);
 });
 
-it('creates a service for the caller hotel with decimal columns validated generically', function () {
-    $owner = User::factory()->create();
+it('creates an activity for the caller hotel with decimal columns validated generically', function () {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
 
-    $response = asUser($owner)->postJson('/api/service', [
+    $response = asUser($owner)->postJson('/api/activity', [
         'hotel_id' => $hotel->id,
         'name' => 'Spa Day',
         'price' => 120.5,
@@ -183,13 +183,18 @@ it('creates a service for the caller hotel with decimal columns validated generi
         ->assertJsonPath('body.price', '120.50');
 });
 
-it('rejects a service for a hotel the caller does not own', function () {
-    $owner = User::factory()->create();
-    $otherOwner = User::factory()->create();
-    $otherHotel = Hotel::create(['owner_id' => $otherOwner->id, 'name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
+it('rejects an activity whose category belongs to a different hotel', function () {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
 
-    $response = asUser($owner)->postJson('/api/service', [
-        'hotel_id' => $otherHotel->id,
+    $otherOwner = User::factory()->role(UserRole::ADMIN)->create();
+    $otherHotel = Hotel::create(['owner_id' => $otherOwner->id, 'name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
+    $otherCategory = ActivityCategory::create(['hotel_id' => $otherHotel->id, 'name' => 'Other Category']);
+
+    $response = asUser($owner)->postJson('/api/activity', [
+        'hotel_id' => $hotel->id,
+        'category_id' => $otherCategory->id,
         'name' => 'Spa Day',
     ]);
 

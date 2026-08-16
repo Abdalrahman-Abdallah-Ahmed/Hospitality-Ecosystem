@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class Service extends Model
+class Activity extends Model
 {
     use Filterable, HasUuids, SoftDeletes;
 
@@ -39,7 +39,7 @@ class Service extends Model
 
     public function category(): BelongsTo
     {
-        return $this->belongsTo(ServiceCategory::class, 'category_id');
+        return $this->belongsTo(ActivityCategory::class, 'category_id');
     }
 
     public function recommendations(): HasMany
