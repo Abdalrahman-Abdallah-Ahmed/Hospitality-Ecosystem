@@ -198,7 +198,14 @@ class WhatsAppController extends Controller
         }
 
         $phoneNumber = $message['from'];
-        $text = trim($message['text']['body'] ?? '');
+        $type = $message['type'] ?? 'text';
+
+        // An image message has no `text.body` — whatever the sender typed
+        // alongside the photo (if anything) comes through as `image.caption`
+        // instead. The image itself is referenced by ID only; the bytes are
+        // fetched later, from the job, via WhatsAppMessageService::downloadMedia().
+        $text = trim($type === 'image' ? ($message['image']['caption'] ?? '') : ($message['text']['body'] ?? ''));
+        $imageMediaId = $type === 'image' ? ($message['image']['id'] ?? null) : null;
 
         // An admin pairs by sending the token connect() gave them, as a plain
         // WhatsApp message — same logic as the pair() endpoint, just fed a
@@ -206,7 +213,7 @@ class WhatsAppController extends Controller
         // is always "{id}|{plaintext}", so that's a safe, cheap heuristic —
         // and even a false positive just gets a harmless "invalid code" reply
         // via pairDevice(), rather than silently misparsing a real message.
-        if (str_contains($text, '|')) {
+        if ($type === 'text' && str_contains($text, '|')) {
             $waUserId = data_get($value, 'contacts.0.wa_id', $phoneNumber);
             $result = $this->pairDevice($text, $phoneNumber, $waUserId);
 
@@ -226,6 +233,7 @@ class WhatsAppController extends Controller
             hotel: $recognition->hotelId ? Hotel::find($recognition->hotelId) : null,
             reservation: $recognition->reservation,
             devicePaired: $pairing['paired'] && $pairing['active'],
+            imageMediaId: $imageMediaId,
         );
 
         return response('', 200);

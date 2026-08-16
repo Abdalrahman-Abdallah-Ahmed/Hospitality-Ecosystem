@@ -51,6 +51,12 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             Always call the relevant tool(s) before answering a question about any of the above — never invent
             or guess data. If none of the tools return anything relevant, say so plainly instead of making up
             an answer.
+
+            You may be sent a photo or screenshot of reservation details (e.g. from a booking platform, ID, or
+            handwritten note). Read every visible detail from it and use the create-reservation tool to create
+            the reservation. The guest's phone number, arrival date, and departure date are required — if any
+            of those is missing or illegible in the image, ask the admin to confirm or provide it rather than
+            guessing. Confirm back to the admin what was created, including anything you couldn't read clearly.
             PROMPT;
     }
 

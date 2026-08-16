@@ -20,7 +20,7 @@ beforeEach(function () {
         'services.whatsapp.phone_number_id' => 'test-phone-number-id',
         'services.whatsapp.access_token' => 'test-access-token',
     ]);
-    Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.test']]], 200)]);
+    Http::fake(['graph.facebook.com/*/messages' => Http::response(['messages' => [['id' => 'wamid.test']]], 200)]);
 });
 
 function whatsappInboundPayload(string $from, string $text): array
@@ -44,6 +44,23 @@ function whatsappSignatureHeader(array $payload): array
     $signature = 'sha256='.hash_hmac('sha256', json_encode($payload), 'test-app-secret');
 
     return ['X-Hub-Signature-256' => $signature];
+}
+
+function whatsappInboundImagePayload(string $from, string $mediaId, string $caption = ''): array
+{
+    return [
+        'entry' => [[
+            'changes' => [[
+                'value' => [
+                    'messages' => [[
+                        'from' => $from,
+                        'type' => 'image',
+                        'image' => ['id' => $mediaId, 'mime_type' => 'image/jpeg', 'caption' => $caption],
+                    ]],
+                ],
+            ]],
+        ]],
+    ];
 }
 
 // verify handshake
@@ -127,6 +144,43 @@ it('replies via the admin advisor when the admin has an active paired device', f
 
     Http::assertSent(fn ($request) => $request['text']['body'] === 'Today you have 3 arrivals.');
     expect(Conversation::where('participant_id', $admin->id)->count())->toBe(1);
+});
+
+it('extracts reservation details from an admin screenshot', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create(['phone_number' => '201151793758']);
+    $hotel = Hotel::create([
+        'owner_id' => $admin->id,
+        'name' => 'Grand Harbor Hotel',
+        'slug' => 'grand-harbor-hotel',
+        'currency' => 'USD',
+    ]);
+    $admin->update(['hotel_id' => $hotel->id]);
+    WhatsAppDevice::create([
+        'user_id' => $admin->id,
+        'phone_number' => '201151793758',
+        'hotel_id' => $hotel->id,
+        'wa_user_id' => 'EG.1586110233134033',
+        'status' => 'active',
+    ]);
+
+    Http::fake([
+        'graph.facebook.com/*/media-123' => Http::response(['url' => 'https://lookaside.fbsbx.com/media-123', 'mime_type' => 'image/jpeg'], 200),
+        'lookaside.fbsbx.com/*' => Http::response('fake-image-bytes', 200),
+        'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.test']]], 200),
+    ]);
+
+    AdminAdvisorAgent::fake(['Created the reservation for John Doe.']);
+
+    $payload = whatsappInboundImagePayload('201151793758', 'media-123');
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))
+        ->assertOk();
+
+    AdminAdvisorAgent::assertPrompted(fn ($prompt) => $prompt->attachments->count() === 1
+        && $prompt->attachments->first()->mime === 'image/jpeg'
+        && $prompt->attachments->first()->base64 === base64_encode('fake-image-bytes'));
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), '/messages')
+        && $request['text']['body'] === 'Created the reservation for John Doe.');
 });
 
 it('sends a pairing-guidance reply and never invokes the advisor for an unpaired admin', function () {

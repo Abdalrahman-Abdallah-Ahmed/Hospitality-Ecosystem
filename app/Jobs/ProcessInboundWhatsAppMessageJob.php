@@ -13,6 +13,7 @@ use App\Services\WhatsAppMessageService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
+use Laravel\Ai\Files\Image;
 
 /**
  * Generates and sends the AI reply for an inbound WhatsApp message. Sender
@@ -37,6 +38,7 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         public ?Hotel $hotel,
         public ?Reservation $reservation,
         public bool $devicePaired,
+        public ?string $imageMediaId = null,
     ) {}
 
     /**
@@ -68,7 +70,22 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
 
         $agent->continueLastConversation($this->sender);
 
-        $response = $agent->prompt($this->messageText);
+        // Only the admin advisor knows what to do with a reservation
+        // screenshot (it has the create-reservation tool); a guest sending
+        // a photo just falls through to its caption text, if any.
+        $attachments = [];
+        $messageText = $this->messageText;
+
+        if ($this->imageMediaId && $this->senderType === SenderType::ADMIN) {
+            $media = $whatsApp->downloadMedia($this->imageMediaId);
+            $attachments[] = Image::fromBase64(base64_encode($media['content']), $media['mime_type']);
+
+            if ($messageText === '') {
+                $messageText = 'Extract the reservation details from this screenshot and create the reservation.';
+            }
+        }
+
+        $response = $agent->prompt($messageText, attachments: $attachments);
 
         $whatsApp->send($this->phoneNumber, $response->text);
     }
