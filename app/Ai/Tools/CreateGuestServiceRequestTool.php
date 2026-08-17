@@ -8,6 +8,7 @@ use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
+use App\Models\TaskCategory;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -38,6 +39,8 @@ class CreateGuestServiceRequestTool implements Tool
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
             'reservation_id' => $this->reservation?->id,
+            'room_id'=>$this->reservation?->room->id,
+            'task_category_id' => $this->taskCategoryId($request),
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
             'created_by' => CreatedBy::GUEST,
@@ -59,6 +62,23 @@ class CreateGuestServiceRequestTool implements Tool
                 ->enum(Priority::class)
                 ->description("The task's urgency. Use 'high' when the guest showed strong interest in a recommended activity and staff should follow up promptly to help them book it before the window passes; otherwise 'normal'.")
                 ->default(Priority::NORMAL->value),
+            'task_category_id' => $schema->string()
+                ->description('The id of the task category this request falls under, if one clearly fits. Leave unset if none does.'),
         ];
+    }
+
+    /**
+     * The model may name a category that doesn't exist or belongs to
+     * another hotel — fall back to uncategorized rather than erroring.
+     */
+    private function taskCategoryId(Request $request): ?string
+    {
+        if (! $request->filled('task_category_id')) {
+            return null;
+        }
+
+        return TaskCategory::where('hotel_id', $this->hotel->id)
+            ->find($request->string('task_category_id')->toString())
+            ?->id;
     }
 }

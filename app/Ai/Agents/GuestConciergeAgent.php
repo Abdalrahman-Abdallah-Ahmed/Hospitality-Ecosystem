@@ -7,6 +7,7 @@ use App\Ai\Tools\EscalateToHumanTool;
 use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\GetRecommendationsTool;
+use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Ai\Tools\UpdateRecommendationTool;
 use App\Models\Guest;
@@ -60,8 +61,12 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               reason each was made, predicted confidence, and current status.
             - A tool to update one of those recommendations with the guest's reaction (accepted/rejected/
               dismissed) and/or how confident they seemed.
+            - A tool to look up this hotel's task categories (e.g. Housekeeping, Maintenance) and which team
+              each belongs to.
             - A tool to create a task for staff — either a service request on the guest's behalf (e.g. extra
-              towels, a maintenance issue), or a follow-up task asking staff to contact the guest.
+              towels, a maintenance issue), or a follow-up task asking staff to contact the guest. If a
+              category clearly fits, look up its id with the task-categories tool first and include it;
+              otherwise leave it unset rather than guessing.
             - A tool to escalate the conversation to a human staff member.
 
             Always call the relevant tool(s) before answering rather than guessing. If the guest is frustrated,
@@ -104,6 +109,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new GetOwnReservationTool($this->reservation),
             new GetRecommendationsTool($this->reservation),
             new UpdateRecommendationTool($this->reservation),
+            new GetTaskCategoriesTool($this->hotel),
             new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation),
             new EscalateToHumanTool($this->guest, $this->hotel),
         ];
