@@ -21,8 +21,10 @@ class Recommendation extends Model
         'conversation_id',
         'reservation_id',
         'activity_id',
+        'hotel_id',
         'reason',
-        'confidence',
+        'predicted_confidence',
+        'guest_confidence',
         'priority',
         'status',
         'recommended_at',
@@ -32,7 +34,8 @@ class Recommendation extends Model
     ];
 
     protected $casts = [
-        'confidence' => 'decimal:2',
+        'predicted_confidence' => 'decimal:2',
+        'guest_confidence' => 'decimal:2',
         'priority' => 'integer',
         'status' => RecommendationStatus::class,
         'recommended_at' => 'datetime',
@@ -40,6 +43,11 @@ class Recommendation extends Model
         'rejected_at' => 'datetime',
         'dismissed_at' => 'datetime',
     ];
+
+    public function hotel(): BelongsTo
+    {
+        return $this->belongsTo(Hotel::class);
+    }
 
     public function conversation(): BelongsTo
     {

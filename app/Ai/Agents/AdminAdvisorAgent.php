@@ -41,7 +41,9 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
 
             You have tools available to ground your answers in real, current data:
             - A knowledge-base search tool covering this hotel's own articles/policies and the shared global
-              knowledge base. Use it whenever a question could be grounded in a stated policy or best practice.
+              knowledge base. Use it not only when a question could be grounded in a stated policy or best
+              practice, but also before you act: before creating a reservation, check for any relevant booking
+              policy or SOP. Let anything you find override your own judgment.
             - A tool to fetch today's reservations for this hotel.
             - A tool to fetch this hotel's tasks.
             - A tool to fetch this hotel's recent guest messages.

@@ -11,6 +11,7 @@ use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
 use App\Http\Controllers\KnowledgeBaseArticleController;
+use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\TaskCategoryController;
@@ -43,6 +44,8 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
         Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
+        Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
+        Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);
         Route::resource('/hotel',HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);

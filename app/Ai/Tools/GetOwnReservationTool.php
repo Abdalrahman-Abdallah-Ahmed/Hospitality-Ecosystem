@@ -19,7 +19,7 @@ class GetOwnReservationTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return "Retrieve the guest's own reservation — their current stay, next upcoming stay, or most recent past stay, whichever is relevant. Never returns another guest's reservation.";
+        return "Retrieve the guest's own reservation — their current stay, next upcoming stay, or most recent past stay, whichever is relevant, including party composition, room tier, and reservation value. Never returns another guest's reservation.";
     }
 
     /**
@@ -40,6 +40,9 @@ class GetOwnReservationTool implements Tool
             'adults' => $this->reservation->adults,
             'children' => $this->reservation->children,
             'room_number' => $this->reservation->room?->room_number,
+            'room_type' => $this->reservation->room?->room_type,
+            'reservation_value' => $this->reservation->reservation_value,
+            'currency' => $this->reservation->currency,
             'special_requests' => $this->reservation->special_requests,
         ]);
     }

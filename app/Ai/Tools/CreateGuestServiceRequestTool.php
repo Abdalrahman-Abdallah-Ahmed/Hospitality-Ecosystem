@@ -26,7 +26,7 @@ class CreateGuestServiceRequestTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return "Create a service request task for hotel staff on the guest's behalf (e.g. extra towels, a maintenance issue, a housekeeping request).";
+        return "Create a task for hotel staff related to the guest — either a service request made on the guest's behalf (e.g. extra towels, a maintenance issue, a housekeeping request), or a follow-up task asking staff to contact the guest (e.g. the guest showed strong interest in a recommended activity and would like help booking it).";
     }
 
     /**
@@ -41,10 +41,10 @@ class CreateGuestServiceRequestTool implements Tool
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
             'created_by' => CreatedBy::GUEST,
-            'priority' => Priority::NORMAL,
+            'priority' => $request->enum('priority', Priority::class, Priority::NORMAL),
         ]);
 
-        return "Service request created (task id: {$task->id}). Staff will follow up.";
+        return "Task created (task id: {$task->id}). Staff will follow up.";
     }
 
     /**
@@ -53,8 +53,12 @@ class CreateGuestServiceRequestTool implements Tool
     public function schema(JsonSchema $schema): array
     {
         return [
-            'title' => $schema->string()->description('A short title for the request.')->required(),
-            'description' => $schema->string()->description('What the guest is asking for.')->required(),
+            'title' => $schema->string()->description('A short title for the task.')->required(),
+            'description' => $schema->string()->description('What the guest needs, or why staff should follow up with them.')->required(),
+            'priority' => $schema->string()
+                ->enum(Priority::class)
+                ->description("The task's urgency. Use 'high' when the guest showed strong interest in a recommended activity and staff should follow up promptly to help them book it before the window passes; otherwise 'normal'.")
+                ->default(Priority::NORMAL->value),
         ];
     }
 }
