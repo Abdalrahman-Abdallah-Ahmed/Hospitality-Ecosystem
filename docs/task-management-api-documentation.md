@@ -273,6 +273,30 @@ Field notes:
 
 Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`.
 
+**Breaking change — response shape:** `body` is no longer the paginator directly. It's now:
+
+```json
+{
+  "message": "Tasks fetched successfully.",
+  "code": 200,
+  "body": {
+    "data": {
+      "current_page": 1,
+      "data": [ { "...": "one task object" } ],
+      "last_page": 1,
+      "total": 1,
+      "...": "rest of the standard paginator fields"
+    },
+    "task_categories": [
+      { "id": "...", "hotel_id": "...", "team_id": "...", "name": "Cleaning", "description": "..." }
+    ]
+  }
+}
+```
+
+- The task list moved from `body.data` to **`body.data.data`**; pagination fields (`current_page`, `last_page`, `total`, …) moved from `body.*` to **`body.data.*`**.
+- `body.task_categories` is new — the full [task category](#the-task-category-object) list for the caller's hotel (same hotel-scoping rule as `body.data`: a regular admin gets only their own hotel's categories, a super admin gets every category system-wide since they have no hotel of their own). Meant to save a second `GET /api/task-category` call when rendering a task list/board that needs to show or filter by category name — safe to use for a category picker.
+
 ### 3.2 Create a Task — `POST /api/task`
 
 The intended flow, per product: **title + description → choose team → choose one of that team's categories → submit.**
@@ -439,3 +463,4 @@ curl -X POST http://your-domain.com/api/task \
 - Task deletion is soft (`deleted_at`); Team and TaskCategory deletion is permanent.
 - **Don't show a guest picker on the task form.** `guest_id` is never client-settable — it's always derived server-side from `reservation_id` (the reservation's own guest). Only expose a reservation picker; the guest shows up as a side effect.
 - A cross-hotel ownership `403` names a *relation* (`rooms`, `teams`, `users`, `taskCategories`, `guests`, `reservations`), not a specific form field — show it as a form-level error, not tied to one input.
+- **Breaking change:** `GET /api/task`'s `body` is now `{ data: <paginator>, task_categories: [...] }` instead of being the paginator directly — the task list moved to `body.data.data` and pagination fields moved to `body.data.*`. `task_categories` is hotel-scoped the same way `data` is, and is safe to use for a category picker. See [§3.1](#31-list-tasks).

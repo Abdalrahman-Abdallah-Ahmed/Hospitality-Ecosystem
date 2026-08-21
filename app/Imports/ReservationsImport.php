@@ -3,6 +3,7 @@
 namespace App\Imports;
 
 use App\Enums\ReservationStatus;
+use App\Enums\RoomTypes;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Support\Reservations\ReservationCreator;
@@ -67,7 +68,7 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             $room = Room::firstOrCreate(
                 ['hotel_id' => $this->hotel->id, 'room_number' => $roomNumber],
                 [
-                    'room_type' => trim((string) ($row['room_type'] ?? '')) ?: null,
+                    'room_type' => RoomTypes::tryFrom(strtolower(trim((string) ($row['room_type'] ?? ''))))?->value,
                     'floor' => trim((string) ($row['floor'] ?? '')) ?: null,
                 ]
             );

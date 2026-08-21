@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\RoomTypes;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
@@ -25,7 +26,12 @@ class RoomController extends Controller
 
         $rooms = GenericQuery::apply($query, $request);
 
-        return apiResponse('Rooms fetched successfully.', 200, $rooms);
+        $data = [
+            "data"=>$rooms,
+            "room_types"=>RoomTypes::cases(),
+        ];
+
+        return apiResponse('Rooms fetched successfully.', 200, $data);
     }
 
     /**

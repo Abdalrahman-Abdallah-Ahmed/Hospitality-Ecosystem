@@ -89,7 +89,8 @@ Every endpoint that returns a room returns it in this shape — **no relations a
 Field notes for the UI:
 
 - `id` and `hotel_id` are UUID strings, not integers — don't parse them as numbers.
-- `room_number`, `room_type`, and `floor` are all free-text strings (not enums) and are nullable — a room can exist with any of them blank.
+- `room_number` and `floor` are free-text strings and are nullable — a room can exist with either blank.
+- `room_type` is **now a real, server-enforced enum** (`App\Enums\RoomTypes`), not free text: `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family`. It's still nullable (a room can have no type set), but if you send a value, it must be one of these seven or the request is rejected with a `422` — see [Create a Room](#2-create-a-room). The full list is echoed back on every `index` call as `body.room_types` (see [List Rooms](#1-list-rooms)) so the frontend doesn't need to hard-code it.
 - `status` is also a free-text string, not a restricted enum server-side (there's no `Rule::in`/cast enforcing specific values). It defaults to `"available"` at the database level when omitted on create. The API will accept any string here, so **the frontend should be the one constraining input** (e.g. a fixed dropdown of `available` / `occupied` / `maintenance` / whatever values the product actually uses) — don't rely on the server to reject typos.
 - There is no soft-delete on rooms — `DELETE` permanently removes the row (see [Delete a Room](#5-delete-a-room)).
 - If a room has active reservations pointing at it (`reservations.room_id`), deleting it does **not** cascade-delete those reservations; their `room_id` is left pointing at a now-missing row (no `ON DELETE` rule enforced from this side). Consider warning the user before deleting a room that's referenced by upcoming reservations.
@@ -122,33 +123,50 @@ GET /api/room?filter[status]=available&search=101&sort=-created_at&per_page=20&p
 
 ### Success Response
 
-HTTP `200 OK`. `body` is a Laravel paginator object:
+HTTP `200 OK`. **`body` is no longer the paginator directly** — it's an object with the paginator under `data` plus a `room_types` key listing every valid room type:
 
 ```json
 {
   "message": "Rooms fetched successfully.",
   "code": 200,
   "body": {
-    "current_page": 1,
-    "data": [
-      { "...": "one room object, shape as above" }
-    ],
-    "first_page_url": "http://your-domain.com/api/room?page=1",
-    "from": 1,
-    "last_page": 1,
-    "last_page_url": "http://your-domain.com/api/room?page=1",
-    "links": [ { "url": null, "label": "&laquo; Previous", "page": null, "active": false } ],
-    "next_page_url": null,
-    "path": "http://your-domain.com/api/room",
-    "per_page": 15,
-    "prev_page_url": null,
-    "to": 1,
-    "total": 1
+    "data": {
+      "current_page": 1,
+      "data": [
+        { "...": "one room object, shape as above" }
+      ],
+      "first_page_url": "http://your-domain.com/api/room?page=1",
+      "from": 1,
+      "last_page": 1,
+      "last_page_url": "http://your-domain.com/api/room?page=1",
+      "links": [ { "url": null, "label": "&laquo; Previous", "page": null, "active": false } ],
+      "next_page_url": null,
+      "path": "http://your-domain.com/api/room",
+      "per_page": 15,
+      "prev_page_url": null,
+      "to": 1,
+      "total": 1
+    },
+    "room_types": [
+      { "name": "SINGLE", "value": "single" },
+      { "name": "DOUBLE", "value": "double" },
+      { "name": "TWIN", "value": "twin" },
+      { "name": "TRIPLE", "value": "triple" },
+      { "name": "SUITE", "value": "suite" },
+      { "name": "DELUXE", "value": "deluxe" },
+      { "name": "FAMILY", "value": "family" }
+    ]
   }
 }
 ```
 
-For the UI: read the list from `body.data`, and drive pagination controls from `body.current_page`, `body.last_page`, and `body.total` (don't parse `links[].label` — it's server-rendered HTML for Blade views, not meant for a JS pagination widget).
+**This is a breaking change** from the previous shape, where `body` *was* the paginator and the room list was at `body.data`. Now:
+
+- The room array is at **`body.data.data`** (one level deeper than before).
+- Pagination controls (`current_page`, `last_page`, `total`, etc.) are on **`body.data`**, not `body`.
+- `body.room_types` is new: a fixed, hotel-independent list of the valid `room_type` enum cases, in `{ name, value }` pairs (PHP enum serialization — `value` is the string you send back on create/update, `name` is the enum case name, not meant for display). Use it to populate a `room_type` dropdown instead of hard-coding the seven values.
+
+Only `index` changed shape — `store`, `show`, `update`, `destroy` still return a bare [room object](#the-room-object) in `body`, unchanged.
 
 ### Error: Unknown Filter/Sort Column
 
@@ -187,7 +205,7 @@ HTTP `422`:
 | --- | --- |
 | `hotel_id` | **required**, string, must exist in `hotels.id` — see the hotel-scoping note below. |
 | `room_number` | optional, string, max 255. |
-| `room_type` | optional, string, max 255. |
+| `room_type` | optional, must be one of `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family` (see [`body.room_types`](#1-list-rooms)) — any other value returns a `422`. |
 | `floor` | optional, string, max 255. |
 | `status` | optional, string, max 255. Defaults to `"available"` if omitted. Not restricted to a fixed list server-side — enforce allowed values client-side. |
 
@@ -209,6 +227,21 @@ HTTP `422`:
   }
 }
 ```
+
+### Error: Invalid `room_type`
+
+HTTP `422`:
+
+```json
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "room_type": ["The selected room type is invalid."]
+  }
+}
+```
+
+Same error applies on [update](#4-update-a-room) if `room_type` is included with a bad value.
 
 ### Error: Room For a Different Hotel
 
@@ -375,9 +408,9 @@ curl -X DELETE http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c176
 
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - List with `GET /api/room`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column` / `sort=-column`, paginate with `page`/`per_page`.
-- Read the list from `body.data`; drive pagination UI from `body.current_page` / `body.last_page` / `body.total`.
-- The room object has **no** eager-loaded relations — if you need the hotel's name on a room row, fetch/cache it separately (e.g. from the logged-in user's own hotel, since a room can only belong to the current admin's hotel).
-- `status`, `room_type` are free-text strings server-side — enforce your own fixed option list in the UI.
+- **Breaking change:** the room list is now at `body.data.data`, not `body.data` — `index`'s `body` is `{ data: <paginator>, room_types: [...] }`. Pagination fields (`current_page`, `last_page`, `total`) moved from `body.*` to `body.data.*`. See [List Rooms](#1-list-rooms).
+- `body.room_types` (only on `index`) is the authoritative list of valid `room_type` values — use it to populate the type picker instead of hard-coding it.
+- `status` is still a free-text string server-side — enforce your own fixed option list in the UI. `room_type` is **now a real server-enforced enum** (`single`/`double`/`twin`/`triple`/`suite`/`deluxe`/`family`) — an invalid value returns a `422`.
 - `hotel_id` can be set on create but **should not** be included on update — the API doesn't block reassignment, but doing so can strand the room outside the current admin's access.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Deleting a room is permanent (no soft delete) and does not cascade to reservations referencing it — confirm before deleting a room with existing reservations.

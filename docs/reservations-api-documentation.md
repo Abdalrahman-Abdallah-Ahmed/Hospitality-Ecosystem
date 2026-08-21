@@ -17,6 +17,7 @@ Examples:
 - `GET /api/reservation/{id}`
 - `PUT /api/reservation/{id}`
 - `DELETE /api/reservation/{id}`
+- `POST /api/reservation/import` (bulk upload — see [§6](#6-import-reservations-bulk-upload))
 
 ## Required Headers
 
@@ -44,6 +45,7 @@ Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-
 | `index` (list) | The logged-in user's `role` must be `admin`. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user must be `admin`, **and** the reservation's `hotel_id` must equal the hotel the user owns. |
+| `import` (bulk upload) | Same `create` check as above — `role` must be `admin`. **Unlike every other write endpoint, a super admin cannot target an arbitrary hotel here** — see [§6](#6-import-reservations-bulk-upload). |
 
 Practical implications for the UI:
 
@@ -399,6 +401,105 @@ HTTP `200 OK`:
 
 Same as [show](#3-get-a-single-reservation): `404` if the id doesn't exist, `403` if it belongs to a different hotel.
 
+## 6. Import Reservations (Bulk Upload)
+
+### Endpoint
+
+`POST /api/reservation/import`
+
+Bulk-creates reservations (and any guests/rooms they reference) from an uploaded spreadsheet, all scoped to the logged-in admin's own hotel. Controller: `App\Http\Controllers\ReservationController::import`, backed by `App\Imports\ReservationsImport`.
+
+### Request
+
+`multipart/form-data` with a single field:
+
+| Field | Rules |
+| --- | --- |
+| `file` | **required**, a file, one of `xlsx` / `xls` / `csv` / `txt`, max 5120 KB (5 MB). |
+
+```bash
+curl -X POST http://your-domain.com/api/reservation/import \
+  -H "Accept: application/json" \
+  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Authorization: Bearer USER_LOGIN_TOKEN" \
+  -F "file=@reservations.csv"
+```
+
+Do **not** set `Content-Type: application/json` on this request — let the HTTP client set the `multipart/form-data` boundary itself (e.g. use `FormData` in the browser, not a JSON body).
+
+### Expected Columns
+
+The **first row must be a header row** naming these columns (order doesn't matter; unrecognized columns are ignored). Column names are matched case-insensitively and with spaces/punctuation folded to underscores (e.g. a header of `Guest Phone` is read the same as `guest_phone`) — matching Maatwebsite Excel's default heading normalization:
+
+| Column | Required? | Notes |
+| --- | --- | --- |
+| `guest_phone` | **Required.** Row is skipped without it. | Guests are matched/deduped by phone number within the hotel — re-importing the same phone number reuses the existing guest instead of creating a duplicate. |
+| `arrival_date` | **Required.** Row is skipped without it. | Any string `Carbon`/the DB can parse as a date. |
+| `departure_date` | **Required.** Row is skipped without it. | Same as above. **Not validated against `arrival_date`** — a departure before arrival is not rejected. |
+| `guest_first_name` | optional | |
+| `guest_last_name` | optional | |
+| `guest_email` | optional | |
+| `room_number` | optional | If set and no room with that number exists yet for the hotel, **a new room is created automatically** (see below) rather than the row being rejected. |
+| `room_type` | optional | Only used when `room_number` triggers a new room. Must match one of the [room type values](#the-room-object) (`single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family`) — anything else is silently ignored (the new room is created with a blank `room_type` rather than erroring). |
+| `floor` | optional | Same as `room_type` — only used if a new room is created. |
+| `reservation_id` | optional | If omitted, one is auto-generated (`RES-XXXXXXXX`). If provided and it collides with an existing reservation for a *different* row already processed, that row is skipped (see below). |
+| `status` | optional | Defaults to `pending`. **Any value other than the five real statuses (`pending`, `confirmed`, `checked_in`, `checked_out`, `cancelled`) causes that row to be skipped** — with a raw PHP error string as the reason (e.g. `"typo" is not a valid backing value for enum App\Enums\ReservationStatus`), not a friendly message. Show `skipped[].reason` as-is, or map known enum-error patterns to a nicer message client-side. |
+| `adults` | optional | Cast to integer; defaults to `1` (falls back to `1` if the value is `0` or non-numeric, since the code uses `(int) ... ?: 1`). |
+| `children` | optional | Cast to integer; defaults to `0`. |
+| `source` | optional | Free text; defaults to `"import"`. |
+| `special_requests` | optional | Free text. |
+| `reservation_value` | optional | Cast to float; defaults to `0`. |
+| `currency` | optional | Defaults to the hotel's own `currency`. |
+
+### Behavior Notes
+
+- **This endpoint does not use the same validation as manual create** (`POST /api/reservation`) — it bypasses `GenericStoreRequest`/enum casting for everything except `status` (which still throws because `Reservation.status` is a native PHP enum cast) and the numeric fields listed above. Garbage `currency`/`source`/`special_requests` values are written to the database as-is.
+- A row is processed **independently** — one bad row (missing phone, invalid status, duplicate `reservation_id`, etc.) is caught and skipped; it does not fail the whole import.
+- `room_number` with no existing match **creates the room** rather than rejecting the row. If your UI wants to warn the user before this happens, you'd need to cross-check `room_number` values against `GET /api/room` client-side before upload — the API gives no dry-run/preview mode.
+- Guests are matched by `phone_number` scoped to the hotel; a soft-deleted guest with a matching phone number is restored rather than duplicated.
+- **Super admins cannot target a different hotel with this endpoint.** Every other write endpoint in this API resolves the target hotel via a shared helper that lets a super admin pass an explicit `hotel_id` (since they have no hotel of their own). Import does not — it always uses `$request->user()->hotel`, so a super admin gets `403 You do not belong to any hotel.` calling this endpoint at all. If bulk-import needs to be super-admin-capable later, that's a backend gap, not something the frontend can work around.
+
+### Success Response
+
+HTTP `200 OK` — note the response shape here is **not** the paginator format used by list endpoints, and is **not** the imported reservation objects either, just counts:
+
+```json
+{
+  "message": "Reservations imported successfully.",
+  "code": 200,
+  "body": {
+    "imported": 42,
+    "skipped": [
+      { "row": 7, "reason": "Missing required field(s): guest_phone, arrival_date, or departure_date." },
+      { "row": 15, "reason": "\"typo\" is not a valid backing value for enum App\\Enums\\ReservationStatus" }
+    ]
+  }
+}
+```
+
+- `body.imported`: count of reservations successfully created.
+- `body.skipped`: one entry per skipped row, `row` is **1-indexed and counts the header row** (so the first data row is `row: 2`), `reason` is a free-text string — sometimes a friendly message, sometimes a raw PHP exception message (see the `status` note above). Treat it as opaque text for display, not something to pattern-match on.
+- To see the actual created reservations, re-fetch the list via `GET /api/reservation` — this endpoint doesn't return them.
+
+### Error: Not Authenticated / Not Admin
+
+`401` with no bearer token; `403` (custom wrapper, `message/code/body`) if the caller isn't an admin.
+
+### Error: Missing/Invalid File
+
+HTTP `422`, Laravel's default validation shape (not the custom wrapper):
+
+```json
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "file": ["The file field is required."]
+  }
+}
+```
+
+Same shape for a wrong file type or a file over 5 MB, with a message specific to that rule.
+
 ## Validation Errors
 
 For any field-shape validation failure (missing required field, wrong type, failed `exists`/`unique`/enum check), Laravel returns its default shape — **not** the custom `message/code/body` wrapper:
@@ -474,3 +575,4 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Don't use this document for the WhatsApp reservation-creation flow — that's `POST /api/whatsapp-reservation`, unauthenticated (API-key only), and out of scope here.
 - Confirming a reservation (`status: confirmed`) with a `room_id` set auto-occupies the room server-side — but nothing frees it back up on cancel/checkout yet. See [Status Values](#status-values).
+- `POST /api/reservation/import` bulk-creates reservations from an uploaded `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB). It returns only `{ imported, skipped }` counts, not the created records — refresh the list separately. It skips bad rows instead of failing the whole file, and unlike every other write endpoint here, a super admin **cannot** target another hotel with it. See [§6](#6-import-reservations-bulk-upload).

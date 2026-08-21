@@ -42,7 +42,7 @@ it('rejects a non-admin user from importing reservations', function () {
 
 it('imports reservations and creates guests scoped to the admin hotel', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101', 'room_type' => 'standard']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101', 'room_type' => 'double']);
 
     $file = importCsv([
         ['555-0100', 'Ann', 'Lee', '101', '2026-09-01', '2026-09-04'],

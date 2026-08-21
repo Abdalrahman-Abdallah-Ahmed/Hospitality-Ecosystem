@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\RoomTypes;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,10 @@ class Room extends Model
         'room_type',
         'floor',
         'status',
+    ];
+
+    protected $casts = [
+        'room_type' => RoomTypes::class,
     ];
 
     public function hotel(): BelongsTo

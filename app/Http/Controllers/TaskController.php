@@ -27,7 +27,18 @@ class TaskController extends Controller
 
         $tasks = GenericQuery::apply($query, $request);
 
-        return apiResponse('Tasks fetched successfully.', 200, $tasks);
+        $taskCategories = TaskCategory::query();
+
+        if (! $request->user()->isSuperAdmin()) {
+            $taskCategories->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $data = [
+            "data"=> $tasks,
+            "task_categories"=> $taskCategories->get(),
+        ];
+
+        return apiResponse('Tasks fetched successfully.', 200, $data);
     }
 
     /**
