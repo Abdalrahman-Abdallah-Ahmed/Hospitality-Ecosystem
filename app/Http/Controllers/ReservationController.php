@@ -5,12 +5,15 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Requests\ImportReservationsRequest;
+use App\Imports\ReservationsImport;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ReservationController extends Controller
 {
@@ -93,6 +96,29 @@ class ReservationController extends Controller
         $this->authorize('delete', $reservation);
         $reservation->delete();
         return apiResponse('Reservation deleted successfully.', 200);
+    }
+
+    /**
+     * Bulk-import reservations (and their guests) from an uploaded
+     * spreadsheet. Always scoped to the uploader's own hotel, never a
+     * hotel_id from the file, same as index()/CreateReservationTool.
+     */
+    public function import(ImportReservationsRequest $request): JsonResponse
+    {
+        $this->authorize('create', Reservation::class);
+
+        $hotel = $request->user()->hotel;
+        if (! $hotel) {
+            return apiResponse('You do not belong to any hotel.', 403);
+        }
+
+        $import = new ReservationsImport($hotel);
+        Excel::import($import, $request->file('file'));
+
+        return apiResponse('Reservations imported successfully.', 200, [
+            'imported' => $import->imported,
+            'skipped' => $import->skipped,
+        ]);
     }
 
     /**

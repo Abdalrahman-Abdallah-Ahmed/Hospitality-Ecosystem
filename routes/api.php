@@ -43,6 +43,7 @@ Route::middleware('api.key')->group(function () {
 
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
         Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
+        Route::post('/reservation/import', [ReservationController::class, 'import']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
         Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
         Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);

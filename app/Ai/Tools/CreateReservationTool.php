@@ -3,7 +3,6 @@
 namespace App\Ai\Tools;
 
 use App\Enums\ReservationStatus;
-use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Support\Reservations\ReservationCreator;
@@ -44,21 +43,12 @@ class CreateReservationTool implements Tool
             }
         }
 
-        $guest = Guest::withTrashed()->firstOrCreate(
-            [
-                'hotel_id' => $this->hotel->id,
-                'phone_number' => $request->string('guest_phone')->toString(),
-            ],
-            [
-                'first_name' => $request->string('guest_first_name')->toString() ?: null,
-                'last_name' => $request->string('guest_last_name')->toString() ?: null,
-                'email' => $request->string('guest_email')->toString() ?: null,
-            ]
-        );
-
-        if ($guest->trashed()) {
-            $guest->restore();
-        }
+        $guest = ReservationCreator::findOrCreateGuest($this->hotel->id, [
+            'phone_number' => $request->string('guest_phone')->toString(),
+            'first_name' => $request->string('guest_first_name')->toString() ?: null,
+            'last_name' => $request->string('guest_last_name')->toString() ?: null,
+            'email' => $request->string('guest_email')->toString() ?: null,
+        ]);
 
         $reservation = ReservationCreator::create([
             'hotel_id' => $this->hotel->id,

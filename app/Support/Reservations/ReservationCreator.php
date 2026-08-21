@@ -4,6 +4,7 @@ namespace App\Support\Reservations;
 
 use App\Enums\ReservationStatus;
 use App\Enums\RoomStatusesEnum;
+use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\Room;
 
@@ -14,6 +15,32 @@ use App\Models\Room;
  */
 class ReservationCreator
 {
+    /**
+     * Guests are matched by phone number within a hotel; a trashed match is
+     * restored rather than duplicated, since phone_number is how repeat
+     * guests are recognized across channels (WhatsApp, imports, etc).
+     */
+    public static function findOrCreateGuest(string $hotelId, array $attributes): Guest
+    {
+        $guest = Guest::withTrashed()->firstOrCreate(
+            [
+                'hotel_id' => $hotelId,
+                'phone_number' => $attributes['phone_number'],
+            ],
+            [
+                'first_name' => $attributes['first_name'] ?? null,
+                'last_name' => $attributes['last_name'] ?? null,
+                'email' => $attributes['email'] ?? null,
+            ]
+        );
+
+        if ($guest->trashed()) {
+            $guest->restore();
+        }
+
+        return $guest;
+    }
+
     /**
      * A trashed reservation is not visible through normal queries, but its
      * unique reservation_id row still exists, so blindly creating would
