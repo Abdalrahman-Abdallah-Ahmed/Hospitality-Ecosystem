@@ -17,10 +17,13 @@ class ActivityCategoryController extends Controller
     {
         $this->authorize('viewAny', ActivityCategory::class);
 
-        $activityCategories = GenericQuery::apply(
-            ActivityCategory::where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = ActivityCategory::query();
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $activityCategories = GenericQuery::apply($query, $request);
 
         return apiResponse('Activity categories fetched successfully.', 200, $activityCategories);
     }
@@ -34,9 +37,9 @@ class ActivityCategoryController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = $request->user()->hotel;
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
         if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
         $activityCategory = ActivityCategory::create([...$validated, 'hotel_id' => $hotel->id]);
@@ -63,7 +66,7 @@ class ActivityCategoryController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $activityCategory->update([...$validated, 'hotel_id' => $activityCategory->hotel_id]);
+        $activityCategory->update($validated);
 
         return apiResponse('Activity category updated successfully.', 200, $activityCategory);
     }

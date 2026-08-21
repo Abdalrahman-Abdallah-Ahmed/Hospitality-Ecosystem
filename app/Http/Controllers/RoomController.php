@@ -17,10 +17,13 @@ class RoomController extends Controller
     {
         $this->authorize('viewAny', Room::class);
 
-        $rooms = GenericQuery::apply(
-            Room::where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = Room::query();
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $rooms = GenericQuery::apply($query, $request);
 
         return apiResponse('Rooms fetched successfully.', 200, $rooms);
     }
@@ -32,13 +35,14 @@ class RoomController extends Controller
     {
         $this->authorize('create', Room::class);
 
-        $validated = $request->validated();
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        if ($validated['hotel_id'] !== $request->user()->hotel?->id) {
-            return apiResponse('The selected hotel does not belong to you.', 403);
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        if (! $hotel) {
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
-        $room = Room::create($validated);
+        $room = Room::create([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Room created successfully.', 201, $room);
     }
@@ -60,7 +64,9 @@ class RoomController extends Controller
     {
         $this->authorize('update', $room);
 
-        $room->update($request->validated());
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+
+        $room->update($validated);
 
         return apiResponse('Room updated successfully.', 200, $room);
     }

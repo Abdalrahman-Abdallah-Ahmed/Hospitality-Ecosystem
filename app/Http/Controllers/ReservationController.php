@@ -24,11 +24,13 @@ class ReservationController extends Controller
     {
         $this->authorize('viewAny', Reservation::class);
 
-        $reservations = GenericQuery::apply(
-            Reservation::with(['hotel', 'guest', 'room'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = Reservation::with(['hotel', 'guest', 'room']);
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $reservations = GenericQuery::apply($query, $request);
 
         return apiResponse('Reservations fetched successfully.', 200, $reservations);
     }
@@ -42,11 +44,18 @@ class ReservationController extends Controller
 
         $validated = $request->validated();
 
-        if ($error = $this->guardHotelScopedReferences($validated, $validated['hotel_id'])) {
+        $hotel = resolveHotel($request->user(), $validated['hotel_id'] ?? null);
+        if (! $hotel) {
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+        }
+
+        $validated = unsetAttributes($validated, ['hotel_id']);
+
+        if ($error = $this->guardHotelScopedReferences($validated, $hotel->id)) {
             return $error;
         }
 
-        $reservation = ReservationCreator::create($validated);
+        $reservation = ReservationCreator::create([...$validated, 'hotel_id' => $hotel->id]);
 
         ReservationCreator::syncRoomOccupancy($reservation);
 
@@ -71,11 +80,7 @@ class ReservationController extends Controller
     {
         $this->authorize('update', $reservation);
 
-        $validated = $request->validated();
-
-        if (array_key_exists('hotel_id', $validated) && $validated['hotel_id'] !== $reservation->hotel_id) {
-            return apiResponse('Reassigning a reservation to a different hotel is not allowed.', 422);
-        }
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
         if ($error = $this->guardHotelScopedReferences($validated, $reservation->hotel_id)) {
             return $error;

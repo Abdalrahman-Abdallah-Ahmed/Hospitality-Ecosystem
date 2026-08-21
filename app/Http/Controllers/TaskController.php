@@ -19,11 +19,13 @@ class TaskController extends Controller
     {
         $this->authorize('viewAny', Task::class);
 
-        $tasks = GenericQuery::apply(
-            Task::with(['hotel', 'guest', 'room'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = Task::with(['hotel', 'guest', 'room']);
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $tasks = GenericQuery::apply($query, $request);
 
         return apiResponse('Tasks fetched successfully.', 200, $tasks);
     }
@@ -38,9 +40,9 @@ class TaskController extends Controller
         $validated = unsetAttributes($request->validated(), ['hotel_id', 'guest_id']);
         $validated['created_by_user_id'] = $validated['created_by_user_id'] ?? $request->user()->id;
 
-        $hotel = $request->user()->hotel;
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
         if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
         $invalidRelation = invalidRelation($hotel, [
@@ -93,18 +95,13 @@ class TaskController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id', 'guest_id']);
 
-        $hotel = $request->user()->hotel;
-        if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
-        }
-
-        $invalidRelation = invalidRelation($hotel, [
+        $invalidRelation = invalidRelation($task->hotel, [
             'rooms' => $validated['room_id'] ?? null,
             'reservations' => $validated['reservation_id'] ?? null,
             'teams' => $validated['assigned_to_team_id'] ?? null,
             'users' => $validated['assigned_to_user_id'] ?? null,
             'taskCategories' => $validated['task_category_id'] ?? null,
-        ]) ?? invalidRelation($hotel, [
+        ]) ?? invalidRelation($task->hotel, [
             'users' => $validated['created_by_user_id'] ?? null,
         ]);
 
@@ -123,7 +120,7 @@ class TaskController extends Controller
             $validated['guest_id'] = $this->guestIdForReservation($validated['reservation_id']);
         }
 
-        $task->update([...$validated, 'hotel_id' => $hotel->id]);
+        $task->update($validated);
 
         return apiResponse('Task updated successfully.', 200, $task->load(['hotel', 'guest', 'room']));
     }

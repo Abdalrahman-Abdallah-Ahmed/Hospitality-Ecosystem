@@ -17,10 +17,13 @@ class ActivityController extends Controller
     {
         $this->authorize('viewAny', Activity::class);
 
-        $activities = GenericQuery::apply(
-            Activity::where('hotel_id', $request->user()->hotel?->id)->with('category'),
-            $request
-        );
+        $query = Activity::with('category');
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $activities = GenericQuery::apply($query, $request);
 
         return apiResponse('Activities fetched successfully.', 200, $activities);
     }
@@ -34,9 +37,9 @@ class ActivityController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = $request->user()->hotel;
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
         if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
         $invalidRelation = invalidRelation($hotel, [
@@ -71,12 +74,7 @@ class ActivityController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = $request->user()->hotel;
-        if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
-        }
-
-        $invalidRelation = invalidRelation($hotel, [
+        $invalidRelation = invalidRelation($activity->hotel, [
             'activityCategories' => $validated['category_id'] ?? null,
         ]);
 
@@ -84,7 +82,7 @@ class ActivityController extends Controller
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
         }
 
-        $activity->update([...$validated, 'hotel_id' => $hotel->id]);
+        $activity->update($validated);
 
         return apiResponse('Activity updated successfully.', 200, $activity->load('category'));
     }

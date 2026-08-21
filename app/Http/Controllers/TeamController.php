@@ -21,11 +21,13 @@ class TeamController extends Controller
     {
         $this->authorize('viewAny', Team::class);
 
-        $teams = GenericQuery::apply(
-            Team::with(['hotel'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = Team::with(['hotel']);
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $teams = GenericQuery::apply($query, $request);
 
         return apiResponse('Teams fetched successfully.', 200, $teams);
     }
@@ -50,18 +52,18 @@ class TeamController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotelId = $request->user()->hotel?->id;
-        if (! $hotelId) {
-            return apiResponse('You do not belong to any hotel.', 403);
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        if (! $hotel) {
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
-        if (Team::where('hotel_id', $hotelId)->where('name', $validated['name'])->exists()) {
+        if (Team::where('hotel_id', $hotel->id)->where('name', $validated['name'])->exists()) {
             throw ValidationException::withMessages([
                 'name' => 'A team with this name already exists.',
             ]);
         }
 
-        $team = Team::create([...$validated, 'hotel_id' => $hotelId]);
+        $team = Team::create([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Team created successfully.', 201, $team->load(['hotel']));
     }

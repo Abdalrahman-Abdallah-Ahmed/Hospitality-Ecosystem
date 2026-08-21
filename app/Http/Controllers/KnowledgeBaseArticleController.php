@@ -18,13 +18,16 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('viewAny', KnowledgeBaseArticle::class);
 
+        // A super admin has no hotel of their own, so this scopes them to
+        // hotel_id IS NULL — the shared/global knowledge base — by design,
+        // rather than every hotel's articles.
         $articles = GenericQuery::apply(
             KnowledgeBaseArticle::with(['hotel'])
                 ->where('hotel_id', $request->user()->hotel?->id),
             $request
         );
 
-        return apiResponse('Articles fetched successfully.', 200, $articles);        
+        return apiResponse('Articles fetched successfully.', 200, $articles);
     }
 
     /**
@@ -37,6 +40,8 @@ class KnowledgeBaseArticleController extends Controller
         $user = $request->user();
 
         if ($user->isSuperAdmin()) {
+            // Super admins only ever manage the shared/global knowledge base,
+            // never a specific hotel's — any spoofed hotel_id is ignored.
             $hotelId = null;
         } else {
             $hotel = $user->hotel;

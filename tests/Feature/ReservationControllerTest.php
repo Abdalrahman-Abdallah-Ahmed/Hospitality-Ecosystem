@@ -264,7 +264,7 @@ it('does not flag the reservation unique id rule against itself on update', func
         ->assertOk();
 });
 
-it('rejects reassigning a reservation to a different hotel on update', function () {
+it('ignores an attempt to reassign a reservation to a different hotel on update', function () {
     [$admin, $hotel] = adminWithHotel();
     [, $otherHotel] = adminWithHotel();
     $reservation = reservationFor($hotel);
@@ -274,7 +274,7 @@ it('rejects reassigning a reservation to a different hotel on update', function 
             'hotel_id' => $otherHotel->id,
         ]);
 
-    $response->assertStatus(422)->assertJsonPath('message', 'Reassigning a reservation to a different hotel is not allowed.');
+    $response->assertOk();
     expect($reservation->fresh()->hotel_id)->toBe($hotel->id);
 });
 

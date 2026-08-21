@@ -17,11 +17,13 @@ class TaskCategoryController extends Controller
     {
         $this->authorize('viewAny', TaskCategory::class);
 
-        $taskCategories = GenericQuery::apply(
-            TaskCategory::with(['hotel', 'team'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = TaskCategory::with(['hotel', 'team']);
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $taskCategories = GenericQuery::apply($query, $request);
 
         return apiResponse('Task categories fetched successfully.', 200, $taskCategories);
     }
@@ -35,9 +37,9 @@ class TaskCategoryController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = $request->user()->hotel;
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
         if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
         $invalidRelation = invalidRelation($hotel, [
@@ -62,12 +64,7 @@ class TaskCategoryController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = $request->user()->hotel;
-        if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
-        }
-
-        $invalidRelation = invalidRelation($hotel, [
+        $invalidRelation = invalidRelation($taskCategory->hotel, [
             'teams' => $validated['team_id'] ?? null,
         ]);
 
@@ -75,7 +72,7 @@ class TaskCategoryController extends Controller
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
         }
 
-        $taskCategory->update([...$validated, 'hotel_id' => $hotel->id]);
+        $taskCategory->update($validated);
 
         return apiResponse('Task category updated successfully.', 200, $taskCategory->load(['hotel', 'team']));
     }

@@ -16,10 +16,14 @@ class HotelPolicyController extends Controller
     public function index(GenericIndexRequest $request)
     {
         $this->authorize('viewAny', HotelPolicy::class);
-        $policies = GenericQuery::apply(
-            HotelPolicy::where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+
+        $query = HotelPolicy::query();
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $policies = GenericQuery::apply($query, $request);
 
         return apiResponse('Hotel policies fetched successfully.', 200, $policies);
     }
@@ -31,14 +35,14 @@ class HotelPolicyController extends Controller
     {
         $this->authorize('create', HotelPolicy::class);
 
-        $validated = $request->validated();
-        $validated['hotel_id'] = $request->user()->hotel?->id;
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        if(!$validated['hotel_id']){
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        if (! $hotel) {
             return apiResponse('User does not have an associated hotel.', 403);
         }
 
-        $hotelPolicy = HotelPolicy::create($validated);
+        $hotelPolicy = HotelPolicy::create([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Hotel policy created successfully.', 201, $hotelPolicy);
     }
@@ -49,9 +53,11 @@ class HotelPolicyController extends Controller
     public function update(GenericUpdateRequest $request, HotelPolicy $hotelPolicy)
     {
         $this->authorize('update', $hotelPolicy);
-        $validated = $request->validated();
-        $validated['hotel_id'] = $hotelPolicy->hotel_id;
+
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+
         $hotelPolicy->update($validated);
+
         return apiResponse('Hotel policy updated successfully.', 200, $hotelPolicy);
     }
 

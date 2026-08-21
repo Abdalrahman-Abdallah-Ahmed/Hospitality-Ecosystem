@@ -20,11 +20,13 @@ class RecommendationController extends Controller
     {
         $this->authorize('viewAny', Recommendation::class);
 
-        $recommendations = GenericQuery::apply(
-            Recommendation::with(['hotel', 'reservation.guest', 'activity'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = Recommendation::with(['hotel', 'reservation.guest', 'activity']);
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $recommendations = GenericQuery::apply($query, $request);
 
         return apiResponse('Recommendations fetched successfully.', 200, $recommendations);
     }
@@ -61,12 +63,7 @@ class RecommendationController extends Controller
             'dismissed_at',
         ]);
 
-        $hotel = $request->user()->hotel;
-        if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
-        }
-
-        $invalidRelation = invalidRelation($hotel, [
+        $invalidRelation = invalidRelation($recommendation->hotel, [
             'reservations' => $validated['reservation_id'] ?? null,
             'activities' => $validated['activity_id'] ?? null,
         ]);
@@ -79,7 +76,7 @@ class RecommendationController extends Controller
             $validated['conversation_id'] = $this->conversationIdFor($validated['reservation_id']);
         }
 
-        $recommendation->update([...$validated, 'hotel_id' => $hotel->id]);
+        $recommendation->update($validated);
 
         return apiResponse('Recommendation updated successfully.', 200, $recommendation->load(['hotel', 'reservation.guest', 'activity']));
     }

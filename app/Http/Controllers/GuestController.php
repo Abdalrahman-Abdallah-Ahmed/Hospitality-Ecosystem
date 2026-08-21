@@ -18,11 +18,13 @@ class GuestController extends Controller
     {
         $this->authorize('viewAny', Guest::class);
 
-        $guests = GenericQuery::apply(
-            Guest::with(['hotel', 'reservations', 'conversations'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        $query = Guest::with(['hotel', 'reservations', 'conversations']);
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $guests = GenericQuery::apply($query, $request);
 
         return apiResponse('Guests fetched successfully.', 200, $guests);
     }
@@ -36,9 +38,12 @@ class GuestController extends Controller
 
         $validated = $request->validated();
 
-        if (($validated['hotel_id'] ?? null) !== $request->user()->hotel?->id) {
-            return apiResponse('The selected hotel does not belong to you.', 403);
+        $hotel = resolveHotel($request->user(), $validated['hotel_id'] ?? null);
+        if (! $hotel) {
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
+
+        $validated = unsetAttributes($validated, ['hotel_id']);
 
         // The (hotel_id, channel, external_id) unique index is composite, so the
         // generic schema-derived rules can't validate it. A trashed guest's row
@@ -46,7 +51,7 @@ class GuestController extends Controller
         // letting Guest::create() hit a duplicate-key error.
         if (! empty($validated['channel']) && ! empty($validated['external_id'])) {
             $existing = Guest::withTrashed()
-                ->where('hotel_id', $validated['hotel_id'])
+                ->where('hotel_id', $hotel->id)
                 ->where('channel', $validated['channel'])
                 ->where('external_id', $validated['external_id'])
                 ->first();
@@ -57,13 +62,13 @@ class GuestController extends Controller
 
             if ($existing) {
                 $existing->restore();
-                $existing->update($validated);
+                $existing->update([...$validated, 'hotel_id' => $hotel->id]);
 
                 return apiResponse('Guest created successfully.', 201, $existing->load(['hotel', 'reservations', 'conversations']));
             }
         }
 
-        $guest = Guest::create($validated);
+        $guest = Guest::create([...$validated, 'hotel_id' => $hotel->id]);
 
         return apiResponse('Guest created successfully.', 201, $guest->load(['hotel', 'reservations', 'conversations']));
     }
@@ -85,11 +90,7 @@ class GuestController extends Controller
     {
         $this->authorize('update', $guest);
 
-        $validated = $request->validated();
-
-        if (array_key_exists('hotel_id', $validated) && $validated['hotel_id'] !== $guest->hotel_id) {
-            return apiResponse('Reassigning a guest to a different hotel is not allowed.', 422);
-        }
+        $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
         $guest->update($validated);
 

@@ -95,7 +95,7 @@ class UserController extends Controller
             return apiResponse('The selected team does not belong to you.', 403);
         }
 
-        $user->update([...$validated, 'hotel_id' => $user->hotel_id]);
+        $user->update($validated);
 
         return apiResponse('User updated successfully.', 200, new UserResource($user->load('hotel')));
     }

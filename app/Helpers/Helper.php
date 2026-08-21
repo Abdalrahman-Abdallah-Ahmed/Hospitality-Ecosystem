@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Hotel;
+use App\Models\User;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 
@@ -48,4 +49,19 @@ function invalidRelation(Hotel $hotel, array $relations): ?string
         }
     }
     return null;
+}
+
+/**
+ * The hotel a create endpoint should attach a new record to: a scoped
+ * admin always gets their own hotel (whatever hotel_id they submitted is
+ * ignored), while a super admin has no hotel of their own and must
+ * explicitly choose one via the submitted hotel_id.
+ */
+function resolveHotel(User $user, ?string $requestedHotelId = null): ?Hotel
+{
+    if ($user->isSuperAdmin()) {
+        return $requestedHotelId ? Hotel::find($requestedHotelId) : null;
+    }
+
+    return $user->hotel;
 }

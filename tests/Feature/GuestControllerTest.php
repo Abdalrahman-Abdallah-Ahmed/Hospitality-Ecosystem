@@ -128,6 +128,18 @@ it('lets a super admin view a guest belonging to any hotel', function () {
 
 // update
 
+it('ignores an attempt to reassign a guest to a different hotel on update', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
+    [, $otherHotel] = adminWithGuestHotel();
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['hotel_id' => $otherHotel->id]);
+
+    $response->assertOk();
+    expect($guest->fresh()->hotel_id)->toBe($hotel->id);
+});
+
 it('lets a super admin update a guest belonging to any hotel', function () {
     [, $hotel] = adminWithGuestHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Old Name', 'channel' => 'booking_com', 'external_id' => 'ext-1']);

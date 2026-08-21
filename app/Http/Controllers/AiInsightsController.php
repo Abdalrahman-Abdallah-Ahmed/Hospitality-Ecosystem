@@ -20,11 +20,14 @@ class AiInsightsController extends Controller
     public function index(GenericIndexRequest $request)
     {
         $this->authorize('viewAny', AiInsights::class);
-        // Fetch all AI insights from the database
-        $insights = GenericQuery::apply(
-            AiInsights::where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+
+        $query = AiInsights::query();
+
+        if (! $request->user()->isSuperAdmin()) {
+            $query->where('hotel_id', $request->user()->hotel?->id);
+        }
+
+        $insights = GenericQuery::apply($query, $request);
 
         return apiResponse('AI insights fetched successfully.', 200, $insights);
     }

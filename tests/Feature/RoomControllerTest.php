@@ -114,8 +114,8 @@ it('rejects a non-admin user from creating a room', function () {
         ->assertStatus(403);
 });
 
-it('rejects creating a room for a hotel the admin does not own', function () {
-    [$admin] = adminWithOwnHotel();
+it('creates a room scoped to the caller own hotel, ignoring a spoofed hotel_id', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
     [, $otherHotel] = adminWithOwnHotel();
 
     $response = $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
@@ -124,8 +124,10 @@ it('rejects creating a room for a hotel the admin does not own', function () {
             'room_number' => '999',
         ]);
 
-    $response->assertStatus(403)->assertJsonPath('message', 'The selected hotel does not belong to you.');
-    expect(Room::where('room_number', '999')->exists())->toBeFalse();
+    $response->assertStatus(201)
+        ->assertJsonPath('body.hotel_id', $hotel->id);
+
+    expect(Room::where('hotel_id', $otherHotel->id)->where('room_number', '999')->exists())->toBeFalse();
 });
 
 // show
