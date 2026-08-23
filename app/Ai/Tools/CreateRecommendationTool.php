@@ -7,7 +7,6 @@ use App\Models\Activity;
 use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\Reservation;
-use App\Support\Recommendations\ConversationResolver;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -15,8 +14,6 @@ use Stringable;
 
 class CreateRecommendationTool implements Tool
 {
-    private ?string $conversationId = null;
-
     public function __construct(
         private readonly Hotel $hotel,
         private readonly Reservation $reservation,
@@ -44,7 +41,6 @@ class CreateRecommendationTool implements Tool
         }
 
         $recommendation = Recommendation::create([
-            'conversation_id' => $this->conversationId(),
             'reservation_id' => $this->reservation->id,
             'activity_id' => $activity->id,
             'hotel_id' => $this->hotel->id,
@@ -79,14 +75,5 @@ class CreateRecommendationTool implements Tool
                 ->description('Rank among the recommendations you create for this guest in this run — 0 is the top recommendation, higher numbers are lower priority.')
                 ->default(0),
         ];
-    }
-
-    /**
-     * Resolved once per tool instance, since every call in a run recommends
-     * for the same fixed reservation.
-     */
-    private function conversationId(): string
-    {
-        return $this->conversationId ??= ConversationResolver::forReservation($this->reservation)->id;
     }
 }

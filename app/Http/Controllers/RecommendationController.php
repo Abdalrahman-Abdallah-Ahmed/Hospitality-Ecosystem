@@ -8,7 +8,6 @@ use App\Jobs\GenerateActivityRecommendationsJob;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Support\RequestRules\GenericQuery;
-use App\Support\Recommendations\ConversationResolver;
 use Illuminate\Http\JsonResponse;
 
 class RecommendationController extends Controller
@@ -55,7 +54,6 @@ class RecommendationController extends Controller
         // out of reach here (see App\Ai\Tools\UpdateRecommendationTool).
         $validated = unsetAttributes($request->validated(), [
             'hotel_id',
-            'conversation_id',
             'status',
             'guest_confidence',
             'accepted_at',
@@ -70,10 +68,6 @@ class RecommendationController extends Controller
 
         if ($invalidRelation) {
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
-        }
-
-        if (array_key_exists('reservation_id', $validated)) {
-            $validated['conversation_id'] = $this->conversationIdFor($validated['reservation_id']);
         }
 
         $recommendation->update($validated);
@@ -101,20 +95,5 @@ class RecommendationController extends Controller
         GenerateActivityRecommendationsJob::dispatch($reservation);
 
         return apiResponse('Activity recommendations job has been initiated successfully.', 202, []);
-    }
-
-    /**
-     * A recommendation's conversation is never chosen by the client — it's
-     * always resolved (or started) from the reservation it references.
-     */
-    private function conversationIdFor(?string $reservationId): ?string
-    {
-        if (! $reservationId) {
-            return null;
-        }
-
-        $reservation = Reservation::find($reservationId);
-
-        return $reservation ? ConversationResolver::forReservation($reservation)->id : null;
     }
 }

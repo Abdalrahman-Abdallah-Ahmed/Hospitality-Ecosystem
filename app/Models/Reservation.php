@@ -58,19 +58,9 @@ class Reservation extends Model
         return $this->belongsTo(Room::class);
     }
 
-    public function conversations(): HasMany
-    {
-        return $this->hasMany(Conversation::class);
-    }
-
     public function recommendations(): HasMany
     {
         return $this->hasMany(Recommendation::class);
-    }
-
-    public function messages(): HasMany
-    {
-        return $this->hasMany(Message::class);
     }
 
     public function scopeConfirmed($query)

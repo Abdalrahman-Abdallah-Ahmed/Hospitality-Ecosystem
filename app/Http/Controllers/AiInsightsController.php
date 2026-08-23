@@ -2,18 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Ai\Agents\InsightsAgent;
-use App\Enums\AiInsightCategories;
-use App\Enums\InsightTypes;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Jobs\CreateAiInsightsJob;
 use App\Models\AiInsights;
-use App\Models\Hotel;
-use App\Models\Message;
-use App\Models\Reservation;
-use App\Models\Task;
 use App\Support\RequestRules\GenericQuery;
-use Illuminate\Http\Request;
 
 class AiInsightsController extends Controller
 {

@@ -18,7 +18,6 @@ class Recommendation extends Model
     public $incrementing = false;
 
     protected $fillable = [
-        'conversation_id',
         'reservation_id',
         'activity_id',
         'hotel_id',
@@ -47,11 +46,6 @@ class Recommendation extends Model
     public function hotel(): BelongsTo
     {
         return $this->belongsTo(Hotel::class);
-    }
-
-    public function conversation(): BelongsTo
-    {
-        return $this->belongsTo(Conversation::class);
     }
 
     public function reservation(): BelongsTo

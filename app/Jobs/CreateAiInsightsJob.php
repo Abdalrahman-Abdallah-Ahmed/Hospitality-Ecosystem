@@ -6,13 +6,14 @@ use App\Ai\Agents\InsightsAgent;
 use App\Enums\AiInsightCategories;
 use App\Enums\InsightTypes;
 use App\Models\AiInsights;
+use App\Models\Guest;
 use App\Models\Hotel;
-use App\Models\Message;
 use App\Models\Reservation;
 use App\Models\Task;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
+use Laravel\Ai\Models\ConversationMessage;
 
 class CreateAiInsightsJob implements ShouldQueue
 {
@@ -76,7 +77,7 @@ class CreateAiInsightsJob implements ShouldQueue
         return match ($category) {
             AiInsightCategories::RESERVATION->value => Reservation::class,
             AiInsightCategories::TASK->value => Task::class,
-            AiInsightCategories::GUEST_MESSAGE->value => Message::class,
+            AiInsightCategories::GUEST_MESSAGE->value => ConversationMessage::class,
             AiInsightCategories::GENERAL->value => Hotel::class,
             default => null,
         };
@@ -92,10 +93,9 @@ class CreateAiInsightsJob implements ShouldQueue
         return match ($category) {
             AiInsightCategories::RESERVATION->value => Reservation::where('hotel_id', $hotel->id)->whereKey($sourceId)->exists(),
             AiInsightCategories::TASK->value => Task::where('hotel_id', $hotel->id)->whereKey($sourceId)->exists(),
-            AiInsightCategories::GUEST_MESSAGE->value => Message::whereHas(
-                'conversation',
-                fn ($query) => $query->where('hotel_id', $hotel->id)
-            )->whereKey($sourceId)->exists(),
+            AiInsightCategories::GUEST_MESSAGE->value => Guest::hotelConversationMessagesQuery($hotel)
+                ->whereKey($sourceId)
+                ->exists(),
             AiInsightCategories::GENERAL->value => $sourceId === (string) $hotel->id,
             default => false,
         };

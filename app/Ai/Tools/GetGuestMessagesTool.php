@@ -4,9 +4,9 @@ namespace App\Ai\Tools;
 
 use App\Models\Guest;
 use App\Models\Hotel;
-use App\Models\Message;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Models\ConversationMessage;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
@@ -21,7 +21,7 @@ class GetGuestMessagesTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return "Retrieve guest-sent messages from the last 48 hours across all conversations for the current hotel, including message content, sender name, and the related reservation (if any). Use this to spot recurring complaints, unanswered questions, or sentiment trends.";
+        return "Retrieve guest-authored messages from the last 48 hours in remembered agent conversations for the current hotel, including message content, guest name, and the related agent conversation id. Use this to spot recurring complaints, unanswered questions, or sentiment trends.";
     }
 
     /**
@@ -29,22 +29,20 @@ class GetGuestMessagesTool implements Tool
      */
     public function handle(Request $request): Stringable|string
     {
-        $messages = Message::with(['sender', 'conversation.reservation'])
-            ->where('sender_type', Guest::class)
-            ->whereHas('conversation', fn ($query) => $query->where('hotel_id', $this->hotel->id))
-            ->where('sent_at', '>=', now()->subDays(2))
-            ->orderByDesc('sent_at')
+        $messages = Guest::hotelConversationMessagesQuery($this->hotel)
+            ->with('conversation.participant')
+            ->where('created_at', '>=', now()->subDays(2))
+            ->orderByDesc('created_at')
             ->limit(20)
             ->get()
-            ->map(fn (Message $message) => [
+            ->map(fn (ConversationMessage $message) => [
                 'id' => $message->id,
-                'guest_name' => $message->sender
-                    ? trim($message->sender->first_name.' '.$message->sender->last_name)
+                'guest_name' => $message->conversation?->participant
+                    ? trim($message->conversation->participant->first_name.' '.$message->conversation->participant->last_name)
                     : null,
                 'content' => $message->content,
-                'message_type' => $message->message_type->value,
-                'sent_at' => $message->sent_at?->toDateTimeString(),
-                'reservation_id' => $message->conversation?->reservation?->reservation_id,
+                'sent_at' => $message->created_at?->toDateTimeString(),
+                'conversation_id' => $message->conversation_id,
             ])
             ->values();
 
