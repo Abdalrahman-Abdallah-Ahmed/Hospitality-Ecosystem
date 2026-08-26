@@ -19,10 +19,6 @@ class HotelPolicyController extends Controller
 
         $query = HotelPolicy::query();
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $policies = GenericQuery::apply($query, $request);
 
         return apiResponse('Hotel policies fetched successfully.', 200, $policies);
@@ -68,6 +64,7 @@ class HotelPolicyController extends Controller
     {
         $this->authorize('delete', $hotelPolicy);
         $hotelPolicy->delete();
+
         return apiResponse('Hotel policy deleted successfully.', 200);
     }
 }

@@ -2,17 +2,17 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Enums\KnowledgeBaseCategory;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class KnowledgeBaseArticle extends Model
 {
-    use Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
 
     protected $table = 'knowledge_base_articles';
 
@@ -35,11 +35,6 @@ class KnowledgeBaseArticle extends Model
         'tags' => 'array',
         'version' => 'integer',
     ];
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function chunks(): MorphMany
     {

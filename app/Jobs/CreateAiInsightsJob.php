@@ -10,6 +10,7 @@ use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
+use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
@@ -35,30 +36,35 @@ class CreateAiInsightsJob implements ShouldQueue
         $hotel = $user->hotel;
         $insightType = $this->data['insight_type'] ?? InsightTypes::GENERAL->value;
 
-        $agent = InsightsAgent::make(
-            user: $user,
-        );
+        // Queue workers have no HTTP request, so TenantContext starts empty here
+        // regardless of the queue driver — scope it explicitly to this hotel for
+        // the duration of the job, restoring whatever context (if any) preceded it.
+        TenantContext::runForHotel($hotel->id, function () use ($user, $hotel, $insightType) {
+            $agent = InsightsAgent::make(
+                user: $user,
+            );
 
-        $response = match ($insightType) {
-            InsightTypes::GENERAL->value => $this->generalInsights($agent),
-            InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
-            InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
-            default => $agent->prompt('You are a helpful insights agent.'),
-        };
+            $response = match ($insightType) {
+                InsightTypes::GENERAL->value => $this->generalInsights($agent),
+                InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
+                InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
+                default => $agent->prompt('You are a helpful insights agent.'),
+            };
 
-        collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
-            $modelClass = $this->insightableModelFor($insight['category']);
-            $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
+            collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
+                $modelClass = $this->insightableModelFor($insight['category']);
+                $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
 
-            AiInsights::create([
-                'title' => $insight['title'],
-                'hotel_id' => $hotel->id,
-                'description' => $insight['description'],
-                'category' => $insight['category'],
-                'insight_type' => $insightType,
-                'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
-                'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
-            ]);
+                AiInsights::create([
+                    'title' => $insight['title'],
+                    'hotel_id' => $hotel->id,
+                    'description' => $insight['description'],
+                    'category' => $insight['category'],
+                    'insight_type' => $insightType,
+                    'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
+                    'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
+                ]);
+            });
         });
     }
 

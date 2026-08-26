@@ -2,16 +2,16 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Enums\RoomTypes;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Room extends Model
 {
-    use Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids;
 
     protected $keyType = 'string';
 
@@ -28,11 +28,6 @@ class Room extends Model
     protected $casts = [
         'room_type' => RoomTypes::class,
     ];
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function reservations(): HasMany
     {

@@ -7,6 +7,7 @@ use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -45,7 +46,7 @@ function reservationFor(Hotel $hotel, array $overrides = []): Reservation
     return Reservation::create(array_merge([
         'hotel_id' => $hotel->id,
         'guest_id' => $guest->id,
-        'reservation_id' => 'RES-'.strtoupper(Illuminate\Support\Str::random(8)),
+        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
         'arrival_date' => '2026-09-01',
         'departure_date' => '2026-09-04',
     ], $overrides));
@@ -315,7 +316,7 @@ it('rejects an admin deleting a reservation belonging to a different hotel', fun
         ->deleteJson("/api/reservation/{$reservation->id}")
         ->assertStatus(403);
 
-    expect(Reservation::find($reservation->id))->not->toBeNull();
+    expect(Reservation::withoutGlobalScope('hotel')->find($reservation->id))->not->toBeNull();
 });
 
 // super admin bypass

@@ -90,7 +90,7 @@ Field notes for the UI:
 
 - `id` and `hotel_id` are UUID strings, not integers — don't parse them as numbers.
 - `room_number` and `floor` are free-text strings and are nullable — a room can exist with either blank.
-- `room_type` is **now a real, server-enforced enum** (`App\Enums\RoomTypes`), not free text: `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family`. It's still nullable (a room can have no type set), but if you send a value, it must be one of these seven or the request is rejected with a `422` — see [Create a Room](#2-create-a-room). The full list is echoed back on every `index` call as `body.room_types` (see [List Rooms](#1-list-rooms)) so the frontend doesn't need to hard-code it.
+- `room_type` is **now a real, server-enforced enum** (`App\Enums\RoomTypes`), not free text: `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family`. It's still nullable (a room can have no type set), but if you send a value, it must be one of these seven or the request is rejected with a `422` — see [Create a Room](#2-create-a-room). The full list is echoed back on every `index` call as `body.room_types` (plain strings, see [List Rooms](#1-list-rooms)) so the frontend doesn't need to hard-code it.
 - `status` is also a free-text string, not a restricted enum server-side (there's no `Rule::in`/cast enforcing specific values). It defaults to `"available"` at the database level when omitted on create. The API will accept any string here, so **the frontend should be the one constraining input** (e.g. a fixed dropdown of `available` / `occupied` / `maintenance` / whatever values the product actually uses) — don't rely on the server to reject typos.
 - There is no soft-delete on rooms — `DELETE` permanently removes the row (see [Delete a Room](#5-delete-a-room)).
 - If a room has active reservations pointing at it (`reservations.room_id`), deleting it does **not** cascade-delete those reservations; their `room_id` is left pointing at a now-missing row (no `ON DELETE` rule enforced from this side). Consider warning the user before deleting a room that's referenced by upcoming reservations.
@@ -123,48 +123,42 @@ GET /api/room?filter[status]=available&search=101&sort=-created_at&per_page=20&p
 
 ### Success Response
 
-HTTP `200 OK`. **`body` is no longer the paginator directly** — it's an object with the paginator under `data` plus a `room_types` key listing every valid room type:
+HTTP `200 OK`. `index` serializes through `App\Http\Resources\RoomResource`, wrapped in a paginated Laravel resource collection, with `room_types` merged in as an extra top-level key:
 
 ```json
 {
   "message": "Rooms fetched successfully.",
   "code": 200,
   "body": {
-    "data": {
+    "data": [
+      { "...": "one room object, shape as above" }
+    ],
+    "links": {
+      "first": "http://your-domain.com/api/room?page=1",
+      "last": "http://your-domain.com/api/room?page=1",
+      "prev": null,
+      "next": null
+    },
+    "meta": {
       "current_page": 1,
-      "data": [
-        { "...": "one room object, shape as above" }
-      ],
-      "first_page_url": "http://your-domain.com/api/room?page=1",
       "from": 1,
       "last_page": 1,
-      "last_page_url": "http://your-domain.com/api/room?page=1",
       "links": [ { "url": null, "label": "&laquo; Previous", "page": null, "active": false } ],
-      "next_page_url": null,
       "path": "http://your-domain.com/api/room",
       "per_page": 15,
-      "prev_page_url": null,
       "to": 1,
       "total": 1
     },
-    "room_types": [
-      { "name": "SINGLE", "value": "single" },
-      { "name": "DOUBLE", "value": "double" },
-      { "name": "TWIN", "value": "twin" },
-      { "name": "TRIPLE", "value": "triple" },
-      { "name": "SUITE", "value": "suite" },
-      { "name": "DELUXE", "value": "deluxe" },
-      { "name": "FAMILY", "value": "family" }
-    ]
+    "room_types": ["single", "double", "twin", "triple", "suite", "deluxe", "family"]
   }
 }
 ```
 
-**This is a breaking change** from the previous shape, where `body` *was* the paginator and the room list was at `body.data`. Now:
+Notes:
 
-- The room array is at **`body.data.data`** (one level deeper than before).
-- Pagination controls (`current_page`, `last_page`, `total`, etc.) are on **`body.data`**, not `body`.
-- `body.room_types` is new: a fixed, hotel-independent list of the valid `room_type` enum cases, in `{ name, value }` pairs (PHP enum serialization — `value` is the string you send back on create/update, `name` is the enum case name, not meant for display). Use it to populate a `room_type` dropdown instead of hard-coding the seven values.
+- The room array is at **`body.data`** (flat — this is Laravel's standard paginated resource collection shape, not a raw paginator).
+- Pagination controls (`current_page`, `last_page`, `total`, etc.) are on **`body.meta`**; first/last/prev/next page URLs are on **`body.links`**.
+- `body.room_types` is a fixed, hotel-independent list of the valid `room_type` values (plain strings, e.g. `"double"` — the same string you send back on create/update). Use it to populate a `room_type` dropdown instead of hard-coding the seven values.
 
 Only `index` changed shape — `store`, `show`, `update`, `destroy` still return a bare [room object](#the-room-object) in `body`, unchanged.
 

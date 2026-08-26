@@ -15,10 +15,6 @@ class AiInsightsController extends Controller
 
         $query = AiInsights::query();
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $insights = GenericQuery::apply($query, $request);
 
         return apiResponse('AI insights fetched successfully.', 200, $insights);
@@ -35,8 +31,8 @@ class AiInsightsController extends Controller
         }
 
         $data = [
-            "insight_type"=> $request->input('insight_type'),
-            "user"=> $request->user(),
+            'insight_type' => $request->input('insight_type'),
+            'user' => $request->user(),
         ];
 
         CreateAiInsightsJob::dispatch($data);

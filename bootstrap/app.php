@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Middleware\ApiKeyMiddleware;
+use App\Http\Middleware\ResolveTenant;
+use App\Http\Middleware\VerifyWhatsAppWebhookSignature;
+use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -14,9 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'auth' => \Illuminate\Auth\Middleware\Authenticate::class,
-            'api.key' => \App\Http\Middleware\ApiKeyMiddleware::class,
-            'whatsapp.signature' => \App\Http\Middleware\VerifyWhatsAppWebhookSignature::class,
+            'auth' => Authenticate::class,
+            'api.key' => ApiKeyMiddleware::class,
+            'tenant' => ResolveTenant::class,
+            'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

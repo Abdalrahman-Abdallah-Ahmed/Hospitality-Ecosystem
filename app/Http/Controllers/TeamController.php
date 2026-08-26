@@ -23,10 +23,6 @@ class TeamController extends Controller
 
         $query = Team::with(['hotel']);
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $teams = GenericQuery::apply($query, $request);
 
         return apiResponse('Teams fetched successfully.', 200, $teams);
@@ -40,6 +36,7 @@ class TeamController extends Controller
         $this->authorize('view', $team);
 
         $team->load(['hotel', 'members']);
+
         return apiResponse('Team fetched successfully.', 200, $team);
     }
 
@@ -127,6 +124,7 @@ class TeamController extends Controller
     {
         $this->authorize('delete', $team);
         $team->delete();
+
         return apiResponse('Team deleted successfully.', 200);
     }
 }

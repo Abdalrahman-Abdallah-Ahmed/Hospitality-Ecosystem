@@ -11,6 +11,8 @@ return new class extends Migration
         Schema::create('hotels', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('owner_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignUuid('hotel_group_id')->nullable()->constrained('hotel_groups')->nullOnDelete();
+            $table->index('hotel_group_id');
             $table->string('name');
             $table->string('slug')->unique();
             $table->string('timezone')->default('UTC');

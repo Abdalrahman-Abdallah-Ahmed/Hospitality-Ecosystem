@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Activity extends Model
 {
-    use Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
 
     protected $keyType = 'string';
 
@@ -31,11 +32,6 @@ class Activity extends Model
         'price' => 'decimal:2',
         'is_active' => 'boolean',
     ];
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function category(): BelongsTo
     {

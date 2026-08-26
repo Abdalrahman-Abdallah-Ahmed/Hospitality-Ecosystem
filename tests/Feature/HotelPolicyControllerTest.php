@@ -179,7 +179,7 @@ it('rejects an admin deleting a policy belonging to a different hotel', function
         ->deleteJson("/api/hotel-policy/{$policy->id}")
         ->assertStatus(403);
 
-    expect(HotelPolicy::find($policy->id))->not->toBeNull();
+    expect(HotelPolicy::withoutGlobalScope('hotel')->find($policy->id))->not->toBeNull();
 });
 
 // super admin bypass

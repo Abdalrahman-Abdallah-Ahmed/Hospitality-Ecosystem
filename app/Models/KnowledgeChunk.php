@@ -2,14 +2,14 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class KnowledgeChunk extends Model
 {
-    use HasUuids;
+    use BelongsToHotel, HasUuids;
 
     protected $table = 'knowledge_chunks';
 
@@ -39,10 +39,5 @@ class KnowledgeChunk extends Model
     public function chunkable(): MorphTo
     {
         return $this->morphTo();
-    }
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
     }
 }

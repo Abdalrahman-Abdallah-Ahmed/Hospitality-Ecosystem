@@ -2,15 +2,15 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ActivityCategory extends Model
 {
-    use Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids;
 
     protected $keyType = 'string';
 
@@ -22,11 +22,6 @@ class ActivityCategory extends Model
         'slug',
         'description',
     ];
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function activities(): HasMany
     {

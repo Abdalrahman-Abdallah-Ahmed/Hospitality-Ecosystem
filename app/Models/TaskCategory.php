@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 class TaskCategory extends Model
 {
-    use Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids;
 
     public $fillable = [
         'hotel_id',
@@ -16,11 +17,6 @@ class TaskCategory extends Model
         'name',
         'description',
     ];
-
-    public function hotel()
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function team()
     {

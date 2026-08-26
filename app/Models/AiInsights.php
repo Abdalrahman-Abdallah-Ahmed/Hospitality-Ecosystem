@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 class AiInsights extends Model
 {
-    use Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids;
 
     protected $keyType = 'string';
 

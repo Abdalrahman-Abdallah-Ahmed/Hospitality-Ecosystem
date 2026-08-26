@@ -11,8 +11,6 @@ return new class extends Migration
     {
         Schema::create('recommendations', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('conversation_id');
-            $table->foreign('conversation_id')->references('id')->on('conversations')->cascadeOnDelete();
             $table->foreignUuid('reservation_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignUuid('activity_id')->constrained()->cascadeOnDelete();
             $table->text('reason')->nullable();

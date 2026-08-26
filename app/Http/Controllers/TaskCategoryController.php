@@ -1,10 +1,11 @@
 <?php
 
 namespace App\Http\Controllers;
-use App\Models\TaskCategory;
+
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Models\TaskCategory;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 
@@ -18,10 +19,6 @@ class TaskCategoryController extends Controller
         $this->authorize('viewAny', TaskCategory::class);
 
         $query = TaskCategory::with(['hotel', 'team']);
-
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
 
         $taskCategories = GenericQuery::apply($query, $request);
 
@@ -84,6 +81,7 @@ class TaskCategoryController extends Controller
     {
         $this->authorize('delete', $taskCategory);
         $taskCategory->delete();
+
         return apiResponse('Task category deleted successfully.', 200);
     }
 }

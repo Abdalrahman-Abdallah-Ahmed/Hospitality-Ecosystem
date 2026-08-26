@@ -20,10 +20,6 @@ class GuestController extends Controller
 
         $query = Guest::with(['hotel', 'reservations', 'conversations']);
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $guests = GenericQuery::apply($query, $request);
 
         return apiResponse('Guests fetched successfully.', 200, $guests);

@@ -25,11 +25,6 @@ return new class extends Migration
 
         DB::statement('ALTER TABLE recommendations ALTER COLUMN hotel_id SET NOT NULL');
 
-        // A recommendation isn't necessarily tied to an active guest
-        // conversation yet (e.g. one created directly through the CRUD API
-        // rather than by the AI agent mid-conversation), so this column can
-        // no longer be a hard requirement.
-        DB::statement('ALTER TABLE recommendations ALTER COLUMN conversation_id DROP NOT NULL');
     }
 
     /**

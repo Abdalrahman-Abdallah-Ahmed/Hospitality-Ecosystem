@@ -26,10 +26,6 @@ class ReservationController extends Controller
 
         $query = Reservation::with(['hotel', 'guest', 'room']);
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $reservations = GenericQuery::apply($query, $request);
 
         return apiResponse('Reservations fetched successfully.', 200, $reservations);
@@ -70,6 +66,7 @@ class ReservationController extends Controller
         $this->authorize('view', $reservation);
 
         $reservation->load(['hotel', 'guest', 'room']);
+
         return apiResponse('Reservation fetched successfully.', 200, $reservation);
     }
 
@@ -100,6 +97,7 @@ class ReservationController extends Controller
     {
         $this->authorize('delete', $reservation);
         $reservation->delete();
+
         return apiResponse('Reservation deleted successfully.', 200);
     }
 

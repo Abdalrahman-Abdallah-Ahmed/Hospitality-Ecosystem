@@ -18,24 +18,38 @@ Key points for the frontend:
 
 ## 2. Breaking Change: `index` Response Shape for Rooms and Tasks
 
-`GET /api/room` and `GET /api/task` no longer return the paginator directly in `body`. Both now return:
+`GET /api/room` and `GET /api/task` no longer return the paginator directly in `body`.
+
+`GET /api/task` now returns the paginator nested under `data`, plus `task_categories`:
 
 ```json
 {
   "body": {
     "data": { "current_page": 1, "data": [ "...the actual rows..." ], "last_page": 1, "total": 1, "...": "rest of paginator fields" },
-    "room_types": [ "...only on GET /api/room..." ],
     "task_categories": [ "...only on GET /api/task..." ]
+  }
+}
+```
+
+`GET /api/room` instead serializes through a Laravel resource collection (`App\Http\Resources\RoomResource`), plus `room_types`:
+
+```json
+{
+  "body": {
+    "data": [ "...the actual rows, flat, no extra nesting..." ],
+    "links": { "first": "...", "last": "...", "prev": null, "next": null },
+    "meta": { "current_page": 1, "last_page": 1, "total": 1, "...": "rest of pagination fields" },
+    "room_types": [ "...only on GET /api/room..." ]
   }
 }
 ```
 
 **What changed for the frontend:**
 
-- The row array moved from `body.data` to **`body.data.data`** (one level deeper).
-- Pagination fields (`current_page`, `last_page`, `total`, `next_page_url`, etc.) moved from `body.*` to **`body.data.*`**.
+- For tasks: the row array moved from `body.data` to **`body.data.data`**, and pagination fields moved from `body.*` to **`body.data.*`**.
+- For rooms: the row array is at **`body.data`** (flat, unchanged from before), but pagination fields moved from `body.*` to **`body.meta.*`**, and page URLs to **`body.links.*`**.
 - **Every other endpoint is unaffected** — `store`/`show`/`update`/`destroy` on both Room and Task, and all of `GET /api/reservation`, `GET /api/team`, `GET /api/task-category`, `GET /api/guest`, etc. still return their paginator the old way (`body` *is* the paginator, list at `body.data`). This change is scoped to just these two `index` actions.
-- `GET /api/room`'s new `body.room_types` is a genuinely useful addition: the authoritative list of valid `room_type` enum values (`{ name, value }` pairs) — use it instead of hard-coding a dropdown. It pairs with another change below.
+- `GET /api/room`'s new `body.room_types` is a genuinely useful addition: the authoritative list of valid `room_type` enum values, as plain strings (e.g. `"double"`) — use it instead of hard-coding a dropdown. It pairs with another change below.
 - `GET /api/task`'s new `body.task_categories` is hotel-scoped the same way `body.data` is (a regular admin only sees their own hotel's categories) — safe to use for a category picker, saving a separate `GET /api/task-category` call when rendering the task list/board.
 
 **Full doc updates:** [Room API § List Rooms](/D:/Hospitality%20Ecosystem/docs/room-api-documentation.md#1-list-rooms) · [Task Management API § 3.1](/D:/Hospitality%20Ecosystem/docs/task-management-api-documentation.md#31-list-tasks)
@@ -54,8 +68,8 @@ Bundled with the above — `rooms.room_type` is now validated server-side agains
 ## Checklist for the FE Agent
 
 - [ ] Build the bulk-import UI against `POST /api/reservation/import` — `multipart/form-data`, one `file` field, show `imported`/`skipped` counts, refresh the reservations list after a successful upload.
-- [ ] Update the rooms list screen: read rows from `body.data.data` (was `body.data`), pagination from `body.data.*` (was `body.*`).
-- [ ] Update the tasks list/board screen: same `body.data.data` / `body.data.*` shift.
+- [ ] Update the rooms list screen: rows stay at `body.data`, but pagination moves to `body.meta.*` and page URLs to `body.links.*` (was `body.*`).
+- [ ] Update the tasks list/board screen: rows move to `body.data.data`, pagination to `body.data.*` (was `body.*`).
 - [ ] If the room form has a free-text `room_type` input, replace it with a `<select>` populated from `body.room_types` on the rooms list response.
 - [ ] `GET /api/task`'s bundled `body.task_categories` is hotel-scoped and safe to use for a category picker on the task list/board screen.
 - [ ] Do not build against a super-admin "import for another hotel" flow — the backend doesn't support it on this endpoint yet.

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Task extends Model
 {
-    use Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
 
     protected $fillable = [
         'hotel_id',
@@ -37,11 +38,6 @@ class Task extends Model
         'priority' => Priority::class,
         'due_date' => 'datetime',
     ];
-
-    public function hotel()
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function room()
     {

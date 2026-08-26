@@ -21,10 +21,6 @@ class RecommendationController extends Controller
 
         $query = Recommendation::with(['hotel', 'reservation.guest', 'activity']);
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $recommendations = GenericQuery::apply($query, $request);
 
         return apiResponse('Recommendations fetched successfully.', 200, $recommendations);
@@ -38,6 +34,7 @@ class RecommendationController extends Controller
         $this->authorize('view', $recommendation);
 
         $recommendation->load(['hotel', 'reservation.guest', 'activity']);
+
         return apiResponse('Recommendation fetched successfully.', 200, $recommendation);
     }
 
@@ -82,6 +79,7 @@ class RecommendationController extends Controller
     {
         $this->authorize('delete', $recommendation);
         $recommendation->delete();
+
         return apiResponse('Recommendation deleted successfully.', 200);
     }
 

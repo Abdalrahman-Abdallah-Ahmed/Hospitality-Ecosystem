@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Enums\RecommendationStatus;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Recommendation extends Model
 {
-    use Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids;
 
     protected $keyType = 'string';
 
@@ -42,11 +43,6 @@ class Recommendation extends Model
         'rejected_at' => 'datetime',
         'dismissed_at' => 'datetime',
     ];
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function reservation(): BelongsTo
     {

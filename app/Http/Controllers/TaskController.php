@@ -1,12 +1,13 @@
 <?php
 
 namespace App\Http\Controllers;
-use App\Models\Reservation;
-use App\Models\Task;
-use App\Models\TaskCategory;
+
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Models\Reservation;
+use App\Models\Task;
+use App\Models\TaskCategory;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 
@@ -21,21 +22,13 @@ class TaskController extends Controller
 
         $query = Task::with(['hotel', 'guest', 'room']);
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $tasks = GenericQuery::apply($query, $request);
 
         $taskCategories = TaskCategory::query();
 
-        if (! $request->user()->isSuperAdmin()) {
-            $taskCategories->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $data = [
-            "data"=> $tasks,
-            "task_categories"=> $taskCategories->get(),
+            'data' => $tasks,
+            'task_categories' => $taskCategories->get(),
         ];
 
         return apiResponse('Tasks fetched successfully.', 200, $data);
@@ -94,6 +87,7 @@ class TaskController extends Controller
         $this->authorize('view', $task);
 
         $task->load(['hotel', 'guest', 'room']);
+
         return apiResponse('Task fetched successfully.', 200, $task);
     }
 
@@ -143,6 +137,7 @@ class TaskController extends Controller
     {
         $this->authorize('delete', $task);
         $task->delete();
+
         return apiResponse('Task deleted successfully.', 200);
     }
 

@@ -11,7 +11,7 @@ return new class extends Migration
     {
         Schema::create('guests', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('hotel_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
             $table->string('first_name')->nullable();
             $table->string('last_name')->nullable();
             $table->string('email')->nullable();

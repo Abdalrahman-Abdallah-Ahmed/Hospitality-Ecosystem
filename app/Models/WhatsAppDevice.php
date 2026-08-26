@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Model;
 
 class WhatsAppDevice extends Model
 {
-    use Filterable;
+    use BelongsToHotel, Filterable;
 
     protected $fillable = [
         'user_id',
@@ -20,10 +21,5 @@ class WhatsAppDevice extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function hotel()
-    {
-        return $this->belongsTo(Hotel::class);
     }
 }

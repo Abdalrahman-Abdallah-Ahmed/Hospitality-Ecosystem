@@ -32,8 +32,7 @@ Route::middleware('api.key')->group(function () {
     Route::post('/pair', [WhatsAppController::class, 'pair']);
     Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
 
-
-    Route::middleware(['auth:sanctum'])->group(function () {
+    Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
         Route::get('/user', function (Request $request) {
             return apiResponse('Authenticated user fetched successfully.', 200, $request->user());
@@ -47,7 +46,7 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
         Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
         Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);
-        Route::resource('/hotel',HotelController::class)->except(['edit', 'create']);
+        Route::resource('/hotel', HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
         Route::resource('/hotel-policy', HotelPolicyController::class)->except(['edit', 'create', 'show']);
@@ -57,7 +56,7 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/task', TaskController::class)->except(['edit', 'create']);
         Route::resource('/users', UserController::class)->except(['edit', 'create']);
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
-        Route::resource('/knowledge-base-articles',KnowledgeBaseArticleController::class)->except(['edit', 'create']);
+        Route::resource('/knowledge-base-articles', KnowledgeBaseArticleController::class)->except(['edit', 'create']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
     });
 });

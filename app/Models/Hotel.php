@@ -19,6 +19,7 @@ class Hotel extends Model
 
     protected $fillable = [
         'owner_id',
+        'hotel_group_id',
         'name',
         'slug',
         'timezone',
@@ -48,6 +49,23 @@ class Hotel extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function hotelGroup(): BelongsTo
+    {
+        return $this->belongsTo(HotelGroup::class);
+    }
+
+    /**
+     * Users explicitly granted access to this hotel via the hotel_user
+     * pivot — distinct from users() above, which is the legacy single
+     * hotel_id relation.
+     */
+    public function pivotUsers()
+    {
+        return $this->belongsToMany(User::class, 'hotel_user')
+            ->withPivot(['role', 'is_primary'])
+            ->withTimestamps();
     }
 
     public function teams(): HasMany

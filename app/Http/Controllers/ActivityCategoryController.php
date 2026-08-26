@@ -19,10 +19,6 @@ class ActivityCategoryController extends Controller
 
         $query = ActivityCategory::query();
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $activityCategories = GenericQuery::apply($query, $request);
 
         return apiResponse('Activity categories fetched successfully.', 200, $activityCategories);

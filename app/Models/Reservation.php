@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToHotel;
 use App\Enums\ReservationStatus;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Reservation extends Model
 {
-    use Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
 
     protected $keyType = 'string';
 
@@ -42,11 +43,6 @@ class Reservation extends Model
         'adults' => 'integer',
         'children' => 'integer',
     ];
-
-    public function hotel(): BelongsTo
-    {
-        return $this->belongsTo(Hotel::class);
-    }
 
     public function guest(): BelongsTo
     {

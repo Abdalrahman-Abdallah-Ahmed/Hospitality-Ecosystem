@@ -7,7 +7,6 @@ use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Models\KnowledgeBaseArticle;
 use App\Support\RequestRules\GenericQuery;
-use Illuminate\Http\Request;
 
 class KnowledgeBaseArticleController extends Controller
 {
@@ -18,14 +17,17 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('viewAny', KnowledgeBaseArticle::class);
 
-        // A super admin has no hotel of their own, so this scopes them to
-        // hotel_id IS NULL — the shared/global knowledge base — by design,
-        // rather than every hotel's articles.
-        $articles = GenericQuery::apply(
-            KnowledgeBaseArticle::with(['hotel'])
-                ->where('hotel_id', $request->user()->hotel?->id),
-            $request
-        );
+        // A super admin has no hotel of their own and is unrestricted by the
+        // tenant scope, so this explicitly pins them to hotel_id IS NULL — the
+        // shared/global knowledge base — by design, rather than every hotel's
+        // articles. Everyone else is already scoped to their own hotel(s).
+        $query = KnowledgeBaseArticle::with(['hotel']);
+
+        if ($request->user()->isSuperAdmin()) {
+            $query->whereNull('hotel_id');
+        }
+
+        $articles = GenericQuery::apply($query, $request);
 
         return apiResponse('Articles fetched successfully.', 200, $articles);
     }
@@ -67,6 +69,7 @@ class KnowledgeBaseArticleController extends Controller
         $this->authorize('view', $knowledgeBaseArticle);
 
         $knowledgeBaseArticle->load('hotel');
+
         return apiResponse('Article fetched successfully.', 200, $knowledgeBaseArticle);
     }
 
@@ -88,6 +91,7 @@ class KnowledgeBaseArticleController extends Controller
         }
 
         $knowledgeBaseArticle->update($validated);
+
         return apiResponse('Article updated successfully.', 200, $knowledgeBaseArticle->load(['hotel']));
     }
 
@@ -98,6 +102,7 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('delete', $knowledgeBaseArticle);
         $knowledgeBaseArticle->delete();
+
         return apiResponse('Article deleted successfully.', 200);
     }
 }

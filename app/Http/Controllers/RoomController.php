@@ -6,6 +6,7 @@ use App\Enums\RoomTypes;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\RoomResource;
 use App\Models\Room;
 use App\Support\RequestRules\GenericQuery;
 
@@ -20,16 +21,11 @@ class RoomController extends Controller
 
         $query = Room::query();
 
-        if (! $request->user()->isSuperAdmin()) {
-            $query->where('hotel_id', $request->user()->hotel?->id);
-        }
-
         $rooms = GenericQuery::apply($query, $request);
 
-        $data = [
-            "data"=>$rooms,
-            "room_types"=>RoomTypes::cases(),
-        ];
+        $data = RoomResource::collection($rooms)->additional([
+            'room_types' => RoomTypes::cases(),
+        ]);
 
         return apiResponse('Rooms fetched successfully.', 200, $data);
     }

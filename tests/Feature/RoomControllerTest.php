@@ -211,7 +211,7 @@ it('rejects an admin deleting a room belonging to a different hotel', function (
         ->deleteJson("/api/room/{$room->id}")
         ->assertStatus(403);
 
-    expect(Room::find($room->id))->not->toBeNull();
+    expect(Room::withoutGlobalScope('hotel')->find($room->id))->not->toBeNull();
 });
 
 // super admin bypass
