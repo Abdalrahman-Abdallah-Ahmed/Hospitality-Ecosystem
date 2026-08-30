@@ -314,6 +314,7 @@ Creates a guest for the authenticated user's hotel.
 - `hotel_id` must match the logged-in user's hotel id.
 - A different or missing `hotel_id` returns `403`.
 - Guest authorization is also protected by `GuestPolicy`.
+- **This endpoint may return an existing guest instead of creating a new one.** If the submitted `email` or `phone_number` matches a guest already at this hotel — even under a totally different `channel`/`external_id` — that existing guest is reused (still `201`), so the same real person doesn't end up as two rows just because they booked through a different channel. The response reflects the *existing* record's data, not the just-submitted fields — render whatever comes back in `body`, don't assume it echoes the form. There's currently no field indicating "this was reused, not newly created."
 
 ### Request Body
 

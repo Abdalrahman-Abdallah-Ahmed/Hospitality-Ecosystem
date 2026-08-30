@@ -6,6 +6,7 @@ use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Models\Guest;
+use App\Services\GuestIdentityService;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 
@@ -18,7 +19,7 @@ class GuestController extends Controller
     {
         $this->authorize('viewAny', Guest::class);
 
-        $query = Guest::with(['hotel', 'reservations', 'conversations']);
+        $query = Guest::with(['hotel', 'reservations', 'conversations', 'stays']);
 
         $guests = GenericQuery::apply($query, $request);
 
@@ -57,16 +58,47 @@ class GuestController extends Controller
             }
 
             if ($existing) {
+                // Before resurrecting this trashed row, make sure a different,
+                // already-active guest isn't the same real person by email/phone
+                // — restoring here regardless would recreate the exact
+                // duplicate this whole check exists to prevent.
+                $activeIdentityMatch = app(GuestIdentityService::class)->findExistingGuest(
+                    $hotel->id,
+                    $validated['email'] ?? null,
+                    $validated['phone_number'] ?? null,
+                );
+
+                if ($activeIdentityMatch && ! $activeIdentityMatch->trashed() && $activeIdentityMatch->isNot($existing)) {
+                    return apiResponse('Guest created successfully.', 201, $activeIdentityMatch->load(['hotel', 'reservations', 'conversations', 'stays']));
+                }
+
                 $existing->restore();
                 $existing->update([...$validated, 'hotel_id' => $hotel->id]);
 
-                return apiResponse('Guest created successfully.', 201, $existing->load(['hotel', 'reservations', 'conversations']));
+                return apiResponse('Guest created successfully.', 201, $existing->load(['hotel', 'reservations', 'conversations', 'stays']));
             }
+        }
+
+        // Same real person, different channel: (hotel_id, channel, external_id)
+        // can't catch this since the pair differs, but the email/phone doesn't.
+        // Reuse the existing guest instead of creating a second row for them.
+        $matchedByIdentity = app(GuestIdentityService::class)->findExistingGuest(
+            $hotel->id,
+            $validated['email'] ?? null,
+            $validated['phone_number'] ?? null,
+        );
+
+        if ($matchedByIdentity) {
+            if ($matchedByIdentity->trashed()) {
+                $matchedByIdentity->restore();
+            }
+
+            return apiResponse('Guest created successfully.', 201, $matchedByIdentity->load(['hotel', 'reservations', 'conversations', 'stays']));
         }
 
         $guest = Guest::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Guest created successfully.', 201, $guest->load(['hotel', 'reservations', 'conversations']));
+        return apiResponse('Guest created successfully.', 201, $guest->load(['hotel', 'reservations', 'conversations', 'stays']));
     }
 
     /**
@@ -76,7 +108,7 @@ class GuestController extends Controller
     {
         $this->authorize('view', $guest);
 
-        return apiResponse('Guest fetched successfully.', 200, $guest->load(['hotel', 'reservations', 'conversations']));
+        return apiResponse('Guest fetched successfully.', 200, $guest->load(['hotel', 'reservations', 'conversations', 'stays']));
     }
 
     /**
@@ -90,7 +122,7 @@ class GuestController extends Controller
 
         $guest->update($validated);
 
-        return apiResponse('Guest updated successfully.', 200, $guest->load(['hotel', 'reservations', 'conversations']));
+        return apiResponse('Guest updated successfully.', 200, $guest->load(['hotel', 'reservations', 'conversations', 'stays']));
     }
 
     /**

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Reservation extends Model
@@ -57,6 +58,11 @@ class Reservation extends Model
     public function recommendations(): HasMany
     {
         return $this->hasMany(Recommendation::class);
+    }
+
+    public function stay(): HasOne
+    {
+        return $this->hasOne(Stay::class);
     }
 
     public function scopeConfirmed($query)

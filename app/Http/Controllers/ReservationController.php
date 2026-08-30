@@ -85,6 +85,10 @@ class ReservationController extends Controller
 
         $reservation->update($validated);
 
+        // Order matters: syncRoomOccupancy() reads the stay's current
+        // status, so the stay must already reflect this update before the
+        // room is synced against it.
+        ReservationCreator::syncStay($reservation);
         ReservationCreator::syncRoomOccupancy($reservation);
 
         return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));

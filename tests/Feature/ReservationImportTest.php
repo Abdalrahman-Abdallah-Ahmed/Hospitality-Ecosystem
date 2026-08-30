@@ -91,3 +91,19 @@ it('does not duplicate a guest matched by phone number on repeat import', functi
     expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0100')->count())->toBe(1);
     expect(Reservation::where('hotel_id', $hotel->id)->count())->toBe(2);
 });
+
+it('recognizes an existing guest even when the phone number is formatted differently', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $existing = Guest::create(['hotel_id' => $hotel->id, 'phone_number' => '+20 115 179 3758']);
+
+    $file = importCsv([['201151793758', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]);
+
+    $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation/import', ['file' => $file]);
+
+    $response->assertOk()->assertJsonPath('body.imported', 1);
+
+    // Same person, differently formatted number — reused, not duplicated.
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+    expect(Reservation::where('hotel_id', $hotel->id)->where('guest_id', $existing->id)->exists())->toBeTrue();
+});

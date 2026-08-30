@@ -13,6 +13,7 @@ use App\Models\KnowledgeChunk;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\Room;
+use App\Models\Stay;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
@@ -68,6 +69,16 @@ function tenantOwnedModelFactories(): array
             'hotel_id' => $hotel->id,
             'room_number' => '101',
         ]),
+        Stay::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return Stay::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'planned_arrival_date' => '2026-09-01',
+                'planned_departure_date' => '2026-09-04',
+            ]);
+        },
         ActivityCategory::class => fn (Hotel $hotel) => ActivityCategory::create([
             'hotel_id' => $hotel->id,
             'name' => 'Category',

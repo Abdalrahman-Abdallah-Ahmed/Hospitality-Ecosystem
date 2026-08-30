@@ -5,7 +5,7 @@ namespace Database\Seeders;
 use App\Enums\ReservationStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
-use App\Models\Reservation;
+use App\Support\Reservations\ReservationCreator;
 use Illuminate\Database\Seeder;
 
 class GuestReservationSeeder extends Seeder
@@ -26,7 +26,9 @@ class GuestReservationSeeder extends Seeder
             'marketing_consent' => true,
         ]);
 
-        Reservation::create([
+        // Via ReservationCreator, not Reservation::create(), so this seeded
+        // reservation gets a stay (checked in) the same way a real one would.
+        ReservationCreator::create([
             'hotel_id' => $hotel->id,
             'guest_id' => $guest->id,
             'reservation_id' => 'RES-1001',

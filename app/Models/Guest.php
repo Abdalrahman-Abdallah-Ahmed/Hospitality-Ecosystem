@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
+use App\Services\GuestIdentityService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -38,11 +39,30 @@ class Guest extends Model
     protected $casts = [
         'preferences' => 'array',
         'marketing_consent' => 'boolean',
+        'identity_resolved_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        // Recompute the identity fingerprint whenever the fields it's
+        // derived from change, so nobody has to remember to call
+        // GuestIdentityService by hand at every creation site.
+        static::saving(function (Guest $guest) {
+            if ($guest->isDirty(['email', 'phone_number'])) {
+                $guest->identity_hash = app(GuestIdentityService::class)->computeIdentityHash($guest);
+                $guest->identity_resolved_at = $guest->identity_hash ? now() : null;
+            }
+        });
+    }
 
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class);
+    }
+
+    public function stays(): HasMany
+    {
+        return $this->hasMany(Stay::class);
     }
 
     public function conversations(): HasMany

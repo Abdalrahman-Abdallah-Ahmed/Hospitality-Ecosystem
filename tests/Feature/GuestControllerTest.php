@@ -164,3 +164,109 @@ it('lets a super admin delete a guest belonging to any hotel', function () {
 
     expect(Guest::find($guest->id))->toBeNull();
 });
+
+// dedup by email/phone across channels
+
+it('reuses the existing guest instead of duplicating when the same email arrives via a different channel', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $direct = Guest::create(['hotel_id' => $hotel->id, 'email' => 'ann@example.com']);
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', [
+            'hotel_id' => $hotel->id,
+            'email' => 'ann@example.com',
+            'channel' => 'booking_com',
+            'external_id' => 'bk-1',
+        ]);
+
+    $response->assertCreated();
+    expect($response->json('body.id'))->toBe($direct->id);
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+});
+
+it('reuses the existing guest instead of duplicating when the same phone number arrives via a different channel', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $direct = Guest::create(['hotel_id' => $hotel->id, 'phone_number' => '+20 115 179 3758']);
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', [
+            'hotel_id' => $hotel->id,
+            'phone_number' => '201151793758',
+            'channel' => 'booking_com',
+            'external_id' => 'bk-1',
+        ]);
+
+    $response->assertCreated();
+    expect($response->json('body.id'))->toBe($direct->id);
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+});
+
+it('creates a new guest when the email does not match anyone at this hotel', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'email' => 'unique@example.com']);
+
+    $response->assertCreated();
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+});
+
+it('does not reuse a matching guest from a different hotel', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    [, $otherHotel] = adminWithGuestHotel();
+    Guest::create(['hotel_id' => $otherHotel->id, 'email' => 'ann@example.com']);
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'email' => 'ann@example.com']);
+
+    $response->assertCreated();
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+    // The admin's request scoped TenantContext to their own hotel, so this
+    // direct check on the other hotel needs the scope lifted explicitly.
+    expect(Guest::withoutGlobalScope('hotel')->where('hotel_id', $otherHotel->id)->count())->toBe(1);
+});
+
+it('restores a soft-deleted guest matched by email instead of creating a duplicate', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $trashed = Guest::create(['hotel_id' => $hotel->id, 'email' => 'ann@example.com']);
+    $trashed->delete();
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'email' => 'ann@example.com']);
+
+    $response->assertCreated();
+    expect($response->json('body.id'))->toBe($trashed->id);
+    expect($trashed->fresh()->trashed())->toBeFalse();
+});
+
+it('reuses an already-active identity match instead of resurrecting an unrelated trashed channel row', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+
+    // The same person, already active under no particular channel.
+    $active = Guest::create(['hotel_id' => $hotel->id, 'email' => 'ann@example.com']);
+
+    // A different, unrelated trashed row that happens to match the exact
+    // channel/external_id being resubmitted.
+    $trashed = Guest::create([
+        'hotel_id' => $hotel->id,
+        'email' => 'ann@example.com',
+        'channel' => 'booking_com',
+        'external_id' => 'bk-1',
+    ]);
+    $trashed->delete();
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', [
+            'hotel_id' => $hotel->id,
+            'email' => 'ann@example.com',
+            'channel' => 'booking_com',
+            'external_id' => 'bk-1',
+        ]);
+
+    $response->assertCreated();
+    // Reuses the already-active guest, not the trashed one — restoring the
+    // trashed row here would have left two active guests with the same email.
+    expect($response->json('body.id'))->toBe($active->id);
+    expect($trashed->fresh()->trashed())->toBeTrue();
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+});

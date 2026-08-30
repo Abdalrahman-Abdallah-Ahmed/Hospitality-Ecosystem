@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Enums\RoomStatusesEnum;
+use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
 use App\Models\Reservation;
 use App\Models\Room;
+use App\Models\Stay;
 use App\Models\Task;
 use Illuminate\Http\Request;
 
@@ -30,23 +32,31 @@ class DashboardController extends Controller
             ->whereDate('departure_date', now()->toDateString())
             ->get();
 
-        $requestedDate = $request->date('date')?->toDateString();
+        $requestedCarbonDate = $request->date('date');
+        $requestedDate = $requestedCarbonDate?->toDateString();
         $isToday = $requestedDate === null || $requestedDate === now()->toDateString();
 
         $totalRooms = Room::count();
 
         if ($isToday) {
+            // The live, real-time room-status snapshot — unaffected by whether
+            // a stay record exists, so it stays correct even for ad-hoc room
+            // states (e.g. maintenance) that never went through a reservation.
             $occupiedRooms = Room::where('status', RoomStatusesEnum::OCCUPIED)->count();
-            $occupancyPercentage = $totalRooms > 0 ? round(($occupiedRooms / $totalRooms) * 100, 2) : 0;
+            $basis = 'room_status_snapshot';
         } else {
-            // rooms.status is a single current value, not a history — occupancy for any
-            // other date can't be computed correctly until WP-2's stay events land.
-            $occupiedRooms = null;
-            $occupancyPercentage = null;
+            // rooms.status has no history, but stays do — this is the only way
+            // to answer "what was/will be occupancy on some other date" at all.
+            $occupiedRooms = Stay::occupiedRoomsOn($hotel, $requestedCarbonDate);
+            $basis = 'stay_events';
         }
+
+        $occupancyPercentage = $totalRooms > 0 ? round(($occupiedRooms / $totalRooms) * 100, 2) : 0;
 
         $bookingValueToday = Reservation::whereDate('created_at', now()->toDateString())
             ->sum('reservation_value');
+
+        $roomRevenueToday = Stay::where('status', StayStatus::IN_HOUSE)->sum('room_revenue');
 
         $data = [
             'pending_tasks' => $pendingTasks,
@@ -60,12 +70,12 @@ class DashboardController extends Controller
                 'occupied_rooms' => $occupiedRooms,
                 'total_rooms' => $totalRooms,
                 'percentage' => $occupancyPercentage,
-                'basis' => 'room_status_snapshot',
+                'basis' => $basis,
                 'as_of' => now()->toIso8601String(),
-                'historical_supported' => false,   // becomes true in WP-2
+                'historical_supported' => true,
             ],
             'booking_value_today' => $bookingValueToday,
-            'room_revenue_today' => null,    // TODO(WP-2): revenue for stays IN HOUSE today
+            'room_revenue_today' => $roomRevenueToday,
         ];
 
         return apiResponse('Dashboard data fetched successfully.', 200, $data);

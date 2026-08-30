@@ -120,10 +120,11 @@ Field notes for the UI:
 
 Any other string is rejected by the API with a `422` on `status`.
 
-**Side effect (new): setting `status` to `confirmed` occupies the room.** On both create (`POST /api/reservation`, plus the WhatsApp ingestion endpoint) and update (`PUT /api/reservation/{id}`), if the resulting reservation has `status: confirmed` **and** a non-null `room_id`, the backend automatically sets that room's own `status` to `occupied` (`GET /api/room` will reflect this on the next fetch). This is one-directional as of this writing:
+**Side effect: room status now follows the guest's actual stay, not the reservation's `status` field.** On both create (`POST /api/reservation`, plus the WhatsApp ingestion endpoint) and update (`PUT /api/reservation/{id}`), if the reservation has a non-null `room_id`, the backend keeps that room's own `status` (`GET /api/room` will reflect this on the next fetch) in step with the underlying stay (Phase 1 WP-2):
 
-- Cancelling, checking out, or otherwise moving a reservation away from `confirmed` does **not** free the room back to `available` — that's still a manual step through the room API.
-- If your UI shows room availability, don't assume it self-corrects when a reservation is cancelled; you may need a separate "release room" action until the backend adds the reverse sync.
+- Setting `status: checked_in` occupies the room (`room.status` becomes `occupied`) — merely `confirmed` does **not** occupy it. Booking a room ahead of arrival is different from a guest physically being in it, and only the latter counts as occupied.
+- Setting `status: checked_out` or `status: cancelled` **frees the room back to `available`**, automatically. This used to be a one-directional sync (nothing ever freed a room back up) — that gap is now closed. If your UI had a manual "release room" workaround for this, it's no longer necessary.
+- A reservation with no `room_id` has nothing to sync — unaffected.
 
 ## 1. List Reservations
 
@@ -574,5 +575,5 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - The API does **not** enforce `departure_date >= arrival_date` yet — validate that client-side.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Don't use this document for the WhatsApp reservation-creation flow — that's `POST /api/whatsapp-reservation`, unauthenticated (API-key only), and out of scope here.
-- Confirming a reservation (`status: confirmed`) with a `room_id` set auto-occupies the room server-side — but nothing frees it back up on cancel/checkout yet. See [Status Values](#status-values).
+- Room status now follows the actual stay: `checked_in` occupies the room, `checked_out`/`cancelled` frees it back to `available` automatically — merely `confirmed` no longer occupies it. See [Status Values](#status-values).
 - `POST /api/reservation/import` bulk-creates reservations from an uploaded `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB). It returns only `{ imported, skipped }` counts, not the created records — refresh the list separately. It skips bad rows instead of failing the whole file, and unlike every other write endpoint here, a super admin **cannot** target another hotel with it. See [§6](#6-import-reservations-bulk-upload).

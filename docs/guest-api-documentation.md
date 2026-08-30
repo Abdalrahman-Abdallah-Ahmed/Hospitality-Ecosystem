@@ -71,7 +71,7 @@ Successful custom API responses use this structure:
 
 ## The Guest Object
 
-Every endpoint that returns a guest returns it with `hotel`, `reservations`, and `conversations` eager-loaded:
+Every endpoint that returns a guest returns it with `hotel`, `reservations`, `conversations`, and **`stays`** eager-loaded:
 
 ```json
 {
@@ -91,6 +91,8 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, and
   "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking",
+  "identity_hash": "phone:9f2c1a...",
+  "identity_resolved_at": "2026-07-31T09:15:00.000000Z",
   "created_at": "2026-07-31T09:15:00.000000Z",
   "updated_at": "2026-07-31T09:15:00.000000Z",
   "deleted_at": null,
@@ -100,6 +102,30 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, and
   ],
   "conversations": [
     { "id": "...", "...": "..." }
+  ],
+  "stays": [
+    {
+      "id": "019fabcd-...",
+      "hotel_id": "019f9b37-...",
+      "guest_id": "019fabcd-1234-7000-9000-123456789abc",
+      "reservation_id": "019fabcd-...",
+      "room_id": "019fabcd-...",
+      "planned_arrival_date": "2026-09-01",
+      "planned_departure_date": "2026-09-04",
+      "checked_in_at": "2026-09-01T14:32:00.000000Z",
+      "checked_out_at": null,
+      "status": "in_house",
+      "adults": 2,
+      "children": 0,
+      "nights": null,
+      "room_revenue": "450.00",
+      "currency": "USD",
+      "market_segment": null,
+      "source_channel": "whatsapp",
+      "created_at": "2026-09-01T09:00:00.000000Z",
+      "updated_at": "2026-09-01T14:32:00.000000Z",
+      "deleted_at": null
+    }
   ]
 }
 ```
@@ -113,7 +139,9 @@ Field notes for the UI:
 - `channel` is an enum-like field server-side. It must be one of the reservation channel values defined by the backend; do not send arbitrary strings.
 - `email` is currently only validated as a plain string by the generic validator, not with an email-format rule. The frontend should still validate email format client-side.
 - Guests use `SoftDeletes`, so `DELETE` does **not** permanently erase the row.
-- Because `reservations` and `conversations` are eager-loaded, a guest detail response can be noticeably larger than a room response. The list endpoint also includes these nested relations in each row.
+- **`identity_hash`** and **`identity_resolved_at`** are internal fields (Phase 1 WP-2) used to detect the same person arriving through a different channel — see [Create a Guest](#2-create-a-guest). Not meant for display; `identity_hash` is a one-way hash of the guest's normalised email or phone, not the raw value.
+- **`stays`** (Phase 1 WP-2) is every stay this guest has had — one per reservation, in booking order, not just the current/latest one. A reservation without a room assigned still produces a stay (`room_id: null`). `status` is one of `expected` (booked, not arrived), `in_house`, `departed`, `no_show`, or `cancelled`. `checked_in_at`/`checked_out_at`/`nights` are `null` until they actually happen — don't assume they mirror the reservation's `arrival_date`/`departure_date` (those are the *planned* dates; a guest can check out early or late). There is no separate `GET /api/stay` endpoint — stays only ever arrive nested here or on the reservation.
+- Because `reservations`, `conversations`, and `stays` are all eager-loaded, a guest detail response can be noticeably larger than a room response. The list endpoint also includes these nested relations in each row — for a hotel with long-tenured repeat guests, `stays` can grow to cover their entire history.
 
 ## 1. List Guests
 
@@ -203,6 +231,8 @@ HTTP `422`:
 ### Success Response
 
 HTTP `201 Created`. `body` is a full [guest object](#the-guest-object).
+
+**Note:** this may return an *existing* guest instead of creating a new row. The only uniqueness this endpoint enforces at the database level is `(hotel_id, channel, external_id)`, so the same real person arriving through a different channel (e.g. once direct, once via Booking.com) would otherwise create a second row for them. Before creating, the backend also checks whether any existing guest at this hotel already has the same `email` or `phone_number`; if so, that guest is reused (and restored, if it was soft-deleted) instead of creating a duplicate — still a `201`, since from the caller's perspective a guest now exists matching what was requested. Check whether `body.id` matches a guest you already knew about if this distinction matters to your UI.
 
 ### Error: Missing / Invalid Fields
 
@@ -356,8 +386,9 @@ The UI should distinguish this from custom business-rule errors like:
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - List with `GET /api/guest`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column` or `sort=-column`, paginate with `page` and `per_page`.
 - Read guest rows from `body.data`.
-- Guest responses include nested `hotel`, `reservations`, and `conversations`.
+- Guest responses include nested `hotel`, `reservations`, `conversations`, and `stays` (every stay this guest has had, not just the current one).
 - Always send the current admin's own `hotel_id` on create.
 - Never send `hotel_id` on update.
 - `email` should be validated client-side even though the backend currently treats it as a generic string.
 - `DELETE` is soft-delete, not hard-delete.
+- **New:** `POST /api/guest` no longer creates a duplicate row for a guest who already exists at this hotel with the same `email` or `phone_number`, even if `channel`/`external_id` differ — it reuses (and restores, if soft-deleted) the existing guest instead. Check `body.id` against a guest you already knew about if your UI needs to tell "reused" apart from "newly created."
