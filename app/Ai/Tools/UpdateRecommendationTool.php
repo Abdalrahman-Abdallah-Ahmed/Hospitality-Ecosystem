@@ -5,6 +5,7 @@ namespace App\Ai\Tools;
 use App\Enums\RecommendationStatus;
 use App\Models\Recommendation;
 use App\Models\Reservation;
+use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -58,7 +59,7 @@ class UpdateRecommendationTool implements Tool
             $updates['guest_confidence'] = $guestConfidence;
         }
 
-        $recommendation->update($updates);
+        EventLogger::asAiAgent(fn () => $recommendation->update($updates));
 
         return "Recommendation updated (id: {$recommendation->id}).";
     }

@@ -76,6 +76,8 @@ Practical implications for the UI:
   "accepted_at": null,
   "rejected_at": null,
   "dismissed_at": null,
+  "evidence_level": "L3",
+  "evidence_sources": ["01a01133-2cfc-717b-bbb3-a61663b8b201", "01a00c93-47a1-70b6-8395-9bee9d767dd4"],
   "created_at": "2026-08-17T19:30:39.000000Z",
   "updated_at": "2026-08-17T19:30:39.000000Z",
   "hotel": { "id": "...", "name": "Grand Harbor Hotel", "...": "..." },
@@ -95,6 +97,7 @@ Field notes for the UI:
 - `status` is one of `pending`, `sent`, `accepted`, `rejected`, `purchased`, `ignored`, `expired`, `cancelled` (`App\Enums\RecommendationStatus`). New recommendations from the AI agent always start `pending`. It only advances when the guest actually reacts during a WhatsApp conversation (the AI concierge sets it, alongside the matching `accepted_at`/`rejected_at`/`dismissed_at`) — **this API cannot set it**, so don't build an admin "mark as accepted" button against `update`.
 - `hotel`, `reservation.guest`, and `activity` are eager-loaded on `index`/`show`/`update`; `reservation` itself is loaded specifically for its `guest` (i.e. `reservation.guest`), so other reservation fields like `room`/`adults`/`children` are also present on the nested object, but its own `hotel`/`room` relations are **not** further eager-loaded — don't expect `reservation.room` to be populated.
 - `conversation_id` can be `null`. It's resolved (or a new conversation started) automatically server-side whenever `reservation_id` is set on `update` — you never send it directly (see below).
+- `evidence_level` is always `L3` for a fresh recommendation — it's a prediction about a guest, a hypothesis until they act on it (`L1` observed → `L4` unverified is the full scale). `evidence_sources` holds the `[reservation_id, activity_id]` the recommendation was reasoned from. Neither field is settable through this API.
 
 ## 1. List Recommendations
 

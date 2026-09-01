@@ -103,6 +103,11 @@ class Hotel extends Model
         return $this->hasMany(Stay::class);
     }
 
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     public function activityCategories(): HasMany
     {
         return $this->hasMany(ActivityCategory::class);

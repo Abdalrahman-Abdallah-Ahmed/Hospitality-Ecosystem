@@ -4,12 +4,14 @@ namespace App\Jobs;
 
 use App\Ai\Agents\InsightsAgent;
 use App\Enums\AiInsightCategories;
+use App\Enums\EvidenceLevel;
 use App\Enums\InsightTypes;
 use App\Models\AiInsights;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
+use App\Support\Audit\EventLogger;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -51,19 +53,25 @@ class CreateAiInsightsJob implements ShouldQueue
                 default => $agent->prompt('You are a helpful insights agent.'),
             };
 
-            collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
-                $modelClass = $this->insightableModelFor($insight['category']);
-                $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
+            EventLogger::asAiAgent(function () use ($response, $insightType, $hotel) {
+                collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
+                    $modelClass = $this->insightableModelFor($insight['category']);
+                    $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
 
-                AiInsights::create([
-                    'title' => $insight['title'],
-                    'hotel_id' => $hotel->id,
-                    'description' => $insight['description'],
-                    'category' => $insight['category'],
-                    'insight_type' => $insightType,
-                    'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
-                    'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
-                ]);
+                    AiInsights::create([
+                        'title' => $insight['title'],
+                        'hotel_id' => $hotel->id,
+                        'description' => $insight['description'],
+                        'category' => $insight['category'],
+                        'insight_type' => $insightType,
+                        'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
+                        'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
+                        // A claim tied to a verified hotel record is a strong
+                        // inference (L2); anything else stays a hypothesis (L3).
+                        'evidence_level' => $sourceBelongsToHotel ? EvidenceLevel::L2->value : EvidenceLevel::L3->value,
+                        'evidence_sources' => $sourceBelongsToHotel ? [$insight['source_id']] : null,
+                    ]);
+                });
             });
         });
     }

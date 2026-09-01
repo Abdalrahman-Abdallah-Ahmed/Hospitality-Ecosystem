@@ -9,6 +9,7 @@ use App\Http\Requests\ImportReservationsRequest;
 use App\Imports\ReservationsImport;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
@@ -120,12 +121,18 @@ class ReservationController extends Controller
         }
 
         $import = new ReservationsImport($hotel);
-        Excel::import($import, $request->file('file'));
 
-        return apiResponse('Reservations imported successfully.', 200, [
+        // One summary audit event instead of thousands of per-row create events.
+        EventLogger::withoutRecording(fn () => Excel::import($import, $request->file('file')));
+
+        $summary = [
             'imported' => $import->imported,
             'skipped' => $import->skipped,
-        ]);
+        ];
+
+        EventLogger::record($hotel, 'reservations_imported', changes: $summary);
+
+        return apiResponse('Reservations imported successfully.', 200, $summary);
     }
 
     /**

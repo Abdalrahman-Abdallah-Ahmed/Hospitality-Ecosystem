@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ai\Agents\RecommendationAgent;
 use App\Models\Reservation;
+use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
@@ -39,6 +40,9 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
 
         $guestName = trim($this->reservation->guest->first_name.' '.$this->reservation->guest->last_name);
 
-        $agent->prompt("Generate activity recommendations for guest {$guestName}.");
+        // Records this agent's tool-driven writes (recommendations) as ai_agent.
+        EventLogger::asAiAgent(
+            fn () => $agent->prompt("Generate activity recommendations for guest {$guestName}.")
+        );
     }
 }
