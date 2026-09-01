@@ -17,6 +17,7 @@ use App\Http\Controllers\RoomController;
 use App\Http\Controllers\TaskCategoryController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TeamController;
+use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WhatsAppController;
 use Illuminate\Http\Request;
@@ -46,6 +47,10 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
         Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
         Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);
+        Route::post('/transaction/import', [TransactionController::class, 'import']);
+        Route::post('/transaction/{transaction}/reverse', [TransactionController::class, 'reverse']);
+        Route::get('/transaction', [TransactionController::class, 'index']);
+        Route::get('/transaction/{transaction}', [TransactionController::class, 'show']);
         Route::resource('/hotel', HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);

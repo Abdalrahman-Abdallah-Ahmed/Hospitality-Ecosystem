@@ -17,6 +17,7 @@ use App\Models\Stay;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Support\Tenancy\TenantContext;
@@ -123,6 +124,21 @@ function tenantOwnedModelFactories(): array
             return Recommendation::create([
                 'hotel_id' => $hotel->id,
                 'activity_id' => $activity->id,
+            ]);
+        },
+        Transaction::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return Transaction::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'item_name' => 'Dive trip',
+                'line_total' => 120,
+                'currency' => 'USD',
+                'transacted_at' => '2026-09-01 12:00:00',
+                'business_date' => '2026-09-01',
+                'source_system' => 'import',
+                'external_reference' => 'ext-'.uniqid(),
             ]);
         },
         KnowledgeChunk::class => function (Hotel $hotel) {

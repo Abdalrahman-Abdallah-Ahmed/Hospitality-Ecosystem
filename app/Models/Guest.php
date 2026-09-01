@@ -65,6 +65,11 @@ class Guest extends Model
         return $this->hasMany(Stay::class);
     }
 
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     public function conversations(): HasMany
     {
         return $this->hasMany(Conversation::class, 'participant_id', 'id')

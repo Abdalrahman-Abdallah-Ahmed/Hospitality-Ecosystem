@@ -43,6 +43,11 @@ class Activity extends Model
         return $this->hasMany(Recommendation::class);
     }
 
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
