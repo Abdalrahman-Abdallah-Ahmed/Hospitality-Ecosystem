@@ -2,11 +2,13 @@
 
 namespace App\Ai\Tools;
 
+use App\Enums\EvidenceLevel;
 use App\Enums\RecommendationStatus;
 use App\Models\Activity;
 use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\Reservation;
+use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -40,7 +42,7 @@ class CreateRecommendationTool implements Tool
             return 'No such active activity for this hotel. Only use activity ids returned by the activities tool.';
         }
 
-        $recommendation = Recommendation::create([
+        $recommendation = EventLogger::asAiAgent(fn () => Recommendation::create([
             'reservation_id' => $this->reservation->id,
             'activity_id' => $activity->id,
             'hotel_id' => $this->hotel->id,
@@ -49,7 +51,12 @@ class CreateRecommendationTool implements Tool
             'priority' => $request->integer('priority', 0),
             'status' => RecommendationStatus::PENDING,
             'recommended_at' => now(),
-        ]);
+            // A recommendation is a prediction about a guest — a hypothesis
+            // until they act on it. The reservation and activity it rests on
+            // are its evidence sources.
+            'evidence_level' => EvidenceLevel::L3->value,
+            'evidence_sources' => [$this->reservation->id, $activity->id],
+        ]));
 
         return "Recommendation created (id: {$recommendation->id}) for activity '{$activity->name}'.";
     }

@@ -10,6 +10,7 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\User;
 use App\Services\WhatsAppMessageService;
+use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
@@ -85,7 +86,12 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
             }
         }
 
-        $response = $agent->prompt($messageText, attachments: $attachments);
+        // The concierge/advisor agents write records through their tools
+        // (reservations, service-request tasks, recommendation updates) — all
+        // of it belongs to the AI actor, not a human.
+        $response = EventLogger::asAiAgent(
+            fn () => $agent->prompt($messageText, attachments: $attachments)
+        );
 
         $whatsApp->send($this->phoneNumber, $response->text);
     }

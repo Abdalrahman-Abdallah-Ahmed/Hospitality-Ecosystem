@@ -6,6 +6,7 @@ use App\Concerns\BelongsToHotel;
 use App\Enums\EvidenceLevel;
 use App\Enums\TransactionSource;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -21,7 +22,7 @@ use RuntimeException;
  */
 class Transaction extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids, RecordsEvents;
 
     protected $keyType = 'string';
 
@@ -76,6 +77,23 @@ class Transaction extends Model
         static::deleting(function (): void {
             throw new RuntimeException('Transactions are append-only; write a reversal instead of deleting one.');
         });
+    }
+
+    /**
+     * The ledger is append-only, so in practice only the `created` event ever
+     * fires; the list is kept complete anyway.
+     *
+     * @return array<int, string>
+     */
+    public function eventLoggedAttributes(): array
+    {
+        return [
+            'guest_id', 'stay_id', 'room_id', 'activity_id', 'item_name',
+            'revenue_center', 'department', 'quantity', 'unit_price',
+            'line_total', 'discount_amount', 'currency', 'transacted_at',
+            'business_date', 'source_system', 'external_reference',
+            'evidence_level', 'reverses_transaction_id',
+        ];
     }
 
     public function guest(): BelongsTo

@@ -7,13 +7,14 @@ use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Task extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, RecordsEvents, SoftDeletes;
 
     protected $fillable = [
         'hotel_id',
@@ -38,6 +39,18 @@ class Task extends Model
         'priority' => Priority::class,
         'due_date' => 'datetime',
     ];
+
+    /**
+     * @return array<int, string>
+     */
+    public function eventLoggedAttributes(): array
+    {
+        return [
+            'room_id', 'reservation_id', 'guest_id', 'assigned_to_team_id',
+            'assigned_to_user_id', 'task_category_id', 'title', 'description',
+            'created_by', 'status', 'priority', 'due_date',
+        ];
+    }
 
     public function room()
     {

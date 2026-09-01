@@ -69,6 +69,8 @@ Successful custom API responses use this structure:
   "description": "Rooms have not yet been assigned for 3 confirmed check-ins scheduled for today.",
   "category": "reservation",
   "insight_type": "general",
+  "evidence_level": "L2",
+  "evidence_sources": ["019fabcd-5678-7000-9000-123456789abc"],
   "created_at": "2026-08-08T10:00:00.000000Z",
   "updated_at": "2026-08-08T10:00:00.000000Z"
 }
@@ -82,6 +84,8 @@ Field notes for the UI:
 - `insightable_type` / `insightable_id` are a **polymorphic link** to the specific record the insight is about (a `Reservation`, `Task`, or `Message`), or both `null` if the insight is general / not tied to one record, or if the AI-supplied source id didn't actually validate against the hotel's own data (see [Sourcing Caveats](#sourcing-caveats)). `insightable_type` is the raw PHP class name (e.g. `"App\\Models\\Reservation"`) — there is no morph map — so don't try to display it directly; branch on `category` instead if you need a type label.
 - **Neither `insightable_type`/`insightable_id` are resolved to the actual related record.** `index` does not eager-load the `insightable` relation — you only get the raw id/type pair. If you want to deep-link "view this reservation," resolve it client-side against data you already have (or a separate `GET /api/reservation/{id}` call), the same pattern used elsewhere in this API for non-eager-loaded relations.
 - No soft deletes — there is currently no delete endpoint at all, so insights accumulate indefinitely; there's no way to dismiss/archive one through this API yet.
+- `evidence_level` is one of `L1` (observed fact), `L2` (strong inference from data), `L3` (hypothesis), `L4` (unverified). An insight tied to a **verified** hotel record (`insightable_id` set) is saved as `L2`; anything else defaults to `L3`. Treat `L3` output as "the AI's opinion", not established fact — the UI should not present it with the same weight as an `L1` figure.
+- `evidence_sources` is an array of the record ids the claim rests on (usually just `[insightable_id]`), or `null` when the insight isn't grounded in a specific record.
 
 ### Sourcing Caveats
 

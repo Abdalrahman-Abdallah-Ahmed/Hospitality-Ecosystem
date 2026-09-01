@@ -8,6 +8,7 @@ use App\Http\Requests\ReverseTransactionRequest;
 use App\Imports\TransactionsImport;
 use App\Models\Transaction;
 use App\Services\TransactionService;
+use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 use Maatwebsite\Excel\Facades\Excel;
@@ -54,16 +55,23 @@ class TransactionController extends Controller
         }
 
         $import = new TransactionsImport($hotel);
-        Excel::import($import, $request->file('file'));
 
-        return apiResponse('Transactions imported successfully.', 200, [
+        // Suppress the per-row created events (a large upload would otherwise
+        // write thousands of audit rows) and record one summary instead.
+        EventLogger::withoutRecording(fn () => Excel::import($import, $request->file('file')));
+
+        $summary = [
             'read' => $import->read,
             'imported' => $import->imported,
             'duplicates' => $import->duplicates,
             'rejected' => $import->rejected,
             'attributed' => $import->attributed,
             'unattributed' => $import->unattributed,
-        ]);
+        ];
+
+        EventLogger::record($hotel, 'transactions_imported', changes: $summary);
+
+        return apiResponse('Transactions imported successfully.', 200, $summary);
     }
 
     /**

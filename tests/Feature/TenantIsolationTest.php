@@ -4,6 +4,7 @@ use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
 use App\Models\AiInsights;
+use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
@@ -139,6 +140,18 @@ function tenantOwnedModelFactories(): array
                 'business_date' => '2026-09-01',
                 'source_system' => 'import',
                 'external_reference' => 'ext-'.uniqid(),
+            ]);
+        },
+        EventLog::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return EventLog::create([
+                'hotel_id' => $hotel->id,
+                'event_type' => 'guest.created',
+                'subject_type' => $guest->getMorphClass(),
+                'subject_id' => $guest->id,
+                'actor_kind' => 'system',
+                'occurred_at' => now(),
             ]);
         },
         KnowledgeChunk::class => function (Hotel $hotel) {

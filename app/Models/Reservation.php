@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\BelongsToHotel;
 use App\Enums\ReservationStatus;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Reservation extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, RecordsEvents, SoftDeletes;
 
     protected $keyType = 'string';
 
@@ -44,6 +45,18 @@ class Reservation extends Model
         'adults' => 'integer',
         'children' => 'integer',
     ];
+
+    /**
+     * @return array<int, string>
+     */
+    public function eventLoggedAttributes(): array
+    {
+        return [
+            'guest_id', 'room_id', 'arrival_date', 'departure_date', 'status',
+            'adults', 'children', 'source', 'special_requests',
+            'reservation_value', 'currency',
+        ];
+    }
 
     public function guest(): BelongsTo
     {

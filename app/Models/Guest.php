@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsEvents;
 use App\Services\GuestIdentityService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -15,7 +16,7 @@ use Laravel\Ai\Models\ConversationMessage;
 
 class Guest extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, RecordsEvents, SoftDeletes;
 
     protected $keyType = 'string';
 
@@ -53,6 +54,21 @@ class Guest extends Model
                 $guest->identity_resolved_at = $guest->identity_hash ? now() : null;
             }
         });
+    }
+
+    /**
+     * The identity fingerprint (identity_hash) is deliberately excluded — it
+     * is derived, not entered, and adds noise to the trail.
+     *
+     * @return array<int, string>
+     */
+    public function eventLoggedAttributes(): array
+    {
+        return [
+            'first_name', 'last_name', 'email', 'phone_number',
+            'preferred_language', 'nationality', 'preferences', 'loyalty_status',
+            'marketing_consent', 'external_id', 'channel', 'master_guest_id',
+        ];
     }
 
     public function reservations(): HasMany

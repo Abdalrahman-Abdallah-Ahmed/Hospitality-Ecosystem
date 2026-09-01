@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\EvidenceLevel;
 use App\Enums\TransactionSource;
 use App\Models\Transaction;
+use App\Support\Audit\EventLogger;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
@@ -54,7 +55,7 @@ class TransactionService
             throw new RuntimeException('This transaction has already been reversed.');
         }
 
-        return Transaction::create([
+        $reversal = Transaction::create([
             'hotel_id' => $original->hotel_id,
             'guest_id' => $original->guest_id,
             'stay_id' => $original->stay_id,
@@ -78,5 +79,11 @@ class TransactionService
             'reverses_transaction_id' => $original->id,
             'raw_payload' => ['reason' => $reason, 'reverses' => $original->id],
         ]);
+
+        // The reversal row logs its own transaction.created; this records the
+        // correction against the original so its history shows it was undone.
+        EventLogger::record($original, 'reversed', reason: $reason);
+
+        return $reversal;
     }
 }
