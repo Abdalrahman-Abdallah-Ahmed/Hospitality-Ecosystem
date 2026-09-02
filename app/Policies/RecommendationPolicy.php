@@ -55,6 +55,20 @@ class RecommendationPolicy
     }
 
     /**
+     * Determine whether the user can record what happened to a recommendation.
+     *
+     * Deliberately wider than every other write ability here: employees are
+     * the people standing at the desk when a guest says no, and a
+     * refusal-capture instrument only admins can use will not capture
+     * refusals. Still scoped to their own hotel.
+     */
+    public function recordOutcome(User $user, Recommendation $recommendation): bool
+    {
+        return ($user->isAdmin() || $user->isEmployee())
+            && $recommendation->hotel_id === $user->hotel?->id;
+    }
+
+    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Recommendation $recommendation): bool
