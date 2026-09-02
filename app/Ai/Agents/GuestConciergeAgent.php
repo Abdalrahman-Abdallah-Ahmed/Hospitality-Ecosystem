@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\CreateBookingTool;
 use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
 use App\Ai\Tools\GetActivitiesTool;
@@ -63,6 +64,10 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               dismissed) and/or how confident they seemed.
             - A tool to look up this hotel's task categories (e.g. Housekeeping, Maintenance) and which team
               each belongs to.
+            - A tool to record a booking once the guest has actually agreed to an activity. A booking is a
+              commitment, not interest — only use it when the guest has said yes to a specific thing. If the
+              booking follows a recommendation you showed them, pass that recommendation's id so it gets
+              credited. Give the guest the reference code it returns and ask them to quote it at the desk.
             - A tool to create a task for staff — either a service request on the guest's behalf (e.g. extra
               towels, a maintenance issue), or a follow-up task asking staff to contact the guest. If a
               category clearly fits, look up its id with the task-categories tool first and include it;
@@ -109,6 +114,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new GetOwnReservationTool($this->reservation),
             new GetRecommendationsTool($this->reservation),
             new UpdateRecommendationTool($this->reservation),
+            new CreateBookingTool($this->hotel, $this->guest, $this->reservation),
             new GetTaskCategoriesTool($this->hotel),
             new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation),
             new EscalateToHumanTool($this->guest, $this->hotel),

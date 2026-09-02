@@ -67,6 +67,8 @@ class TransactionController extends Controller
             'rejected' => $import->rejected,
             'attributed' => $import->attributed,
             'unattributed' => $import->unattributed,
+            'booking_links' => $import->booking_links,
+            'unknown_booking_references' => $import->unknown_booking_references,
         ];
 
         EventLogger::record($hotel, 'transactions_imported', changes: $summary);

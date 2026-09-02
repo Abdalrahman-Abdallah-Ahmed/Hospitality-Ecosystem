@@ -5,6 +5,7 @@ namespace App\Imports;
 use App\Enums\EvidenceLevel;
 use App\Enums\TransactionSource;
 use App\Models\Activity;
+use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Transaction;
 use App\Services\TransactionAttributionService;
@@ -38,6 +39,17 @@ class TransactionsImport implements ToCollection, WithHeadingRow
     public int $attributed = 0;
 
     public int $unattributed = 0;
+
+    /** Rows whose booking_reference resolved to a real booking. */
+    public int $booking_links = 0;
+
+    /**
+     * Rows carrying a booking_reference that matched nothing in this hotel.
+     * The transaction is still imported and keeps the reference for
+     * provenance — a code we cannot resolve is a gap worth counting, not a
+     * value worth discarding.
+     */
+    public int $unknown_booking_references = 0;
 
     public function __construct(
         private readonly Hotel $hotel,
@@ -126,6 +138,8 @@ class TransactionsImport implements ToCollection, WithHeadingRow
             ->where('name', $activityName)
             ->value('id');
 
+        $booking = $this->resolveBooking($row);
+
         app(TransactionService::class)->record([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $stay?->guest_id,
@@ -145,11 +159,46 @@ class TransactionsImport implements ToCollection, WithHeadingRow
             'seller_reference' => trim((string) ($row['seller_reference'] ?? '')) ?: null,
             'source_system' => $this->source->value,
             'external_reference' => $externalReference,
+            'booking_id' => $booking?->id,
+            'booking_reference' => $this->bookingReference($row),
             'evidence_level' => $evidenceLevel->value,
             'raw_payload' => $row->toArray(),
         ]);
 
         $this->imported++;
+    }
+
+    /**
+     * Ties a payment back to the commitment that produced it, by the code the
+     * guest quoted at the desk. Direct reference only — there is deliberately
+     * no inference here. A row with no code is a walk-up sale, which is
+     * normal, and is left unlinked rather than guessed at.
+     */
+    private function resolveBooking(Collection $row): ?Booking
+    {
+        $reference = $this->bookingReference($row);
+
+        if ($reference === null) {
+            return null;
+        }
+
+        $booking = Booking::withoutGlobalScope('hotel')
+            ->where('hotel_id', $this->hotel->id)
+            ->where('reference', $reference)
+            ->first();
+
+        if ($booking) {
+            $this->booking_links++;
+        } else {
+            $this->unknown_booking_references++;
+        }
+
+        return $booking;
+    }
+
+    private function bookingReference(Collection $row): ?string
+    {
+        return strtoupper(trim((string) ($row['booking_reference'] ?? ''))) ?: null;
     }
 
     /**
