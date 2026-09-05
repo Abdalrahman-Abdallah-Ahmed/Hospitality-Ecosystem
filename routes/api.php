@@ -7,6 +7,7 @@ use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
+use App\Http\Controllers\BookingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HistoryController;
@@ -50,6 +51,10 @@ Route::middleware('api.key')->group(function () {
         Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
         Route::post('/recommendation/{recommendation}/outcome', [RecommendationController::class, 'recordOutcome']);
         Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);
+        Route::post('/booking/{booking}/status', [BookingController::class, 'updateStatus']);
+        Route::post('/booking', [BookingController::class, 'store']);
+        Route::get('/booking', [BookingController::class, 'index']);
+        Route::get('/booking/{booking}', [BookingController::class, 'show']);
         Route::get('/analytics/conversion', [AnalyticsController::class, 'conversion']);
         Route::post('/transaction/import', [TransactionController::class, 'import']);
         Route::post('/transaction/{transaction}/reverse', [TransactionController::class, 'reverse']);

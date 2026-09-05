@@ -5,10 +5,10 @@ use App\Models\User;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 
-function apiAuth(){
+function apiAuth()
+{
     return request()->header('X-API-KEY') === config('app.api_key');
 }
-
 
 function apiResponse(string $message, int $code = 200, mixed $body = null)
 {
@@ -34,7 +34,6 @@ function unsetAttributes(array $attributes, array $keysToUnset): array
     return $attributes;
 }
 
-
 function invalidRelation(Hotel $hotel, array $relations): ?string
 {
     foreach ($relations as $relation => $value) {
@@ -48,6 +47,7 @@ function invalidRelation(Hotel $hotel, array $relations): ?string
             return $relation;
         }
     }
+
     return null;
 }
 

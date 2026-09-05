@@ -30,7 +30,7 @@ class ChunkSynchronizer
         string $content,
         ?string $hotelId,
         ?string $category,
-    array $metadata = []
+        array $metadata = []
     ): void {
         KnowledgeChunk::query()
             ->where('chunkable_type', $chunkable->getMorphClass())

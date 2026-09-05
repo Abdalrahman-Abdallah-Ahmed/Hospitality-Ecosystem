@@ -111,15 +111,24 @@ it('computes the fulfilment gap between accepted and booked', function () {
     expect($response->json('body.notes'))->toContain('2 accepted guests produced no booking');
 });
 
-it('reports realisation rate as null when nothing can observe attendance', function () {
+it('flags a zero realisation rate as possibly unrecorded rather than silent', function () {
     [$admin, $hotel] = wp5AdminWithHotel();
     bookedRecommendation($hotel);
 
     $response = conversionReport($admin)->assertOk();
 
-    // Null, never 0 — "0" would read as "every guest failed to turn up".
-    $response->assertJsonPath('body.realisation_rate', null);
-    expect($response->json('body.notes'))->toContain('nothing can currently record whether a guest attended');
+    // Staff can now record attendance, so 0 is a real measurement — but it
+    // could still mean the outlet is not using the endpoint, and the report
+    // says so rather than letting the number speak for itself.
+    $response->assertJsonPath('body.realisation_rate', 0);
+    expect($response->json('body.notes'))->toContain('may mean attendance is not being recorded');
+});
+
+it('reports realisation rate as null when there is nothing to divide by', function () {
+    [$admin, $hotel] = wp5AdminWithHotel();
+    wp5Recommendation($hotel);
+
+    conversionReport($admin)->assertOk()->assertJsonPath('body.realisation_rate', null);
 });
 
 it('reports a realisation rate once a booking is realised', function () {

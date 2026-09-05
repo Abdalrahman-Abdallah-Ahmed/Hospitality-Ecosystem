@@ -21,7 +21,7 @@ class GetGuestMessagesTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return "Retrieve guest-authored messages from the last 48 hours in remembered agent conversations for the current hotel, including message content, guest name, and the related agent conversation id. Use this to spot recurring complaints, unanswered questions, or sentiment trends.";
+        return 'Retrieve guest-authored messages from the last 48 hours in remembered agent conversations for the current hotel, including message content, guest name, and the related agent conversation id. Use this to spot recurring complaints, unanswered questions, or sentiment trends.';
     }
 
     /**

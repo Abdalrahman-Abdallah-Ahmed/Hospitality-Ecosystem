@@ -32,7 +32,7 @@ to the caller's own hotel(s).
 
   "acceptance_rate": 0.3105,
   "booking_rate": 0.2526,
-  "realisation_rate": null,
+  "realisation_rate": 0.8438,
   "settlement_rate": 0.6129,
   "fulfilment_gap": 22,
 
@@ -52,7 +52,7 @@ to the caller's own hotel(s).
   },
 
   "evidence_level": "L2",
-  "notes": "10% of attributed bookings are inferred (L2), not observed. 34 bookings are all-inclusive and will never settle; excluded from the settlement rate. 22 accepted guests produced no booking. Realisation rate is unavailable: nothing can currently record whether a guest attended. Attribution window: 72h. Delivery is assumed unless a recommendation was explicitly recorded as not_delivered."
+  "notes": "10% of attributed bookings are inferred (L2), not observed. 34 bookings are all-inclusive and will never settle; excluded from the settlement rate. 22 accepted guests produced no booking. Attribution window: 72h. Delivery is assumed unless a recommendation was explicitly recorded as not_delivered."
 }
 ```
 
@@ -83,12 +83,20 @@ would gain.
 > rates comparable and their difference meaningful. It also means
 > `declined + expired + accepted = delivered`.
 
-### `realisation_rate` is `null`, not `0`
+### `realisation_rate` and what a `0` means
 
-Nothing in the system can currently observe whether a guest attended — the
-staff-facing booking API is deferred (see
-`docs/booking-entity-documentation.md`). `0` would read as "every guest failed
-to turn up". `null` plus a written reason is the honest answer.
+Attendance is recorded by staff through
+`POST /api/booking/{id}/status` (see `docs/booking-entity-documentation.md`), so
+this is a real measurement rather than an artefact.
+
+It is `null` only when there is nothing to divide by — no booked
+recommendations in the period.
+
+When it comes back **`0` with bookings present**, that is genuinely ambiguous:
+either no guest turned up, or the outlets are not marking attendance yet.
+`notes` says so explicitly rather than letting the number speak for itself. A
+rate that stays at `0` while bookings accumulate is a process signal, not a
+guest-behaviour signal.
 
 ### `delivered` is an assumption
 

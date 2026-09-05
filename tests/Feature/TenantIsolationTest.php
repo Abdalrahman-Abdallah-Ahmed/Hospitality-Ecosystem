@@ -32,6 +32,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function () {
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+});
+
 function makeHotel(): Hotel
 {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
@@ -231,6 +236,26 @@ it('never leaks another hotel\'s rows for every tenant-owned model', function (s
         yield $modelClass => [$modelClass, $factory];
     }
 })());
+
+it('does not carry the tenant of one request into the next', function () {
+    [$adminA, $hotelA] = wp5AdminWithHotel();
+    [$adminB, $hotelB] = wp5AdminWithHotel();
+
+    $bookingA = wp5Booking($hotelA, ['guest_id' => wp5Recommendation($hotelA)[1]->id]);
+    $bookingB = wp5Booking($hotelB, ['guest_id' => wp5Recommendation($hotelB)[1]->id]);
+
+    // TenantContext is process-static. Before ResolveTenant reset it, the
+    // second request in a process still had the first one's tenant while
+    // resolving its route-model binding, so the same cross-hotel lookup
+    // answered 403 or 404 depending only on request order.
+    $first = $this->withHeaders(wp5Headers())->actingAs($adminA, 'sanctum')
+        ->getJson("/api/booking/{$bookingB->id}");
+    $second = $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
+        ->getJson("/api/booking/{$bookingA->id}");
+
+    expect($first->status())->toBe(403)
+        ->and($second->status())->toBe($first->status());
+});
 
 it('sees nothing at all for a restricted user with no accessible hotel', function () {
     $hotel = makeHotel();

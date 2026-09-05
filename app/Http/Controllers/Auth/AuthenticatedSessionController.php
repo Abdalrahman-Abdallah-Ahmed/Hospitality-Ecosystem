@@ -50,7 +50,7 @@ class AuthenticatedSessionController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role,
-                'hotel'=> $user->hotel ?? null,
+                'hotel' => $user->hotel ?? null,
             ],
         ]);
     }
@@ -79,6 +79,7 @@ class AuthenticatedSessionController extends Controller
             && $request->query('hub_verify_token') === config('services.whatsapp.verify_token')) {
             return response($request->query('hub_challenge'), 200);
         }
+
         return response('Invalid verify token', 403);
     }
 
@@ -87,10 +88,11 @@ class AuthenticatedSessionController extends Controller
         $signature = $request->header('X-Hub-Signature-256', '');
         $appSecret = config('services.whatsapp.app_secret');
 
-        $expected = 'sha256=' . hash_hmac('sha256', $request->getContent(), (string) $appSecret);
+        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), (string) $appSecret);
 
         if (! $appSecret || ! hash_equals($expected, $signature)) {
             Log::warning('WhatsApp webhook received with invalid signature.');
+
             return response('Invalid signature', 403);
         }
 

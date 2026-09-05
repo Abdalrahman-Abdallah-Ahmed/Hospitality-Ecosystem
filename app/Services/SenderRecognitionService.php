@@ -25,8 +25,8 @@ class SenderRecognitionService
     public function resolve(string $phoneNumber): RecognizedSender
     {
         $user = User::where('phone_number', $phoneNumber)
-        ->where('role', UserRole::ADMIN)
-        ->first();
+            ->where('role', UserRole::ADMIN)
+            ->first();
 
         if ($user) {
             return new RecognizedSender(
@@ -64,10 +64,10 @@ class SenderRecognitionService
         $today = now()->toDateString();
 
         return $guest->reservations()
-                ->whereDate('arrival_date', '<=', $today)
-                ->whereDate('departure_date', '>=', $today)
-                ->latest('arrival_date')
-                ->first()
+            ->whereDate('arrival_date', '<=', $today)
+            ->whereDate('departure_date', '>=', $today)
+            ->latest('arrival_date')
+            ->first()
             ?? $guest->reservations()
                 ->whereDate('arrival_date', '>=', $today)
                 ->oldest('arrival_date')

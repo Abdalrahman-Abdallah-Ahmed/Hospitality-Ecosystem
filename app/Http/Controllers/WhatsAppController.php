@@ -25,6 +25,7 @@ class WhatsAppController extends Controller
         $user = $request->user();
 
         $token = $user->createToken('whatsapp_device_token')->plainTextToken;
+
         return apiResponse('WhatsApp device token created successfully.', 200, [
             'token' => $token,
         ]);

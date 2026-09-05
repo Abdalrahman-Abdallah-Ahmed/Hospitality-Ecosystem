@@ -43,10 +43,10 @@ class HospitalitySeeder extends Seeder
         ]);
 
         $user = $user->update([
-            "hotel_id" => $hotel->id,
+            'hotel_id' => $hotel->id,
         ]);
 
-        $categories = (new ActivityCategorySeeder())->seedFor($hotel);
+        $categories = (new ActivityCategorySeeder)->seedFor($hotel);
         $category = $categories->firstWhere('slug', 'wellness-spa');
 
         $activities = [

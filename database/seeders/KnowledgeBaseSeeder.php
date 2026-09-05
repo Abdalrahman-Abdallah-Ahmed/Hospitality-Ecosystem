@@ -17,7 +17,7 @@ class KnowledgeBaseSeeder extends Seeder
         foreach ($this->articles() as $article) {
             KnowledgeBaseArticle::create([
                 ...$article,
-                'hotel_id'=>$hotel->id,
+                'hotel_id' => $hotel->id,
                 'status' => 'published',
             ]);
         }

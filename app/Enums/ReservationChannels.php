@@ -9,5 +9,5 @@ enum ReservationChannels: string
     case AIRBNB = 'airbnb';
     case AGODA = 'agoda';
     case TRIPADVISOR = 'tripadvisor';
-    case VRBO = 'vrbo'; 
+    case VRBO = 'vrbo';
 }

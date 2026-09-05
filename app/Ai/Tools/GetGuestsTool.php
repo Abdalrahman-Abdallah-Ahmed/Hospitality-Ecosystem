@@ -12,7 +12,7 @@ use Stringable;
 
 class GetGuestsTool implements Tool
 {
-    public function __construct(private readonly Hotel $hotel){}
+    public function __construct(private readonly Hotel $hotel) {}
 
     /**
      * Get the description of the tool's purpose.
