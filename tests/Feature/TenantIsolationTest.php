@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\AttributionMethod;
+use App\Enums\OutcomeType;
 use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
@@ -13,6 +15,7 @@ use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeChunk;
 use App\Models\Recommendation;
+use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\Stay;
@@ -23,6 +26,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Services\BookingService;
+use App\Services\RecommendationOutcomeService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -154,6 +158,19 @@ function tenantOwnedModelFactories(): array
                 'charge_model' => 'pay_on_site',
                 'origin' => 'guest_request',
             ]);
+        },
+        RecommendationOutcome::class => function (Hotel $hotel) {
+            $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10]);
+            $recommendation = Recommendation::create([
+                'hotel_id' => $hotel->id,
+                'activity_id' => $activity->id,
+            ]);
+
+            return app(RecommendationOutcomeService::class)->record(
+                $recommendation,
+                OutcomeType::DELIVERED,
+                AttributionMethod::STAFF,
+            );
         },
         EventLog::class => function (Hotel $hotel) {
             $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);

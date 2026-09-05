@@ -15,6 +15,7 @@ All endpoints below are defined in `routes/api.php`, served under `/api`:
 - `PUT /api/recommendation/{id}` (or `PATCH`)
 - `DELETE /api/recommendation/{id}`
 - `POST /api/reservation/{reservation}/recommendations` — the generation trigger. Note this one is nested under `/reservation`, not `/recommendation`, and sits outside the `Route::resource('/recommendation', ...)` block as a plain `Route::post`.
+- `POST /api/recommendation/{id}/outcome` — record what happened to a recommendation (delivered / declined / accepted / booked). Documented separately in `docs/recommendation-outcome-api-documentation.md`.
 
 ## Required Headers
 
@@ -40,6 +41,7 @@ Gated by `App\Policies\RecommendationPolicy`, which has a `before()` hook: **a u
 | `index` | The user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user's `role` must be `admin`, **and** the recommendation's `hotel_id` must equal the hotel the user owns. |
 | `generate` | Gated by `App\Policies\ReservationPolicy::view` instead (same rule as `GET /api/reservation/{id}`): `role` must be `admin`, and the *reservation's* `hotel_id` must equal the caller's own hotel. |
+| `recordOutcome` | **`admin` or `employee`**, and the recommendation must be in the caller's own hotel. Deliberately wider than every other write ability here — the employees at the desk are the people who hear a refusal. |
 
 Practical implications for the UI:
 
@@ -97,6 +99,7 @@ Field notes for the UI:
 - `status` is one of `pending`, `sent`, `accepted`, `rejected`, `purchased`, `ignored`, `expired`, `cancelled` (`App\Enums\RecommendationStatus`). New recommendations from the AI agent always start `pending`. It only advances when the guest actually reacts during a WhatsApp conversation (the AI concierge sets it, alongside the matching `accepted_at`/`rejected_at`/`dismissed_at`) — **this API cannot set it**, so don't build an admin "mark as accepted" button against `update`.
 - `hotel`, `reservation.guest`, and `activity` are eager-loaded on `index`/`show`/`update`; `reservation` itself is loaded specifically for its `guest` (i.e. `reservation.guest`), so other reservation fields like `room`/`adults`/`children` are also present on the nested object, but its own `hotel`/`room` relations are **not** further eager-loaded — don't expect `reservation.room` to be populated.
 - `conversation_id` can be `null`. It's resolved (or a new conversation started) automatically server-side whenever `reservation_id` is set on `update` — you never send it directly (see below).
+- A recommendation succeeds when it produces a **booking**, not a payment — see `docs/conversion-analytics-api-documentation.md`. What happened to it is recorded in `recommendation_outcomes`, readable per record via `GET /api/history/recommendation/{id}`.
 - `evidence_level` is always `L3` for a fresh recommendation — it's a prediction about a guest, a hypothesis until they act on it (`L1` observed → `L4` unverified is the full scale). `evidence_sources` holds the `[reservation_id, activity_id]` the recommendation was reasoned from. Neither field is settable through this API.
 
 ## 1. List Recommendations
@@ -169,7 +172,7 @@ Rules are derived automatically from the table schema (same mechanism used by ev
 | `priority` | optional, integer. |
 | `recommended_at` | optional, date. |
 
-**`status`, `guest_confidence`, `accepted_at`, `rejected_at`, and `dismissed_at` are silently ignored, even though they're real, fillable columns.** These fields represent the *guest's own response* to the recommendation, captured live by the AI concierge (`App\Ai\Tools\UpdateRecommendationTool`) during the WhatsApp conversation — not something an admin edits after the fact. Sending them in the request body does nothing; they're stripped before the update is applied. If you need to see the guest's reaction, read them via `show`/`index` — this endpoint just can't set them. (If staff need to record their own follow-up action, e.g. "called the guest, they booked over the phone," that belongs in the separate `recommendation_outcomes` table, which isn't exposed by this API yet.)
+**`status`, `guest_confidence`, `accepted_at`, `rejected_at`, and `dismissed_at` are silently ignored, even though they're real, fillable columns.** These fields represent the *guest's own response* to the recommendation, captured live by the AI concierge (`App\Ai\Tools\UpdateRecommendationTool`) during the WhatsApp conversation — not something an admin edits after the fact. Sending them in the request body does nothing; they're stripped before the update is applied. If you need to see the guest's reaction, read them via `show`/`index` — this endpoint just can't set them. (If staff need to record their own follow-up action, e.g. "called the guest, they booked over the phone" or "offered it, they said the price was too high", use `POST /api/recommendation/{id}/outcome` — see `docs/recommendation-outcome-api-documentation.md`.)
 
 **`hotel_id` and `conversation_id` in the request body are also silently ignored** — you cannot move a recommendation to a different hotel, and `conversation_id` is always server-derived:
 

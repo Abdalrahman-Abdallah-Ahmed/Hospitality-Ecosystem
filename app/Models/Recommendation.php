@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Recommendation extends Model
 {
@@ -75,5 +76,23 @@ class Recommendation extends Model
     public function outcomes(): HasMany
     {
         return $this->hasMany(RecommendationOutcome::class);
+    }
+
+    /**
+     * One live outcome per recommendation — it is upserted as the state
+     * advances rather than appended to; the change history is in event_log.
+     */
+    public function outcome(): HasOne
+    {
+        return $this->hasOne(RecommendationOutcome::class);
+    }
+
+    /**
+     * The commitments this recommendation produced. A booking here is the
+     * conversion — not a payment.
+     */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
     }
 }

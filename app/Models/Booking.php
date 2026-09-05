@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -135,5 +136,15 @@ class Booking extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * The recommendation outcome this booking was credited to, if any. Used
+     * by the matcher to skip bookings that are already spoken for, so no
+     * booking is ever counted for two recommendations.
+     */
+    public function outcomeLink(): HasOne
+    {
+        return $this->hasOne(RecommendationOutcome::class);
     }
 }

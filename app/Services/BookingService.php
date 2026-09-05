@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Enums\AttributionMethod;
 use App\Enums\BookingStatus;
 use App\Enums\ChargeModel;
+use App\Enums\OutcomeType;
 use App\Models\Booking;
 use App\Models\Transaction;
 use App\Support\Bookings\BookingReference;
@@ -24,11 +26,37 @@ class BookingService
 {
     public function create(array $data): Booking
     {
-        return Booking::create([
+        $booking = Booking::create([
             ...$data,
             'reference' => $data['reference'] ?? BookingReference::generate(),
             'status' => $data['status'] ?? BookingStatus::PENDING->value,
         ]);
+
+        $this->creditRecommendation($booking);
+
+        return $booking;
+    }
+
+    /**
+     * A booking carrying a recommendation_id *is* the conversion, observed
+     * directly — the strongest link in the system, needing no inference at
+     * all. Recorded here so it happens whatever created the booking.
+     */
+    private function creditRecommendation(Booking $booking): void
+    {
+        $recommendation = $booking->recommendation()->withoutGlobalScope('hotel')->first();
+
+        if (! $recommendation) {
+            return;
+        }
+
+        app(RecommendationOutcomeService::class)->record(
+            $recommendation,
+            OutcomeType::BOOKED,
+            AttributionMethod::DIRECT,
+            $booking,
+            ['channel' => $booking->channel, 'occurred_at' => $booking->created_at],
+        );
     }
 
     /**
