@@ -73,6 +73,8 @@ errors (`422`) use Laravel's default `{ "message", "errors" }` shape instead.
   "sold_by_user_id": null,
   "source_system": "import",
   "external_reference": "POS-88213",
+  "booking_id": null,
+  "booking_reference": null,
   "evidence_level": "L1",
   "reverses_transaction_id": null,
   "raw_payload": { "...": "the original import row, untouched" },
@@ -90,6 +92,9 @@ Field notes for the UI:
 - **Never sum across currencies** — group by `currency`. Phase 1 does no FX.
 - `unit_price` is `null` when the source gave only a single undifferentiated
   amount (stored as `line_total`, row downgraded to `L4` — see below).
+- `booking_id` / `booking_reference` link this sale to the commitment that
+  produced it, when the guest quoted their booking code at the outlet. Both
+  `null` is the normal case for a walk-up sale — never treat it as an error.
 - `stay_id` / `guest_id` / `room_id` are `null` when the purchase could not be
   tied to a guest who was in the room at the time of sale — see
   [Attribution](#attribution).
@@ -165,6 +170,7 @@ names are matched case-insensitively with spaces folded to underscores.
 | `room_number` | optional | Drives [attribution](#attribution). No match → row imported but unattributed + `L4`. |
 | `business_date` | optional | The hotel's accounting day. Defaults to the calendar date of `transacted_at`. |
 | `external_reference` | optional | Idempotency key. A row whose `(hotel, source_system, external_reference)` already exists is counted as a duplicate, not re-imported. |
+| `booking_reference` | optional | The 8-character code (`DCB-4K2P`) the guest quoted at the outlet, identifying the booking this sale settles. Resolved to `booking_id` by **direct match only** — there is deliberately no inference between sales and bookings. A row without one is a walk-up sale and stays unlinked, which is normal. |
 | `revenue_center` | optional | e.g. `spa`, `diving`, `restaurant`. |
 | `department` | optional | Free text. |
 | `seller_reference` | optional | Free text. |
@@ -197,7 +203,9 @@ names are matched case-insensitively with spaces folded to underscores.
       { "row": 7, "reason": "Missing required field(s): item_name, transacted_at, or an amount (unit_price / line_total / amount)." }
     ],
     "attributed": 101,
-    "unattributed": 15
+    "unattributed": 15,
+    "booking_links": 8,
+    "unknown_booking_references": 1
   }
 }
 ```
@@ -207,6 +215,11 @@ names are matched case-insensitively with spaces folded to underscores.
 - **`attributed` / `unattributed` is the data-quality metric** — surface it. A
   high `unattributed` count means stays are missing check-in/out times or the
   room numbers don't line up.
+- `booking_links` counts rows whose `booking_reference` resolved to a real
+  booking; `unknown_booking_references` counts rows carrying a code that matched
+  nothing. The transaction is still imported and keeps the code for provenance
+  — an unresolvable reference is a gap worth counting, not a value worth
+  discarding.
 - To see the created rows, re-fetch `GET /api/transaction`.
 
 ## 4. Reverse a Transaction — `POST /api/transaction/{id}/reverse`

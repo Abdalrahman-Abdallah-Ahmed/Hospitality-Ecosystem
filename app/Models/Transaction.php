@@ -48,6 +48,8 @@ class Transaction extends Model
         'sold_by_user_id',
         'source_system',
         'external_reference',
+        'booking_id',
+        'booking_reference',
         'evidence_level',
         'reverses_transaction_id',
         'raw_payload',
@@ -92,7 +94,8 @@ class Transaction extends Model
             'revenue_center', 'department', 'quantity', 'unit_price',
             'line_total', 'discount_amount', 'currency', 'transacted_at',
             'business_date', 'source_system', 'external_reference',
-            'evidence_level', 'reverses_transaction_id',
+            'booking_id', 'booking_reference', 'evidence_level',
+            'reverses_transaction_id',
         ];
     }
 
@@ -114,6 +117,16 @@ class Transaction extends Model
     public function activity(): BelongsTo
     {
         return $this->belongsTo(Activity::class);
+    }
+
+    /**
+     * The commitment this payment settles, when one is known. Null is the
+     * normal case for a walk-up sale — an unlinked transaction is not an
+     * error.
+     */
+    public function booking(): BelongsTo
+    {
+        return $this->belongsTo(Booking::class);
     }
 
     public function soldBy(): BelongsTo

@@ -1,0 +1,138 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\BookingStatus;
+use App\Enums\ChargeModel;
+use App\Models\Booking;
+use App\Models\Transaction;
+use App\Support\Bookings\BookingReference;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
+use RuntimeException;
+
+/**
+ * The only sanctioned way to create or move a booking.
+ *
+ * The rule this service exists to protect: **booking status and settlement are
+ * independent, in both directions.** A booking can be REALISED with no
+ * transaction (an all-inclusive guest pays nothing), and a transaction can
+ * exist with no booking (a walk-up sale). Neither is ever derived from the
+ * other, and no method here goes looking for money to decide a status.
+ */
+class BookingService
+{
+    public function create(array $data): Booking
+    {
+        return Booking::create([
+            ...$data,
+            'reference' => $data['reference'] ?? BookingReference::generate(),
+            'status' => $data['status'] ?? BookingStatus::PENDING->value,
+        ]);
+    }
+
+    /**
+     * The slot is held and the guest is expected.
+     */
+    public function confirm(Booking $booking): Booking
+    {
+        $this->guardOpen($booking, 'confirmed');
+
+        $booking->update([
+            'status' => BookingStatus::CONFIRMED,
+            'confirmed_at' => $booking->confirmed_at ?? Carbon::now(),
+        ]);
+
+        return $booking;
+    }
+
+    /**
+     * The guest attended.
+     *
+     * Deliberately does not look for a transaction. On an INCLUDED booking
+     * none will ever exist, and treating its absence as failure would report
+     * an ideal outcome as a loss.
+     */
+    public function realise(Booking $booking, ?CarbonInterface $at = null): Booking
+    {
+        $this->guardOpen($booking, 'realised');
+
+        $booking->update([
+            'status' => BookingStatus::REALISED,
+            'realised_at' => $at ?? Carbon::now(),
+        ]);
+
+        return $booking;
+    }
+
+    /**
+     * Confirmed, and the guest never came. Distinct from a cancellation: one
+     * is a broken commitment, the other is one withdrawn in time. Different
+     * operational responses, different signals.
+     */
+    public function markNoShow(Booking $booking): Booking
+    {
+        $this->guardOpen($booking, 'no_show');
+
+        $booking->update([
+            'status' => BookingStatus::NO_SHOW,
+            'realised_at' => null,
+        ]);
+
+        return $booking;
+    }
+
+    /**
+     * Withdrawn before the date. A booking is never deleted — the history is
+     * the point, same as the ledger.
+     */
+    public function cancel(Booking $booking, string $reason): Booking
+    {
+        if ($booking->status === BookingStatus::REALISED) {
+            throw new RuntimeException('A realised booking cannot be cancelled; it already happened.');
+        }
+
+        $booking->update([
+            'status' => BookingStatus::CANCELLED,
+            'cancelled_at' => Carbon::now(),
+            'cancellation_reason' => $reason,
+        ]);
+
+        return $booking;
+    }
+
+    /**
+     * Attach a payment to the commitment it settles. Direct reference only —
+     * there is no booking↔transaction inference in Phase 1, and the booking's
+     * own status is untouched by this.
+     */
+    public function linkSettlement(Booking $booking, Transaction $transaction): Booking
+    {
+        if ($transaction->hotel_id !== $booking->hotel_id) {
+            throw new RuntimeException('The transaction belongs to a different hotel.');
+        }
+
+        if ($booking->charge_model === ChargeModel::INCLUDED) {
+            throw new RuntimeException('An included booking never settles; it cannot carry a payment.');
+        }
+
+        // The ledger is append-only, so this is a direct column write rather
+        // than a model update — see Transaction's append-only guard.
+        Transaction::withoutGlobalScope('hotel')
+            ->whereKey($transaction->id)
+            ->update(['booking_id' => $booking->id]);
+
+        return $booking;
+    }
+
+    /**
+     * A cancelled booking is closed. Reopening it would let a stale process
+     * quietly resurrect a commitment the guest withdrew.
+     */
+    private function guardOpen(Booking $booking, string $target): void
+    {
+        if ($booking->status === BookingStatus::CANCELLED) {
+            throw new RuntimeException("A cancelled booking cannot be marked {$target}.");
+        }
+    }
+}

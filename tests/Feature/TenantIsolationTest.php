@@ -4,6 +4,7 @@ use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
 use App\Models\AiInsights;
+use App\Models\Booking;
 use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -21,6 +22,7 @@ use App\Models\Team;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
+use App\Services\BookingService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -140,6 +142,17 @@ function tenantOwnedModelFactories(): array
                 'business_date' => '2026-09-01',
                 'source_system' => 'import',
                 'external_reference' => 'ext-'.uniqid(),
+            ]);
+        },
+        Booking::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return app(BookingService::class)->create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'item_name' => 'Sunset dive',
+                'charge_model' => 'pay_on_site',
+                'origin' => 'guest_request',
             ]);
         },
         EventLog::class => function (Hotel $hotel) {
