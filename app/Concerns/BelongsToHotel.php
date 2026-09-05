@@ -2,6 +2,7 @@
 
 namespace App\Concerns;
 
+use App\Models\Hotel;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,7 +33,6 @@ trait BelongsToHotel
 
     public function hotel(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Hotel::class);
+        return $this->belongsTo(Hotel::class);
     }
 }
-

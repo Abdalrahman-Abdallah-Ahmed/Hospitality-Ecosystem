@@ -2,6 +2,9 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\GetGuestMessagesTool;
+use App\Ai\Tools\GetReservationsTool;
+use App\Ai\Tools\GetTasksTool;
 use App\Enums\AiInsightCategories;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -12,19 +15,16 @@ use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
-use App\Ai\Tools\GetGuestMessagesTool;
-use App\Ai\Tools\GetReservationsTool;
-use App\Ai\Tools\GetTasksTool;
 use Stringable;
 
 class InsightsAgent implements Agent, Conversational, HasStructuredOutput, HasTools
 {
     use Promptable;
 
-
     public function __construct(
         public User $user,
     ) {}
+
     /**
      * Get the instructions that the agent should follow.
      */

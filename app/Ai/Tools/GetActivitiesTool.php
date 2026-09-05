@@ -14,6 +14,7 @@ class GetActivitiesTool implements Tool
     public function __construct(
         private readonly Hotel $hotel
     ) {}
+
     /**
      * Get the description of the tool's purpose.
      */

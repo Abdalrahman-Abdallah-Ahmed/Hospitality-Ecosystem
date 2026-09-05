@@ -1,11 +1,11 @@
 <?php
 
 use App\Enums\CreatedBy;
+use App\Enums\Priority;
 use App\Enums\TaskStatus;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use App\Enums\Priority;
 
 return new class extends Migration
 {

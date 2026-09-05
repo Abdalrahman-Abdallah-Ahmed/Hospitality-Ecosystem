@@ -2,13 +2,10 @@
 
 namespace App\Policies;
 
-use App\Models\AiInsights;
 use App\Models\User;
-use Illuminate\Auth\Access\Response;
 
 class AiInsightsPolicy
 {
-
     /**
      * Super admins bypass every ability below.
      */
