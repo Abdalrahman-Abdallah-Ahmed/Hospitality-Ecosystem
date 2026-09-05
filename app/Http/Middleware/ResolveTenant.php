@@ -29,6 +29,17 @@ class ResolveTenant
             );
         }
 
-        return $next($request);
+        try {
+            return $next($request);
+        } finally {
+            // TenantContext is process-static and route-model binding runs
+            // *before* this middleware. On a persistent worker (Octane) or
+            // any process serving more than one request, leaving the context
+            // set would mean the next request resolves its bindings under the
+            // previous request's tenant -- making the same cross-hotel lookup
+            // answer 403 or 404 purely on request order. Hand the process back
+            // in the state we found it.
+            TenantContext::reset();
+        }
     }
 }

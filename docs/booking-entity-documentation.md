@@ -1,7 +1,6 @@
-# The Booking Entity
+# Bookings — Entity and API Documentation
 
-Phase 1, WP-3a. **This document describes a domain entity, not an API** — WP-3a
-deliberately ships no HTTP endpoints (see [Deferred](#deferred-the-staff-api)).
+Phase 1, WP-3a.
 
 ## What a booking is
 
@@ -104,25 +103,86 @@ method in it looks for money to decide a status:
 There is no booking↔transaction inference in Phase 1 — the same temptation the
 WP-3 stay-window rule exists to resist.
 
-## How bookings are created today
+## How bookings are created
 
-One path: `App\Ai\Tools\CreateBookingTool`, available to the WhatsApp concierge
+Two paths.
+
+**The concierge.** `App\Ai\Tools\CreateBookingTool`, available to the WhatsApp
 agent. When a guest says "yes, book me on the sunset dive", the agent records
-the commitment and gives the guest their reference code. It sets
+the commitment and gives them their reference code. It sets
 `origin = recommendation` when the booking follows an offer the agent made,
 `guest_request` otherwise.
 
-## Deferred: the staff API
+**Staff, through the API below.** The walk-up at the desk, and — more
+importantly — everything that happens afterwards.
 
-There is **no `BookingController`** yet — no list, create, or status endpoints.
+## The API
 
-The consequence, stated plainly rather than papered over: **nothing can mark a
-booking `realised` or `no_show`.** Only the person at the outlet observes
-whether the guest turned up — not the agent, not the ledger (an included
-activity produces no transaction), not the importer.
+```
+GET  /api/booking                    list
+GET  /api/booking/{id}               one booking
+POST /api/booking                    take a booking
+POST /api/booking/{id}/status        move it through its lifecycle
+```
 
-So the WP-5 conversion report returns `realisation_rate: null` with a written
-reason, never `0`. An honest gap beats a confident wrong number.
+Headers as everywhere else: `X-API-KEY`, `Authorization: Bearer …`,
+`Accept: application/json`.
+
+**There is no update and no delete.** A booking is cancelled, with a reason.
+
+### Who can call it
+
+`App\Policies\BookingPolicy`: **`admin` or `employee`**, own hotel only (super
+admin bypasses). Deliberately wider than most write endpoints here — the person
+at the dive centre is the one who knows whether the guest turned up, and an
+attendance instrument only admins can reach will not record attendance.
+
+### `POST /api/booking`
+
+```json
+{
+  "guest_id": "01a00c93-…",
+  "activity_id": "01a00c93-…",
+  "recommendation_id": null,
+  "charge_model": "pay_on_site",
+  "scheduled_for": "2026-09-10T18:00:00Z",
+  "pax": 2,
+  "channel": "desk"
+}
+```
+
+| Field | Rules |
+| --- | --- |
+| `guest_id` | **required**, must belong to your hotel. |
+| `activity_id` | optional, must belong to your hotel. |
+| `item_name` | **required when there is no `activity_id`** — a guest can book something not in the catalogue yet. |
+| `charge_model` | **required** — `included`, `pay_on_site`, `folio`, `prepaid`. |
+| `recommendation_id` | optional. When present the booking is credited to that recommendation immediately, as a directly observed (L1) conversion. |
+| `origin` | optional — `staff` (default) or `guest_request`. **`recommendation` is not accepted**: it is derived from `recommendation_id`, so a booking can never claim a credit the link does not support. |
+| `scheduled_for`, `pax`, `expected_value`, `currency`, `channel` | optional. `expected_value`/`currency` default to the activity's price. |
+
+`201` with the booking, including its `reference` — give that code to the guest.
+
+### `POST /api/booking/{id}/status`
+
+```json
+{ "status": "realised", "realised_at": "2026-09-10T18:40:00Z" }
+```
+
+| Field | Rules |
+| --- | --- |
+| `status` | **required** — `confirmed`, `realised`, `no_show`, `cancelled`. `pending` is not accepted: a booking starts there and only moves forward. |
+| `reason` | **required when `cancelled`.** |
+| `realised_at` | optional; defaults to now. |
+
+**This is the route the conversion report depends on.** Nothing else in the
+system can observe attendance — not the agent, not the ledger (an included
+activity produces no transaction), not the importer. Without it,
+`realisation_rate` has nothing to measure.
+
+A cancelled booking cannot be reopened (`422`) — letting a stale process
+resurrect a commitment the guest withdrew is worse than making someone create
+a new one.
 
 ## Related Docs
 

@@ -106,9 +106,11 @@ class AnalyticsController extends Controller
 
             'acceptance_rate' => $delivered > 0 ? round($accepted / $delivered, 4) : null,
             'booking_rate' => $delivered > 0 ? round($booked / $delivered, 4) : null,
-            // Null, never zero: nothing in the system can observe attendance
-            // yet, and "0" would read as "every guest failed to turn up".
-            'realisation_rate' => $booked > 0 && $realised > 0 ? round($realised / $booked, 4) : null,
+            // Now that staff can mark a booking attended, 0 is a real
+            // measurement rather than an artefact of nothing being able to
+            // record one. Still null when there is nothing to divide by, and
+            // notes flags a 0 that may just mean the desk is not using it yet.
+            'realisation_rate' => $booked > 0 ? round($realised / $booked, 4) : null,
             'settlement_rate' => $settleable->count() > 0
                 ? round($settledBookingIds / $settleable->count(), 4)
                 : null,
@@ -240,7 +242,7 @@ class AnalyticsController extends Controller
         }
 
         if ($booked > 0 && $realised === 0) {
-            $notes[] = 'Realisation rate is unavailable: nothing can currently record whether a guest attended.';
+            $notes[] = 'No booking has been marked attended yet — a realisation rate of 0 may mean attendance is not being recorded at the outlets rather than that guests did not turn up.';
         }
 
         $notes[] = "Attribution window: {$window}h.";
