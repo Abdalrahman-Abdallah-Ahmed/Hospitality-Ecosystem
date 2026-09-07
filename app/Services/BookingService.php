@@ -24,6 +24,24 @@ use RuntimeException;
  */
 class BookingService
 {
+    /**
+     * Bookings arrive through AI paths — CreateBookingTool in the concierge
+     * agent, and the recommendation flow — so this reads like an AI feature
+     * and will one day be a tempting thing to put behind a quota or a plan
+     * entitlement. It is not one. A booking is an operational commitment: a
+     * table held, a guest expected, staff scheduled. Gate the suggestion,
+     * never the commitment.
+     *
+     * The failure that rule prevents: a card expires on Friday, the account
+     * suspends, booking creation is gated. Guests keep booking dinner over
+     * WhatsApp and the records do not save. Saturday evening the outlet has
+     * no covers list and thirty guests arrive expecting tables. Nobody
+     * connects it to billing, because nothing in the restaurant's world
+     * mentions billing.
+     *
+     * No enforcement layer exists yet (Phase 2 v2.0 defers WP-9), which is
+     * exactly why this is written down here rather than left in a plan.
+     */
     public function create(array $data): Booking
     {
         $booking = Booking::create([

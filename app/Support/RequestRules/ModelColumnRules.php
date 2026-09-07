@@ -14,6 +14,17 @@ use Illuminate\Validation\Rule;
  */
 class ModelColumnRules
 {
+    /**
+     * Columns the application fills in for itself, so a client is never asked
+     * to supply one. Without this, making a column NOT NULL turns it into a
+     * required request field and every create endpoint for that table starts
+     * returning 422 — even though the value was never the caller's to send.
+     *
+     * `hotel_group_id` is stamped by Hotel::booted(): a hotel that arrives
+     * without a group gets a single-property group of its own.
+     */
+    protected const SELF_POPULATED = ['hotel_group_id'];
+
     public static function forCreate(string $modelClass): array
     {
         return static::build($modelClass, forUpdate: false);
@@ -86,7 +97,8 @@ class ModelColumnRules
         ?Model $ignore,
         ?string $deletedAtColumn,
     ): array {
-        $nullable = (bool) ($meta['nullable'] ?? false);
+        $nullable = (bool) ($meta['nullable'] ?? false)
+            || in_array($column, static::SELF_POPULATED, true);
         $hasDefault = ($meta['default'] ?? null) !== null;
 
         $rules = [];

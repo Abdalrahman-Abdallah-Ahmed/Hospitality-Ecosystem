@@ -41,6 +41,21 @@ class Hotel extends Model
         'is_active' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        // Every hotel belongs to an account. A hotel created without a group
+        // gets a single-property group of its own, so that group-keyed code
+        // never has to handle a hotel with no account. Doing it here rather
+        // than in the two controllers that create hotels means seeders,
+        // imports, tests, and any future entry point are covered by the same
+        // path.
+        static::creating(function (self $hotel): void {
+            if ($hotel->hotel_group_id === null) {
+                $hotel->hotel_group_id = HotelGroup::singlePropertyFor($hotel)->id;
+            }
+        });
+    }
+
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
