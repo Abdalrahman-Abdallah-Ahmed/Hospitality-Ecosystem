@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ActivityCategoryController;
 use App\Http\Controllers\ActivityController;
+use App\Http\Controllers\Admin\UsageController;
 use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\AnalyticsController;
@@ -73,5 +74,12 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/knowledge-base-articles', KnowledgeBaseArticleController::class)->except(['edit', 'create']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
         Route::get('/history/{type}/{id}', [HistoryController::class, 'show']);
+
+        // Reporting across every account, so it sits behind the super-admin
+        // role rather than a per-model policy — there is no single model to
+        // authorise against.
+        Route::middleware('super_admin')->prefix('admin')->group(function () {
+            Route::get('/usage', [UsageController::class, 'index']);
+        });
     });
 });

@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Ai\Agents\AdminAdvisorAgent;
+use App\Enums\ActorKind;
+use App\Enums\MeterFeature;
 use App\Http\Requests\AiAdvisorChatRequest;
+use App\Services\Metering\MeteringService;
 use Laravel\Ai\Models\Conversation;
 
 class AiAdvisorController extends Controller
@@ -11,7 +14,7 @@ class AiAdvisorController extends Controller
     /**
      * Send a message to the admin advisor and get a reply.
      */
-    public function chat(AiAdvisorChatRequest $request)
+    public function chat(AiAdvisorChatRequest $request, MeteringService $metering)
     {
         $user = $request->user();
 
@@ -44,6 +47,14 @@ class AiAdvisorController extends Controller
         }
 
         $response = $agent->prompt($request->validated('message'));
+
+        $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
+            hotel: $user->hotel,
+            feature: MeterFeature::AI_MESSAGES,
+            source: $user,
+            metadata: ['channel' => 'advisor_chat'],
+            actorKind: ActorKind::AI_AGENT,
+        ));
 
         return apiResponse('Advisor replied successfully.', 200, [
             'conversation_id' => $agent->currentConversation(),

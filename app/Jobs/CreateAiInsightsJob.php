@@ -3,14 +3,17 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\InsightsAgent;
+use App\Enums\ActorKind;
 use App\Enums\AiInsightCategories;
 use App\Enums\EvidenceLevel;
 use App\Enums\InsightTypes;
+use App\Enums\MeterFeature;
 use App\Models\AiInsights;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
+use App\Services\Metering\MeteringService;
 use App\Support\Audit\EventLogger;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,7 +35,7 @@ class CreateAiInsightsJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(MeteringService $metering): void
     {
         $user = $this->data['user'];
         $hotel = $user->hotel;
@@ -41,7 +44,7 @@ class CreateAiInsightsJob implements ShouldQueue
         // Queue workers have no HTTP request, so TenantContext starts empty here
         // regardless of the queue driver — scope it explicitly to this hotel for
         // the duration of the job, restoring whatever context (if any) preceded it.
-        TenantContext::runForHotel($hotel->id, function () use ($user, $hotel, $insightType) {
+        TenantContext::runForHotel($hotel->id, function () use ($user, $hotel, $insightType, $metering) {
             $agent = InsightsAgent::make(
                 user: $user,
             );
@@ -73,6 +76,15 @@ class CreateAiInsightsJob implements ShouldQueue
                     ]);
                 });
             });
+
+            $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
+                hotel: $hotel,
+                feature: MeterFeature::AI_INSIGHTS_GENERATED,
+                quantity: count($response->structured['insights'] ?? []),
+                source: $hotel,
+                metadata: ['insight_type' => $insightType],
+                actorKind: ActorKind::AI_AGENT,
+            ));
         });
     }
 

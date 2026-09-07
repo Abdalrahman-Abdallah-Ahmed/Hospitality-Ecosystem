@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApiKeyMiddleware;
+use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\VerifyWhatsAppWebhookSignature;
 use Illuminate\Auth\Middleware\Authenticate;
@@ -21,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'api.key' => ApiKeyMiddleware::class,
             'tenant' => ResolveTenant::class,
+            'super_admin' => EnsureSuperAdmin::class,
             'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
         ]);
     })

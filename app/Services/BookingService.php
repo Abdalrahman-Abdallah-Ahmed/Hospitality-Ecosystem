@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Enums\AttributionMethod;
 use App\Enums\BookingStatus;
 use App\Enums\ChargeModel;
+use App\Enums\MeterFeature;
 use App\Enums\OutcomeType;
 use App\Models\Booking;
 use App\Models\Transaction;
+use App\Services\Metering\MeteringService;
 use App\Support\Bookings\BookingReference;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -52,6 +54,11 @@ class BookingService
 
         $this->creditRecommendation($booking);
 
+        // Metered for reporting only. Nothing bills on it and nothing gates on
+        // it — it accumulates so that the eventual "volume or bookings?"
+        // pricing decision is made against real data rather than a guess.
+        $this->meter($booking, MeterFeature::BOOKINGS_CREATED);
+
         return $booking;
     }
 
@@ -60,6 +67,31 @@ class BookingService
      * directly — the strongest link in the system, needing no inference at
      * all. Recorded here so it happens whatever created the booking.
      */
+    /**
+     * Metering is resolved out of the container here rather than injected, so
+     * that the many places already constructing a BookingService by hand do
+     * not all have to change. It goes through safely(), so a metering failure
+     * can never stop a booking being saved — a booking is an operational
+     * commitment and outranks the count of it.
+     */
+    private function meter(Booking $booking, MeterFeature $feature): void
+    {
+        $metering = app(MeteringService::class);
+
+        $metering->safely(function (MeteringService $m) use ($booking, $feature) {
+            $booking->loadMissing('hotel');
+
+            if ($booking->hotel) {
+                $m->recordForHotel(
+                    hotel: $booking->hotel,
+                    feature: $feature,
+                    source: $booking,
+                    idempotencyKey: $feature->value.':'.$booking->getKey(),
+                );
+            }
+        });
+    }
+
     private function creditRecommendation(Booking $booking): void
     {
         $recommendation = $booking->recommendation()->withoutGlobalScope('hotel')->first();
@@ -107,6 +139,10 @@ class BookingService
             'status' => BookingStatus::REALISED,
             'realised_at' => $at ?? Carbon::now(),
         ]);
+
+        // Created counts intent; realised counts what actually happened. The
+        // gap between them is the number worth watching.
+        $this->meter($booking, MeterFeature::BOOKINGS_REALISED);
 
         return $booking;
     }

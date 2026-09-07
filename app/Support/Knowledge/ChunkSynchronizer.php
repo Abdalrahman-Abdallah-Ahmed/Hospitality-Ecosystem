@@ -25,13 +25,17 @@ class ChunkSynchronizer
     /**
      * @param  array<string, mixed>  $metadata
      */
+    /**
+     * Returns the number of chunks embedded, which is what the embedding call
+     * actually cost — the caller meters on it.
+     */
     public static function sync(
         Model $chunkable,
         string $content,
         ?string $hotelId,
         ?string $category,
         array $metadata = []
-    ): void {
+    ): int {
         KnowledgeChunk::query()
             ->where('chunkable_type', $chunkable->getMorphClass())
             ->where('chunkable_id', $chunkable->getKey())
@@ -40,7 +44,7 @@ class ChunkSynchronizer
         $chunks = TextChunker::chunk($content);
 
         if ($chunks === []) {
-            return;
+            return 0;
         }
 
         $embeddings = Embeddings::for($chunks)->dimensions(self::DIMENSIONS)->generate()->embeddings;
@@ -67,5 +71,7 @@ class ChunkSynchronizer
         }
 
         KnowledgeChunk::insert($rows);
+
+        return count($rows);
     }
 }
