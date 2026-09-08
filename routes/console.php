@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\MakeRoomDirtyOvernightJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
 use Illuminate\Foundation\Inspiring;
@@ -18,3 +19,5 @@ Schedule::job(new MatchRecommendationOutcomesJob)->dailyAt('03:30');
 // maintained incrementally as usage happens; this is the safety net that
 // catches drift, and it logs any it finds rather than quietly correcting it.
 Schedule::job(new RebuildUsageCountersJob)->dailyAt('04:00');
+
+Schedule::job(new MakeRoomDirtyOvernightJob)->dailyAt('00:01');

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
+use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\RoomTypes;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -23,10 +24,12 @@ class Room extends Model
         'room_type',
         'floor',
         'status',
+        'housekeeping_status',
     ];
 
     protected $casts = [
         'room_type' => RoomTypes::class,
+        'housekeeping_status' => HousekeepingStatusesEnum::class,
     ];
 
     public function reservations(): HasMany

@@ -81,6 +81,7 @@ Every endpoint that returns a room returns it in this shape — **no relations a
   "room_type": "double",
   "floor": "1",
   "status": "available",
+  "housekeeping_status": "clean",
   "created_at": "2026-07-25T21:39:10.000000Z",
   "updated_at": "2026-07-25T21:39:10.000000Z"
 }
@@ -92,6 +93,10 @@ Field notes for the UI:
 - `room_number` and `floor` are free-text strings and are nullable — a room can exist with either blank.
 - `room_type` is **now a real, server-enforced enum** (`App\Enums\RoomTypes`), not free text: `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family`. It's still nullable (a room can have no type set), but if you send a value, it must be one of these seven or the request is rejected with a `422` — see [Create a Room](#2-create-a-room). The full list is echoed back on every `index` call as `body.room_types` (plain strings, see [List Rooms](#1-list-rooms)) so the frontend doesn't need to hard-code it.
 - `status` is also a free-text string, not a restricted enum server-side (there's no `Rule::in`/cast enforcing specific values). It defaults to `"available"` at the database level when omitted on create. The API will accept any string here, so **the frontend should be the one constraining input** (e.g. a fixed dropdown of `available` / `occupied` / `maintenance` / whatever values the product actually uses) — don't rely on the server to reject typos.
+- `housekeeping_status` **is** a real, server-enforced enum (`App\Enums\HousekeepingStatusesEnum`): `clean`, `dirty`, `blocked`. Unlike `status`, an invalid value here is rejected with a `422`, so you can bind a dropdown straight to those three and trust the server to back you up. It defaults to `"clean"` at the database level when omitted on create, and is never null.
+- `status` and `housekeeping_status` are **two independent axes** — don't collapse them into one badge. `status` answers "can this room be sold" (`available` / `occupied` / `maintenance`); `housekeeping_status` answers "is it ready for a guest". A room can legitimately be `occupied` **and** `dirty` at the same time.
+- `blocked` means **out of order** — a fault, a leak, an unfinished repair — not merely "needs cleaning". A blocked room should be excluded from assignment even when `status` still reads `available`, and the UI should make clearing it a deliberate action rather than something housekeeping ticks off in passing.
+- `housekeeping_status` can change **without any user action**: a nightly job (`App\Jobs\MakeRoomDirtyOvernightJob`, scheduled `00:01` server time) flips every room holding an in-house stay to `dirty`, so housekeeping starts the day with an accurate worklist. It deliberately skips `blocked` rooms, so a fault is never silently downgraded to "just dirty". Don't cache a room's housekeeping status across a date boundary — refetch.
 - There is no soft-delete on rooms — `DELETE` permanently removes the row (see [Delete a Room](#5-delete-a-room)).
 - If a room has active reservations pointing at it (`reservations.room_id`), deleting it does **not** cascade-delete those reservations; their `room_id` is left pointing at a now-missing row (no `ON DELETE` rule enforced from this side). Consider warning the user before deleting a room that's referenced by upcoming reservations.
 
@@ -107,18 +112,24 @@ All optional:
 
 | Param | Type | Example | Behavior |
 | --- | --- | --- | --- |
-| `filter[<column>]` | string, or array for multiple values | `filter[status]=available` | Exact match on any real `rooms` column. `filter[status][]=available&filter[status][]=occupied` matches either. |
-| `search` | string | `search=101` | Partial (`LIKE %term%`) match across the room's string-typed columns: `hotel_id`, `room_number`, `room_type`, `floor`, `status`. |
+| `filter[<column>]` | string, or array for multiple values | `filter[housekeeping_status]=dirty` | Exact match on any real `rooms` column. `filter[housekeeping_status][]=dirty&filter[housekeeping_status][]=blocked` matches either. |
+| `search` | string | `search=101` | Partial (`LIKE %term%`) match across the room's string-typed columns: `room_number`, `room_type`, `floor`, `status`, `housekeeping_status`. |
 | `sort` | string | `sort=-created_at` | Sort by a real column. Prefix with `-` for descending. |
 | `page` | integer | `page=2` | Page number, 1-indexed. |
 | `per_page` | integer, 1–100 | `per_page=25` | Page size. Defaults to 15. |
 
-`filter`/`sort` are validated against the rooms table's real columns: `id`, `hotel_id`, `room_number`, `room_type`, `floor`, `status`, `created_at`, `updated_at`. An unknown key in either returns a `422` (see below).
+`filter`/`sort` are validated against the rooms table's real columns: `id`, `hotel_id`, `room_number`, `room_type`, `floor`, `status`, `housekeeping_status`, `created_at`, `updated_at`. An unknown key in either returns a `422` (see below).
 
 ### Example Request
 
 ```
 GET /api/room?filter[status]=available&search=101&sort=-created_at&per_page=20&page=1
+```
+
+The housekeeping worklist — every room needing service, ordered by room number — is just a filter on the new column:
+
+```
+GET /api/room?filter[housekeeping_status]=dirty&sort=room_number
 ```
 
 ### Success Response
@@ -189,7 +200,8 @@ HTTP `422`:
   "room_number": "101",
   "room_type": "double",
   "floor": "1",
-  "status": "available"
+  "status": "available",
+  "housekeeping_status": "clean"
 }
 ```
 
@@ -202,6 +214,7 @@ HTTP `422`:
 | `room_type` | optional, must be one of `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family` (see [`body.room_types`](#1-list-rooms)) — any other value returns a `422`. |
 | `floor` | optional, string, max 255. |
 | `status` | optional, string, max 255. Defaults to `"available"` if omitted. Not restricted to a fixed list server-side — enforce allowed values client-side. |
+| `housekeeping_status` | optional, must be one of `clean`, `dirty`, `blocked` — any other value returns a `422`. Defaults to `"clean"` if omitted, so you can leave it out of the create form entirely. |
 
 **Important — hotel scoping:** `hotel_id` must be an id the logged-in admin actually owns. The API does not silently substitute the user's own hotel here — you must pass it explicitly. In practice, for an admin managing only their own hotel, the frontend should hard-code `hotel_id` to that admin's own hotel (fetched once, e.g. from `GET /api/user` → the hotel relationship) rather than exposing a hotel picker, since attempting to use any other hotel id will be rejected (see below).
 
@@ -236,6 +249,21 @@ HTTP `422`:
 ```
 
 Same error applies on [update](#4-update-a-room) if `room_type` is included with a bad value.
+
+### Error: Invalid `housekeeping_status`
+
+HTTP `422`:
+
+```json
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "housekeeping_status": ["The selected housekeeping status is invalid."]
+  }
+}
+```
+
+Same error applies on [update](#4-update-a-room). Note the contrast with `status`, which accepts any string — `housekeeping_status` is the one of the two the server actually validates.
 
 ### Error: Room For a Different Hotel
 
@@ -294,6 +322,14 @@ Send only the fields you want to change — every field is optional on update:
 ```json
 {
   "status": "maintenance"
+}
+```
+
+Marking a room clean once housekeeping has serviced it is the same one-key `PUT`, and is likely the most frequent write this endpoint will see:
+
+```json
+{
+  "housekeeping_status": "clean"
 }
 ```
 
@@ -374,7 +410,8 @@ curl -X POST http://your-domain.com/api/room \
     "room_number": "101",
     "room_type": "double",
     "floor": "1",
-    "status": "available"
+    "status": "available",
+    "housekeeping_status": "clean"
   }'
 ```
 
@@ -387,6 +424,17 @@ curl -X PUT http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c1763cf
   -H "X-API-KEY: YOUR_API_KEY" \
   -H "Authorization: Bearer USER_LOGIN_TOKEN" \
   -d '{ "status": "maintenance" }'
+```
+
+### Mark a room clean after servicing
+
+```bash
+curl -X PUT http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c1763cf \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Authorization: Bearer USER_LOGIN_TOKEN" \
+  -d '{ "housekeeping_status": "clean" }'
 ```
 
 ### Delete
@@ -405,6 +453,7 @@ curl -X DELETE http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c176
 - **Breaking change:** the room list is now at `body.data.data`, not `body.data` — `index`'s `body` is `{ data: <paginator>, room_types: [...] }`. Pagination fields (`current_page`, `last_page`, `total`) moved from `body.*` to `body.data.*`. See [List Rooms](#1-list-rooms).
 - `body.room_types` (only on `index`) is the authoritative list of valid `room_type` values — use it to populate the type picker instead of hard-coding it.
 - `status` is still a free-text string server-side — enforce your own fixed option list in the UI. `room_type` is **now a real server-enforced enum** (`single`/`double`/`twin`/`triple`/`suite`/`deluxe`/`family`) — an invalid value returns a `422`.
+- **New field:** every room now also returns `housekeeping_status` — a server-enforced enum of `clean` / `dirty` / `blocked`, defaulting to `clean`. It's a **separate axis from `status`**, so render it as its own badge: `status` says whether the room can be sold, `housekeeping_status` says whether it's ready. `blocked` means out of order and should block assignment on its own. Filter the housekeeping worklist with `filter[housekeeping_status]=dirty`, and mark a room serviced with a one-key `PUT`. Expect it to change overnight without user action — a scheduled job dirties every in-house room at `00:01` server time (leaving `blocked` rooms alone), so refetch rather than caching it across a date boundary.
 - `hotel_id` can be set on create but **should not** be included on update — the API doesn't block reassignment, but doing so can strand the room outside the current admin's access.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Deleting a room is permanent (no soft delete) and does not cascade to reservations referencing it — confirm before deleting a room with existing reservations.

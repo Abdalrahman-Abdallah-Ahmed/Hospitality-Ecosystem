@@ -20,7 +20,7 @@ class GetRoomsTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Retrieve the rooms for the current hotel, including room number, room type, floor, and status.';
+        return 'Retrieve the rooms for the current hotel, including room number, room type, floor, occupancy status, and housekeeping status (clean, dirty, or blocked).';
     }
 
     /**
@@ -38,6 +38,7 @@ class GetRoomsTool implements Tool
                 'room_type' => $room->room_type,
                 'floor' => $room->floor,
                 'status' => $room->status,
+                'housekeeping_status' => $room->housekeeping_status,
             ])
             ->values();
 

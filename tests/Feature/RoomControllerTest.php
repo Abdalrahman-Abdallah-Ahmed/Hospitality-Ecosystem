@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\Room;
@@ -248,4 +249,63 @@ it('lets a super admin delete a room belonging to any hotel', function () {
         ->assertOk();
 
     expect(Room::find($room->id))->toBeNull();
+});
+
+// housekeeping status
+
+it('defaults a newly created room to clean', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room', [
+            'hotel_id' => $hotel->id,
+            'room_number' => '204',
+            'room_type' => 'double',
+            'floor' => '2',
+        ])
+        ->assertStatus(201);
+
+    // The column default fills this in, so the caller never has to send it.
+    expect($hotel->rooms()->where('room_number', '204')->first()->housekeeping_status)
+        ->toBe(HousekeepingStatusesEnum::CLEAN);
+});
+
+it('lets an admin flag a room as dirty or blocked', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+    $room = roomFor($hotel);
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room/{$room->id}", ['housekeeping_status' => 'dirty'])
+        ->assertOk()
+        ->assertJsonPath('body.housekeeping_status', 'dirty');
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room/{$room->id}", ['housekeeping_status' => 'blocked'])
+        ->assertOk();
+
+    expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::BLOCKED);
+});
+
+it('rejects a housekeeping status outside the allowed set', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+    $room = roomFor($hotel);
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room/{$room->id}", ['housekeeping_status' => 'sparkling'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['housekeeping_status']);
+});
+
+it('filters the room list by housekeeping status', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+    roomFor($hotel, ['room_number' => '101']);
+    roomFor($hotel, ['room_number' => '102', 'housekeeping_status' => 'dirty']);
+    roomFor($hotel, ['room_number' => '103', 'housekeeping_status' => 'blocked']);
+
+    $response = $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/room?filter[housekeeping_status]=dirty')
+        ->assertOk();
+
+    expect($response->json('body.data'))->toHaveCount(1)
+        ->and($response->json('body.data.0.room_number'))->toBe('102');
 });
