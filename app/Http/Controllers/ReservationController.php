@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ReservationChannels;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
@@ -134,6 +135,24 @@ class ReservationController extends Controller
         EventLogger::record($hotel, 'reservations_imported', changes: $summary);
 
         return apiResponse('Reservations imported successfully.', 200, $summary);
+    }
+
+    /**
+     * The booking channels the system recognises, served from the enum itself
+     * so a channel picker is built from the server's list rather than a
+     * hard-coded copy that quietly drifts when a channel is added.
+     *
+     * The list is the same for every account — there is no model behind it and
+     * nothing hotel-specific to authorise against, so it carries no policy
+     * check beyond the authentication its route already requires.
+     */
+    public function availableChannels(): JsonResponse
+    {
+        return apiResponse(
+            'Available channels fetched successfully.',
+            200,
+            ReservationChannels::cases(),
+        );
     }
 
     /**

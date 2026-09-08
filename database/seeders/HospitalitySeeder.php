@@ -6,6 +6,7 @@ use App\Models\Activity;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\User;
+use App\Enums\UserRole;
 use Illuminate\Database\Seeder;
 
 class HospitalitySeeder extends Seeder
@@ -16,7 +17,7 @@ class HospitalitySeeder extends Seeder
             'name' => 'Hospitality Admin',
             'email' => 'admin@hospitality.test',
             'password' => bcrypt('123123123'),
-            'role' => 'admin',
+            'role' => UserRole::SUPER_ADMIN,
             'phone_number' => '201151793758',
         ]);
 
