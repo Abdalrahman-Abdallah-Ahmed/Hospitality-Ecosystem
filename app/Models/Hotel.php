@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Filterable;
+use App\Services\Metering\MeteringService;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -46,12 +47,35 @@ class Hotel extends Model
         // Every hotel belongs to an account. A hotel created without a group
         // gets a single-property group of its own, so that group-keyed code
         // never has to handle a hotel with no account. Doing it here rather
-        // than in the two controllers that create hotels means seeders,
-        // imports, tests, and any future entry point are covered by the same
-        // path.
+        // than in the two controllers that create hotels covers the ordinary
+        // entry points at once.
+        //
+        // It does NOT cover everything: anything that suppresses model events
+        // (DatabaseSeeder uses WithoutModelEvents) or writes through the query
+        // builder bypasses this and must set the group itself. The NOT NULL
+        // constraint on the column is the actual guarantee — this hook is
+        // only the convenience.
         static::creating(function (self $hotel): void {
             if ($hotel->hotel_group_id === null) {
                 $hotel->hotel_group_id = HotelGroup::singlePropertyFor($hotel)->id;
+            }
+        });
+
+        // Properties are a seat: the count is read back from this table, never
+        // incremented. Incrementing would leave a property count that only
+        // ever rises, surviving every hotel anyone deletes — which is exactly
+        // what the recount on delete is here to prevent.
+        static::created(fn (self $hotel) => $hotel->recountSeats());
+        static::deleted(fn (self $hotel) => $hotel->recountSeats());
+    }
+
+    private function recountSeats(): void
+    {
+        $metering = app(MeteringService::class);
+
+        $metering->safely(function (MeteringService $m): void {
+            if ($account = $this->hotelGroup()->withTrashed()->first()) {
+                $m->recountSeats($account);
             }
         });
     }

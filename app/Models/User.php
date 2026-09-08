@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
+use App\Services\Metering\MeteringService;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -37,6 +38,38 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => UserRole::class,
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Users are a seat, like properties: recounted from this table, never
+        // incremented, so that a departed staff member actually leaves the
+        // count.
+        static::created(fn (self $user) => $user->recountSeats());
+        static::deleted(fn (self $user) => $user->recountSeats());
+    }
+
+    /**
+     * Resolved by query rather than through the `hotelGroup` / `hotel`
+     * relation properties on purpose. Reading a relation here would cache it
+     * on this instance — and at creation time a user usually has no hotel
+     * yet, so the caller would be left holding an instance whose `hotel` is
+     * permanently null even after it has been assigned one.
+     */
+    private function recountSeats(): void
+    {
+        $metering = app(MeteringService::class);
+
+        $metering->safely(function (MeteringService $m): void {
+            $accountId = $this->getAttribute('hotel_group_id')
+                ?? Hotel::withTrashed()
+                    ->whereKey($this->getAttribute('hotel_id'))
+                    ->value('hotel_group_id');
+
+            if ($accountId && $account = HotelGroup::withTrashed()->find($accountId)) {
+                $m->recountSeats($account);
+            }
+        });
     }
 
     public function hotel()

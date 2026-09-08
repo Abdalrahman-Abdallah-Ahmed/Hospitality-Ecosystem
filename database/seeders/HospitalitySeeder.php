@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Activity;
 use App\Models\Hotel;
+use App\Models\HotelGroup;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -19,8 +20,22 @@ class HospitalitySeeder extends Seeder
             'phone_number' => '201151793758',
         ]);
 
+        // DatabaseSeeder runs WithoutModelEvents, so Hotel's creating hook —
+        // which normally gives a group-less hotel a single-property group of
+        // its own — does not fire here. The group is created explicitly
+        // instead. The NOT NULL constraint on hotels.hotel_group_id is what
+        // actually guarantees this, and it is the reason this was noticed.
+        $group = HotelGroup::create([
+            'name' => 'Grand Harbor Hotel',
+            'slug' => 'grand-harbor-hotel',
+            'country_code' => 'EG',
+            'default_currency' => 'USD',
+            'default_timezone' => 'Africa/Cairo',
+        ]);
+
         $hotel = Hotel::create([
             'owner_id' => $user->id,
+            'hotel_group_id' => $group->id,
             'name' => 'Grand Harbor Hotel',
             'slug' => 'grand-harbor-hotel',
             'timezone' => 'Africa/Cairo',

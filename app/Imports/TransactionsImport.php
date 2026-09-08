@@ -2,12 +2,15 @@
 
 namespace App\Imports;
 
+use App\Enums\ActorKind;
 use App\Enums\EvidenceLevel;
+use App\Enums\MeterFeature;
 use App\Enums\TransactionSource;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Hotel;
 use App\Models\Transaction;
+use App\Services\Metering\MeteringService;
 use App\Services\TransactionAttributionService;
 use App\Services\TransactionService;
 use Illuminate\Support\Carbon;
@@ -68,6 +71,23 @@ class TransactionsImport implements ToCollection, WithHeadingRow
                 $this->rejected[] = ['row' => $rowNumber, 'reason' => $e->getMessage()];
             }
         }
+
+        // One event for the batch, never one per row: a 10,000-row upload is
+        // a single import, and metering inside the loop would put 10,000 rows
+        // in the largest table in the system to record one action.
+        $metering = app(MeteringService::class);
+
+        $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
+            hotel: $this->hotel,
+            feature: MeterFeature::TRANSACTION_ROWS_IMPORTED,
+            quantity: $this->imported,
+            metadata: [
+                'read' => $this->read,
+                'duplicates' => $this->duplicates,
+                'rejected' => count($this->rejected),
+            ],
+            actorKind: ActorKind::IMPORT,
+        ));
     }
 
     private function importRow(Collection $row, int $rowNumber): void

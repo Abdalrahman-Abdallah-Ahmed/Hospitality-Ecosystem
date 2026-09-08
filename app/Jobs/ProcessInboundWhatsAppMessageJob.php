@@ -4,11 +4,14 @@ namespace App\Jobs;
 
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
+use App\Enums\ActorKind;
+use App\Enums\MeterFeature;
 use App\Enums\SenderType;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\User;
+use App\Services\Metering\MeteringService;
 use App\Services\WhatsAppMessageService;
 use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -45,7 +48,7 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(WhatsAppMessageService $whatsApp): void
+    public function handle(WhatsAppMessageService $whatsApp, MeteringService $metering): void
     {
         if ($this->senderType === SenderType::ADMIN && ! $this->devicePaired) {
             $whatsApp->send(
@@ -94,5 +97,19 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         );
 
         $whatsApp->send($this->phoneNumber, $response->text);
+
+        // Metered after the reply has gone out, and through safely(), so that
+        // nothing about counting the message can stop the guest receiving it.
+        // This is also the externally-triggered cost path: anyone who can
+        // message the hotel's number can cause spend here.
+        if ($this->hotel) {
+            $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
+                hotel: $this->hotel,
+                feature: MeterFeature::AI_MESSAGES,
+                source: $this->sender,
+                metadata: ['channel' => 'whatsapp', 'sender_type' => $this->senderType->value],
+                actorKind: ActorKind::AI_AGENT,
+            ));
+        }
     }
 }

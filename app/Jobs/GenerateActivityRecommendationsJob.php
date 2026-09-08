@@ -3,7 +3,11 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\RecommendationAgent;
+use App\Enums\ActorKind;
+use App\Enums\MeterFeature;
+use App\Models\Recommendation;
 use App\Models\Reservation;
+use App\Services\Metering\MeteringService;
 use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -29,9 +33,11 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(MeteringService $metering): void
     {
         $this->reservation->loadMissing(['guest', 'hotel']);
+
+        $before = $this->recommendationCount();
 
         $agent = RecommendationAgent::make(
             hotel: $this->reservation->hotel,
@@ -44,5 +50,28 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
         EventLogger::asAiAgent(
             fn () => $agent->prompt("Generate activity recommendations for guest {$guestName}.")
         );
+
+        // The agent writes recommendations through a tool, so the only honest
+        // count is how many rows actually appeared — asking the model how
+        // many it made would be taking its word for its own output.
+        $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
+            hotel: $this->reservation->hotel,
+            feature: MeterFeature::RECOMMENDATIONS_GENERATED,
+            quantity: $this->recommendationCount() - $before,
+            source: $this->reservation,
+            actorKind: ActorKind::AI_AGENT,
+        ));
+    }
+
+    /**
+     * Counted without the tenant scope: this job runs on a queue worker with
+     * no request behind it, so the scope would otherwise depend on whatever
+     * context happened to be set.
+     */
+    private function recommendationCount(): int
+    {
+        return Recommendation::withoutGlobalScope('hotel')
+            ->where('reservation_id', $this->reservation->getKey())
+            ->count();
     }
 }

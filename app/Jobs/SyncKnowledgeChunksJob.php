@@ -2,8 +2,11 @@
 
 namespace App\Jobs;
 
+use App\Enums\ActorKind;
+use App\Enums\MeterFeature;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
+use App\Services\Metering\MeteringService;
 use App\Support\Knowledge\ChunkSynchronizer;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -23,9 +26,9 @@ class SyncKnowledgeChunksJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(MeteringService $metering): void
     {
-        ChunkSynchronizer::sync(
+        $chunks = ChunkSynchronizer::sync(
             chunkable: $this->chunkable,
             content: $this->chunkable->content,
             hotelId: $this->chunkable->hotel_id,
@@ -36,5 +39,16 @@ class SyncKnowledgeChunksJob implements ShouldQueue
                 'version' => $this->chunkable->version,
             ],
         );
+
+        // Embeddings are the cost everyone forgets: no visible output, real
+        // money, and re-run in full every time an article is edited. One
+        // event for the batch, not one per chunk.
+        $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
+            hotel: $this->chunkable->hotel,
+            feature: MeterFeature::EMBEDDINGS_GENERATED,
+            quantity: $chunks,
+            source: $this->chunkable,
+            actorKind: ActorKind::SYSTEM,
+        ));
     }
 }
