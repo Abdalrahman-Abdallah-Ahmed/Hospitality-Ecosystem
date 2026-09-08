@@ -46,7 +46,7 @@ class RoomController extends Controller
 
         $room = Room::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Room created successfully.', 201, $room);
+        return apiResponse('Room created successfully.', 201, RoomResource::make($room));
     }
 
     /**
@@ -56,7 +56,7 @@ class RoomController extends Controller
     {
         $this->authorize('view', $room);
 
-        return apiResponse('Room fetched successfully.', 200, $room);
+        return apiResponse('Room fetched successfully.', 200, RoomResource::make($room));
     }
 
     /**
@@ -70,7 +70,7 @@ class RoomController extends Controller
 
         $room->update($validated);
 
-        return apiResponse('Room updated successfully.', 200, $room);
+        return apiResponse('Room updated successfully.', 200, RoomResource::make($room));
     }
 
     /**

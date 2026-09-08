@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\ActivityCategoryResource;
 use App\Models\ActivityCategory;
 use App\Support\RequestRules\GenericQuery;
 
@@ -21,7 +22,7 @@ class ActivityCategoryController extends Controller
 
         $activityCategories = GenericQuery::apply($query, $request);
 
-        return apiResponse('Activity categories fetched successfully.', 200, $activityCategories);
+        return apiResponse('Activity categories fetched successfully.', 200, ActivityCategoryResource::collection($activityCategories));
     }
 
     /**
@@ -40,7 +41,7 @@ class ActivityCategoryController extends Controller
 
         $activityCategory = ActivityCategory::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Activity category created successfully.', 201, $activityCategory);
+        return apiResponse('Activity category created successfully.', 201, ActivityCategoryResource::make($activityCategory));
     }
 
     /**
@@ -50,7 +51,7 @@ class ActivityCategoryController extends Controller
     {
         $this->authorize('view', $activityCategory);
 
-        return apiResponse('Activity category fetched successfully.', 200, $activityCategory);
+        return apiResponse('Activity category fetched successfully.', 200, ActivityCategoryResource::make($activityCategory));
     }
 
     /**
@@ -64,7 +65,7 @@ class ActivityCategoryController extends Controller
 
         $activityCategory->update($validated);
 
-        return apiResponse('Activity category updated successfully.', 200, $activityCategory);
+        return apiResponse('Activity category updated successfully.', 200, ActivityCategoryResource::make($activityCategory));
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\HotelResource;
 use App\Models\Hotel;
 use App\Support\RequestRules\GenericQuery;
 
@@ -21,7 +22,7 @@ class HotelController extends Controller
             $request
         );
 
-        return apiResponse('Hotels fetched successfully.', 200, $hotels);
+        return apiResponse('Hotels fetched successfully.', 200, HotelResource::collection($hotels));
     }
 
     /**
@@ -42,12 +43,12 @@ class HotelController extends Controller
             $trashed->restore();
             $trashed->update($validated);
 
-            return apiResponse('Hotel created successfully.', 201, $trashed);
+            return apiResponse('Hotel created successfully.', 201, HotelResource::make($trashed));
         }
 
         $hotel = Hotel::create($validated);
 
-        return apiResponse('Hotel created successfully.', 201, $hotel);
+        return apiResponse('Hotel created successfully.', 201, HotelResource::make($hotel));
     }
 
     /**
@@ -57,7 +58,7 @@ class HotelController extends Controller
     {
         $this->authorize('view', $hotel);
 
-        return apiResponse('Hotel fetched successfully.', 200, $hotel);
+        return apiResponse('Hotel fetched successfully.', 200, HotelResource::make($hotel));
     }
 
     /**
@@ -69,7 +70,7 @@ class HotelController extends Controller
 
         $hotel->update($request->validated());
 
-        return apiResponse('Hotel updated successfully.', 200, $hotel);
+        return apiResponse('Hotel updated successfully.', 200, HotelResource::make($hotel));
     }
 
     /**

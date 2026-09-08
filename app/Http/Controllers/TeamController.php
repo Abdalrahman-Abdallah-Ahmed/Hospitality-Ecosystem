@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\TeamResource;
 use App\Models\Team;
 use App\Models\User;
 use App\Support\RequestRules\GenericQuery;
@@ -25,7 +26,7 @@ class TeamController extends Controller
 
         $teams = GenericQuery::apply($query, $request);
 
-        return apiResponse('Teams fetched successfully.', 200, $teams);
+        return apiResponse('Teams fetched successfully.', 200, TeamResource::collection($teams));
     }
 
     /**
@@ -37,7 +38,7 @@ class TeamController extends Controller
 
         $team->load(['hotel', 'members']);
 
-        return apiResponse('Team fetched successfully.', 200, $team);
+        return apiResponse('Team fetched successfully.', 200, TeamResource::make($team));
     }
 
     /**
@@ -62,7 +63,7 @@ class TeamController extends Controller
 
         $team = Team::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Team created successfully.', 201, $team->load(['hotel']));
+        return apiResponse('Team created successfully.', 201, TeamResource::make($team->load(['hotel'])));
     }
 
     /**
@@ -88,7 +89,7 @@ class TeamController extends Controller
 
         $team->update($validated);
 
-        return apiResponse('Team updated successfully.', 200, $team->load(['hotel']));
+        return apiResponse('Team updated successfully.', 200, TeamResource::make($team->load(['hotel'])));
     }
 
     /**
@@ -114,7 +115,7 @@ class TeamController extends Controller
 
         $user->update(['team_id' => $team->id]);
 
-        return apiResponse('Member added to the team successfully.', 200, $team->load(['hotel', 'members']));
+        return apiResponse('Member added to the team successfully.', 200, TeamResource::make($team->load(['hotel', 'members'])));
     }
 
     /**

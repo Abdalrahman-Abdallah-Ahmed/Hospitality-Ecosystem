@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\TaskCategoryResource;
 use App\Models\TaskCategory;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
@@ -22,7 +23,7 @@ class TaskCategoryController extends Controller
 
         $taskCategories = GenericQuery::apply($query, $request);
 
-        return apiResponse('Task categories fetched successfully.', 200, $taskCategories);
+        return apiResponse('Task categories fetched successfully.', 200, TaskCategoryResource::collection($taskCategories));
     }
 
     /**
@@ -49,7 +50,7 @@ class TaskCategoryController extends Controller
 
         $taskCategory = TaskCategory::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Task category created successfully.', 201, $taskCategory->load(['hotel', 'team']));
+        return apiResponse('Task category created successfully.', 201, TaskCategoryResource::make($taskCategory->load(['hotel', 'team'])));
     }
 
     /**
@@ -71,7 +72,7 @@ class TaskCategoryController extends Controller
 
         $taskCategory->update($validated);
 
-        return apiResponse('Task category updated successfully.', 200, $taskCategory->load(['hotel', 'team']));
+        return apiResponse('Task category updated successfully.', 200, TaskCategoryResource::make($taskCategory->load(['hotel', 'team'])));
     }
 
     /**

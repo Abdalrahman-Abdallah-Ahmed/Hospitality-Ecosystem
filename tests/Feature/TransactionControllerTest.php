@@ -58,7 +58,7 @@ it('lists only the caller hotel transactions', function () {
     $this->withHeaders(txnCtrlApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/transaction')
         ->assertOk()
-        ->assertJsonPath('body.total', 1)
+        ->assertJsonPath('body.meta.total', 1)
         ->assertJsonPath('body.data.0.id', $mine->id);
 });
 

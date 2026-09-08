@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Generic\GenericIndexRequest;
+use App\Http\Resources\AiInsightsResource;
 use App\Jobs\CreateAiInsightsJob;
 use App\Models\AiInsights;
 use App\Support\RequestRules\GenericQuery;
@@ -17,7 +18,7 @@ class AiInsightsController extends Controller
 
         $insights = GenericQuery::apply($query, $request);
 
-        return apiResponse('AI insights fetched successfully.', 200, $insights);
+        return apiResponse('AI insights fetched successfully.', 200, AiInsightsResource::collection($insights));
     }
 
     public function store(GenericIndexRequest $request)

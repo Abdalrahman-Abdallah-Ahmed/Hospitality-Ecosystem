@@ -20,7 +20,7 @@ class UserController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $query = User::with('hotel');
+        $query = User::with(['hotel', 'team']);
 
         if (! $request->user()->isSuperAdmin()) {
             $hotelId = $request->user()->hotel?->id;
@@ -66,7 +66,7 @@ class UserController extends Controller
 
         $user = User::create([...$validated, 'hotel_id' => $hotel?->id]);
 
-        return apiResponse('User created successfully.', 201, new UserResource($user->load('hotel')));
+        return apiResponse('User created successfully.', 201, UserResource::make($user->load(['hotel', 'team'])));
     }
 
     /**
@@ -76,7 +76,7 @@ class UserController extends Controller
     {
         $this->authorize('view', $user);
 
-        return apiResponse('User fetched successfully.', 200, new UserResource($user->load('hotel')));
+        return apiResponse('User fetched successfully.', 200, UserResource::make($user->load(['hotel', 'team'])));
     }
 
     /**
@@ -97,7 +97,7 @@ class UserController extends Controller
 
         $user->update($validated);
 
-        return apiResponse('User updated successfully.', 200, new UserResource($user->load('hotel')));
+        return apiResponse('User updated successfully.', 200, UserResource::make($user->load(['hotel', 'team'])));
     }
 
     /**

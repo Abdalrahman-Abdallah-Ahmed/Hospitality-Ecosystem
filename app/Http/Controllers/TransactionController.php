@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\ImportTransactionsRequest;
 use App\Http\Requests\ReverseTransactionRequest;
+use App\Http\Resources\TransactionResource;
 use App\Imports\TransactionsImport;
 use App\Models\Transaction;
 use App\Services\TransactionService;
@@ -27,7 +28,7 @@ class TransactionController extends Controller
 
         $transactions = GenericQuery::apply($query, $request);
 
-        return apiResponse('Transactions fetched successfully.', 200, $transactions);
+        return apiResponse('Transactions fetched successfully.', 200, TransactionResource::collection($transactions));
     }
 
     /**
@@ -37,7 +38,7 @@ class TransactionController extends Controller
     {
         $this->authorize('view', $transaction);
 
-        return apiResponse('Transaction fetched successfully.', 200, $transaction->load(['guest', 'stay', 'room', 'activity', 'reverses', 'reversals']));
+        return apiResponse('Transaction fetched successfully.', 200, TransactionResource::make($transaction->load(['guest', 'stay', 'room', 'activity', 'reverses', 'reversals'])));
     }
 
     /**
@@ -90,6 +91,6 @@ class TransactionController extends Controller
             return apiResponse($e->getMessage(), 422);
         }
 
-        return apiResponse('Transaction reversed successfully.', 201, $reversal);
+        return apiResponse('Transaction reversed successfully.', 201, TransactionResource::make($reversal));
     }
 }

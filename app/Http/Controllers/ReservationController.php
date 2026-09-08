@@ -6,6 +6,7 @@ use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Requests\ImportReservationsRequest;
+use App\Http\Resources\ReservationResource;
 use App\Imports\ReservationsImport;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -29,7 +30,7 @@ class ReservationController extends Controller
 
         $reservations = GenericQuery::apply($query, $request);
 
-        return apiResponse('Reservations fetched successfully.', 200, $reservations);
+        return apiResponse('Reservations fetched successfully.', 200, ReservationResource::collection($reservations));
     }
 
     /**
@@ -56,7 +57,7 @@ class ReservationController extends Controller
 
         ReservationCreator::syncRoomOccupancy($reservation);
 
-        return apiResponse('Reservation created successfully.', 201, $reservation->load(['hotel', 'guest', 'room']));
+        return apiResponse('Reservation created successfully.', 201, ReservationResource::make($reservation->load(['hotel', 'guest', 'room'])));
     }
 
     /**
@@ -68,7 +69,7 @@ class ReservationController extends Controller
 
         $reservation->load(['hotel', 'guest', 'room']);
 
-        return apiResponse('Reservation fetched successfully.', 200, $reservation);
+        return apiResponse('Reservation fetched successfully.', 200, ReservationResource::make($reservation));
     }
 
     /**
@@ -92,7 +93,7 @@ class ReservationController extends Controller
         ReservationCreator::syncStay($reservation);
         ReservationCreator::syncRoomOccupancy($reservation);
 
-        return apiResponse('Reservation updated successfully.', 200, $reservation->load(['hotel', 'guest', 'room']));
+        return apiResponse('Reservation updated successfully.', 200, ReservationResource::make($reservation->load(['hotel', 'guest', 'room'])));
     }
 
     /**

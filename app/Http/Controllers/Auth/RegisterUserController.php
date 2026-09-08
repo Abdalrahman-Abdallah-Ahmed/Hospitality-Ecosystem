@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RegisterUserRequest;
+use App\Http\Resources\HotelResource;
+use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
 use Illuminate\Auth\Events\Registered;
@@ -72,17 +74,8 @@ class RegisterUserController extends Controller
         event(new Registered($user));
 
         return apiResponse('User registered successfully.', 201, [
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
-            'hotel' => [
-                'id' => $hotel->id,
-                'name' => $hotel->name,
-                'slug' => $hotel->slug,
-            ],
+            'user' => UserResource::make($user),
+            'hotel' => HotelResource::make($hotel),
         ]);
     }
 }

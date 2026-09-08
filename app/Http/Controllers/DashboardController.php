@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
+use App\Http\Resources\ReservationResource;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\Stay;
@@ -62,9 +63,9 @@ class DashboardController extends Controller
             'pending_tasks' => $pendingTasks,
             'in_progress_tasks' => $inProgressTasks,
             'today_arrivals_count' => $todayArrivals->count(),
-            'today_arrivals' => $todayArrivals,
+            'today_arrivals' => ReservationResource::collection($todayArrivals),
             'today_departures_count' => $todayDepartures->count(),
-            'today_departures' => $todayDepartures,
+            'today_departures' => ReservationResource::collection($todayDepartures),
             'occupancy' => [
                 'date' => $requestedDate ?? now()->toDateString(),
                 'occupied_rooms' => $occupiedRooms,

@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class RoomResource extends JsonResource
+class ActivityResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -17,13 +17,13 @@ class RoomResource extends JsonResource
         return [
             'id' => $this->id,
             'hotel_id' => $this->hotel_id,
-            'room_number' => $this->room_number,
-            'room_type' => $this->room_type,
-            'floor' => $this->floor,
-            'status' => $this->status,
-            'housekeeping_status' => $this->housekeeping_status,
-            'hotel' => HotelResource::make($this->whenLoaded('hotel')),
-            'reservations' => ReservationResource::collection($this->whenLoaded('reservations')),
+            'category_id' => $this->category_id,
+            'name' => $this->name,
+            'description' => $this->description,
+            'price' => $this->price,
+            'currency' => $this->currency,
+            'is_active' => $this->is_active,
+            'category' => ActivityCategoryResource::make($this->whenLoaded('category')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

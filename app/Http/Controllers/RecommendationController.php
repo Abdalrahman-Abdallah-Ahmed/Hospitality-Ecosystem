@@ -7,6 +7,8 @@ use App\Enums\OutcomeType;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Requests\RecordRecommendationOutcomeRequest;
+use App\Http\Resources\RecommendationOutcomeResource;
+use App\Http\Resources\RecommendationResource;
 use App\Jobs\GenerateActivityRecommendationsJob;
 use App\Models\Booking;
 use App\Models\Recommendation;
@@ -29,7 +31,7 @@ class RecommendationController extends Controller
 
         $recommendations = GenericQuery::apply($query, $request);
 
-        return apiResponse('Recommendations fetched successfully.', 200, $recommendations);
+        return apiResponse('Recommendations fetched successfully.', 200, RecommendationResource::collection($recommendations));
     }
 
     /**
@@ -41,7 +43,7 @@ class RecommendationController extends Controller
 
         $recommendation->load(['hotel', 'reservation.guest', 'activity']);
 
-        return apiResponse('Recommendation fetched successfully.', 200, $recommendation);
+        return apiResponse('Recommendation fetched successfully.', 200, RecommendationResource::make($recommendation));
     }
 
     /**
@@ -75,7 +77,7 @@ class RecommendationController extends Controller
 
         $recommendation->update($validated);
 
-        return apiResponse('Recommendation updated successfully.', 200, $recommendation->load(['hotel', 'reservation.guest', 'activity']));
+        return apiResponse('Recommendation updated successfully.', 200, RecommendationResource::make($recommendation->load(['hotel', 'reservation.guest', 'activity'])));
     }
 
     /**
@@ -131,7 +133,7 @@ class RecommendationController extends Controller
             return apiResponse($e->getMessage(), 422);
         }
 
-        return apiResponse('Recommendation outcome recorded successfully.', 201, $outcome);
+        return apiResponse('Recommendation outcome recorded successfully.', 201, RecommendationOutcomeResource::make($outcome));
     }
 
     /**

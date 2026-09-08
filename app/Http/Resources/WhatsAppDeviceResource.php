@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class RoomResource extends JsonResource
+class WhatsAppDeviceResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -16,14 +16,12 @@ class RoomResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'user_id' => $this->user_id,
             'hotel_id' => $this->hotel_id,
-            'room_number' => $this->room_number,
-            'room_type' => $this->room_type,
-            'floor' => $this->floor,
+            'phone_number' => $this->phone_number,
+            'wa_user_id' => $this->wa_user_id,
             'status' => $this->status,
-            'housekeeping_status' => $this->housekeeping_status,
-            'hotel' => HotelResource::make($this->whenLoaded('hotel')),
-            'reservations' => ReservationResource::collection($this->whenLoaded('reservations')),
+            'user' => UserResource::make($this->whenLoaded('user')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

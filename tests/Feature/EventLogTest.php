@@ -223,7 +223,7 @@ it('returns a record history scoped to the caller hotel', function () {
     $this->withHeaders(elApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson("/api/history/reservation/{$reservation->id}")
         ->assertOk()
-        ->assertJsonPath('body.total', 2); // created + updated
+        ->assertJsonPath('body.meta.total', 2); // created + updated
 
     $this->withHeaders(elApiHeaders())->actingAs($otherAdmin, 'sanctum')
         ->getJson("/api/history/reservation/{$reservation->id}")

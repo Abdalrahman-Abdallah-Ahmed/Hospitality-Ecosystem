@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\KnowledgeBaseArticleResource;
 use App\Models\KnowledgeBaseArticle;
 use App\Support\RequestRules\GenericQuery;
 
@@ -29,7 +30,7 @@ class KnowledgeBaseArticleController extends Controller
 
         $articles = GenericQuery::apply($query, $request);
 
-        return apiResponse('Articles fetched successfully.', 200, $articles);
+        return apiResponse('Articles fetched successfully.', 200, KnowledgeBaseArticleResource::collection($articles));
     }
 
     /**
@@ -58,7 +59,7 @@ class KnowledgeBaseArticleController extends Controller
             'hotel_id' => $hotelId,
         ]);
 
-        return apiResponse('Article created successfully.', 201, $article->load(['hotel']));
+        return apiResponse('Article created successfully.', 201, KnowledgeBaseArticleResource::make($article->load(['hotel'])));
     }
 
     /**
@@ -70,7 +71,7 @@ class KnowledgeBaseArticleController extends Controller
 
         $knowledgeBaseArticle->load('hotel');
 
-        return apiResponse('Article fetched successfully.', 200, $knowledgeBaseArticle);
+        return apiResponse('Article fetched successfully.', 200, KnowledgeBaseArticleResource::make($knowledgeBaseArticle));
     }
 
     /**
@@ -92,7 +93,7 @@ class KnowledgeBaseArticleController extends Controller
 
         $knowledgeBaseArticle->update($validated);
 
-        return apiResponse('Article updated successfully.', 200, $knowledgeBaseArticle->load(['hotel']));
+        return apiResponse('Article updated successfully.', 200, KnowledgeBaseArticleResource::make($knowledgeBaseArticle->load(['hotel'])));
     }
 
     /**

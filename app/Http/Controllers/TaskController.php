@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\TaskCategoryResource;
+use App\Http\Resources\TaskResource;
 use App\Models\Reservation;
 use App\Models\Task;
 use App\Models\TaskCategory;
@@ -24,12 +26,9 @@ class TaskController extends Controller
 
         $tasks = GenericQuery::apply($query, $request);
 
-        $taskCategories = TaskCategory::query();
-
-        $data = [
-            'data' => $tasks,
-            'task_categories' => $taskCategories->get(),
-        ];
+        $data = TaskResource::collection($tasks)->additional([
+            'task_categories' => TaskCategoryResource::collection(TaskCategory::all()),
+        ]);
 
         return apiResponse('Tasks fetched successfully.', 200, $data);
     }
@@ -76,7 +75,7 @@ class TaskController extends Controller
             'guest_id' => $this->guestIdForReservation($validated['reservation_id'] ?? null),
         ]);
 
-        return apiResponse('Task created successfully.', 201, $task->load(['hotel', 'guest', 'room']));
+        return apiResponse('Task created successfully.', 201, TaskResource::make($task->load(['hotel', 'guest', 'room'])));
     }
 
     /**
@@ -88,7 +87,7 @@ class TaskController extends Controller
 
         $task->load(['hotel', 'guest', 'room']);
 
-        return apiResponse('Task fetched successfully.', 200, $task);
+        return apiResponse('Task fetched successfully.', 200, TaskResource::make($task));
     }
 
     /**
@@ -127,7 +126,7 @@ class TaskController extends Controller
 
         $task->update($validated);
 
-        return apiResponse('Task updated successfully.', 200, $task->load(['hotel', 'guest', 'room']));
+        return apiResponse('Task updated successfully.', 200, TaskResource::make($task->load(['hotel', 'guest', 'room'])));
     }
 
     /**

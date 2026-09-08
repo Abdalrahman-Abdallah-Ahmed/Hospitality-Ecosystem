@@ -24,6 +24,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WhatsAppController;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -40,7 +41,7 @@ Route::middleware('api.key')->group(function () {
     Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
         Route::get('/user', function (Request $request) {
-            return apiResponse('Authenticated user fetched successfully.', 200, $request->user());
+            return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->load(['hotel', 'team'])));
         });
         Route::post('/connect', [WhatsAppController::class, 'connect']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);

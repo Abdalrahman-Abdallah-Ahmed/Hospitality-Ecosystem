@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\HotelPolicyResource;
 use App\Models\HotelPolicy;
 use App\Support\RequestRules\GenericQuery;
 
@@ -21,7 +22,7 @@ class HotelPolicyController extends Controller
 
         $policies = GenericQuery::apply($query, $request);
 
-        return apiResponse('Hotel policies fetched successfully.', 200, $policies);
+        return apiResponse('Hotel policies fetched successfully.', 200, HotelPolicyResource::collection($policies));
     }
 
     /**
@@ -40,7 +41,7 @@ class HotelPolicyController extends Controller
 
         $hotelPolicy = HotelPolicy::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Hotel policy created successfully.', 201, $hotelPolicy);
+        return apiResponse('Hotel policy created successfully.', 201, HotelPolicyResource::make($hotelPolicy));
     }
 
     /**
@@ -54,7 +55,7 @@ class HotelPolicyController extends Controller
 
         $hotelPolicy->update($validated);
 
-        return apiResponse('Hotel policy updated successfully.', 200, $hotelPolicy);
+        return apiResponse('Hotel policy updated successfully.', 200, HotelPolicyResource::make($hotelPolicy));
     }
 
     /**

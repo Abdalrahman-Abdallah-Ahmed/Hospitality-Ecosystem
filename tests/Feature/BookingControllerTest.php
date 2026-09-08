@@ -133,7 +133,7 @@ it('lists only the caller hotel bookings', function () {
     wp5Booking($hotel, ['guest_id' => wp5Recommendation($hotel)[1]->id]);
     wp5Booking($otherHotel, ['guest_id' => wp5Recommendation($otherHotel)[1]->id]);
 
-    bookingApi($admin, 'GET', '/api/booking')->assertOk()->assertJsonPath('body.total', 1);
+    bookingApi($admin, 'GET', '/api/booking')->assertOk()->assertJsonPath('body.meta.total', 1);
 });
 
 it('forbids touching another hotel booking', function () {

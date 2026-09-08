@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\WhatsAppDevicePairRequest;
+use App\Http\Resources\WhatsAppDeviceResource;
 use App\Jobs\ProcessInboundWhatsAppMessageJob;
 use App\Models\Hotel;
 use App\Models\User;
@@ -41,7 +42,7 @@ class WhatsAppController extends Controller
             'invalid_token' => apiResponse('Invalid token.', 201),
             'no_hotel' => apiResponse('User is not associated with any hotel.', 202),
             'already_paired' => apiResponse('User already has a paired WhatsApp device.', 203),
-            'paired' => apiResponse('WhatsApp device paired successfully.', 200, $result['device']),
+            'paired' => apiResponse('WhatsApp device paired successfully.', 200, WhatsAppDeviceResource::make($result['device'])),
         };
     }
 
@@ -142,11 +143,11 @@ class WhatsAppController extends Controller
             return $pairing['active']
                 ? apiResponse('User has a paired WhatsApp device.', 200, [
                     'paired' => true,
-                    'device' => $pairing['device'],
+                    'device' => WhatsAppDeviceResource::make($pairing['device']),
                 ])
                 : apiResponse('User has a paired WhatsApp device, but it is not active.', 202, [
                     'paired' => true,
-                    'device' => $pairing['device'],
+                    'device' => WhatsAppDeviceResource::make($pairing['device']),
                 ]);
         }
 

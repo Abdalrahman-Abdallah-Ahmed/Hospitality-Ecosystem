@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class UserResource extends JsonResource
+class KnowledgeBaseArticleResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -16,16 +16,13 @@ class UserResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'name' => $this->name,
-            'email' => $this->email,
-            'role' => $this->role,
-            'phone_number' => $this->phone_number,
-            'team_id' => $this->team_id,
             'hotel_id' => $this->hotel_id,
-            'hotel_group_id' => $this->hotel_group_id,
-            'group_role' => $this->group_role,
-            'email_verified_at' => $this->email_verified_at,
-            'team' => TeamResource::make($this->whenLoaded('team')),
+            'title' => $this->title,
+            'category' => $this->category,
+            'content' => $this->content,
+            'tags' => $this->tags,
+            'status' => $this->status,
+            'version' => $this->version,
             'hotel' => HotelResource::make($this->whenLoaded('hotel')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

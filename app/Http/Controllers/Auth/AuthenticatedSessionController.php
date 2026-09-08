@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -45,13 +46,7 @@ class AuthenticatedSessionController extends Controller
         return apiResponse('Authenticated successfully.', 200, [
             'token' => $token,
             'token_type' => 'Bearer',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-                'hotel' => $user->hotel ?? null,
-            ],
+            'user' => UserResource::make($user->load(['hotel', 'team'])),
         ]);
     }
 

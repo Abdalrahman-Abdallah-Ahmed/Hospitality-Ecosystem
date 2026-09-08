@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\EventLogResource;
 use App\Models\AiInsights;
 use App\Models\EventLog;
 use App\Models\Guest;
@@ -55,6 +56,6 @@ class HistoryController extends Controller
             ->orderByDesc('occurred_at')
             ->paginate($request->integer('per_page', 15));
 
-        return apiResponse('Record history fetched successfully.', 200, $events);
+        return apiResponse('Record history fetched successfully.', 200, EventLogResource::collection($events));
     }
 }

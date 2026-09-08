@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Resources\GuestResource;
 use App\Models\Guest;
 use App\Services\GuestIdentityService;
 use App\Support\RequestRules\GenericQuery;
@@ -23,7 +24,7 @@ class GuestController extends Controller
 
         $guests = GenericQuery::apply($query, $request);
 
-        return apiResponse('Guests fetched successfully.', 200, $guests);
+        return apiResponse('Guests fetched successfully.', 200, GuestResource::collection($guests));
     }
 
     /**
@@ -69,13 +70,13 @@ class GuestController extends Controller
                 );
 
                 if ($activeIdentityMatch && ! $activeIdentityMatch->trashed() && $activeIdentityMatch->isNot($existing)) {
-                    return apiResponse('Guest created successfully.', 201, $activeIdentityMatch->load(['hotel', 'reservations', 'conversations', 'stays']));
+                    return apiResponse('Guest created successfully.', 201, GuestResource::make($activeIdentityMatch->load(['hotel', 'reservations', 'conversations', 'stays'])));
                 }
 
                 $existing->restore();
                 $existing->update([...$validated, 'hotel_id' => $hotel->id]);
 
-                return apiResponse('Guest created successfully.', 201, $existing->load(['hotel', 'reservations', 'conversations', 'stays']));
+                return apiResponse('Guest created successfully.', 201, GuestResource::make($existing->load(['hotel', 'reservations', 'conversations', 'stays'])));
             }
         }
 
@@ -93,12 +94,12 @@ class GuestController extends Controller
                 $matchedByIdentity->restore();
             }
 
-            return apiResponse('Guest created successfully.', 201, $matchedByIdentity->load(['hotel', 'reservations', 'conversations', 'stays']));
+            return apiResponse('Guest created successfully.', 201, GuestResource::make($matchedByIdentity->load(['hotel', 'reservations', 'conversations', 'stays'])));
         }
 
         $guest = Guest::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Guest created successfully.', 201, $guest->load(['hotel', 'reservations', 'conversations', 'stays']));
+        return apiResponse('Guest created successfully.', 201, GuestResource::make($guest->load(['hotel', 'reservations', 'conversations', 'stays'])));
     }
 
     /**
@@ -108,7 +109,7 @@ class GuestController extends Controller
     {
         $this->authorize('view', $guest);
 
-        return apiResponse('Guest fetched successfully.', 200, $guest->load(['hotel', 'reservations', 'conversations', 'stays']));
+        return apiResponse('Guest fetched successfully.', 200, GuestResource::make($guest->load(['hotel', 'reservations', 'conversations', 'stays'])));
     }
 
     /**
@@ -122,7 +123,7 @@ class GuestController extends Controller
 
         $guest->update($validated);
 
-        return apiResponse('Guest updated successfully.', 200, $guest->load(['hotel', 'reservations', 'conversations', 'stays']));
+        return apiResponse('Guest updated successfully.', 200, GuestResource::make($guest->load(['hotel', 'reservations', 'conversations', 'stays'])));
     }
 
     /**

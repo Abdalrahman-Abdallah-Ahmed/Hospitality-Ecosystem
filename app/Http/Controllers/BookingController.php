@@ -7,6 +7,7 @@ use App\Enums\BookingStatus;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\StoreBookingRequest;
 use App\Http\Requests\UpdateBookingStatusRequest;
+use App\Http\Resources\BookingResource;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Recommendation;
@@ -37,16 +38,16 @@ class BookingController extends Controller
         $query = Booking::with(['guest', 'activity', 'recommendation'])
             ->orderBy('scheduled_for');
 
-        return apiResponse('Bookings fetched successfully.', 200, GenericQuery::apply($query, $request));
+        return apiResponse('Bookings fetched successfully.', 200, BookingResource::collection(GenericQuery::apply($query, $request)));
     }
 
     public function show(Booking $booking)
     {
         $this->authorize('view', $booking);
 
-        return apiResponse('Booking fetched successfully.', 200, $booking->load([
+        return apiResponse('Booking fetched successfully.', 200, BookingResource::make($booking->load([
             'guest', 'activity', 'recommendation', 'stay', 'transactions',
-        ]));
+        ])));
     }
 
     /**
@@ -108,7 +109,7 @@ class BookingController extends Controller
             'created_by_user_id' => $request->user()->id,
         ]);
 
-        return apiResponse('Booking created successfully.', 201, $booking->load(['guest', 'activity']));
+        return apiResponse('Booking created successfully.', 201, BookingResource::make($booking->load(['guest', 'activity'])));
     }
 
     /**
@@ -137,6 +138,6 @@ class BookingController extends Controller
             return apiResponse($e->getMessage(), 422);
         }
 
-        return apiResponse('Booking status updated successfully.', 200, $booking->fresh()->load(['guest', 'activity']));
+        return apiResponse('Booking status updated successfully.', 200, BookingResource::make($booking->fresh()->load(['guest', 'activity'])));
     }
 }
