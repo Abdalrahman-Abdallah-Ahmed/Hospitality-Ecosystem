@@ -309,3 +309,90 @@ function seatCount(HotelGroup $account, MeterFeature $feature): int
         ->where('feature_code', $feature->value)
         ->value('used');
 }
+
+it('returns the calling account its own consumption', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = meteringHotel('Own Hotel');
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    metering()->recordForHotel($hotel, MeterFeature::AI_MESSAGES, quantity: 9);
+    metering()->recordForHotel($hotel, MeterFeature::BOOKINGS_CREATED, quantity: 2);
+    metering()->recountSeats($hotel->hotelGroup);
+
+    $response = $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
+        ->getJson('/api/usage')
+        ->assertOk();
+
+    expect($response->json('body.hotel_group_id'))->toBe($hotel->hotel_group_id)
+        ->and($response->json('body.features.ai_messages.used'))->toBe(9)
+        ->and($response->json('body.features.ai_messages.unit'))->toBe('messages')
+        ->and($response->json('body.features.bookings_created.used'))->toBe(2)
+        ->and($response->json('body.seats.properties'))->toBe(1)
+        // The same explicit gaps the super-admin report names, so a hotel is
+        // never shown a zero that actually means "not measured".
+        ->and($response->json('body.not_measured.recommendations_delivered'))->toContain('not measured');
+});
+
+it('never shows one account another account\'s consumption', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $ours = meteringHotel('Ours');
+    $admin->update(['hotel_id' => $ours->id]);
+
+    $theirs = meteringHotel('Theirs');
+
+    metering()->recordForHotel($ours, MeterFeature::AI_MESSAGES, quantity: 3);
+    metering()->recordForHotel($theirs, MeterFeature::AI_MESSAGES, quantity: 500);
+
+    $response = $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
+        // A supplied account id must not be honoured. The endpoint takes the
+        // account from the token precisely so that this cannot work.
+        ->getJson('/api/usage?hotel_group_id='.$theirs->hotel_group_id)
+        ->assertOk();
+
+    expect($response->json('body.hotel_group_id'))->toBe($ours->hotel_group_id)
+        ->and($response->json('body.features.ai_messages.used'))->toBe(3);
+});
+
+it('does not expose what the account cost us to serve', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = meteringHotel();
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    metering()->recordForHotel($hotel, MeterFeature::AI_MESSAGES, quantity: 4);
+
+    $body = $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
+        ->getJson('/api/usage')
+        ->assertOk()
+        ->json('body');
+
+    // Provider cost is our cost of goods. An account that can see what it
+    // costs to serve can compute our margin on its own contract.
+    $encoded = json_encode($body);
+
+    foreach (['cost', 'usd', 'eur', 'margin', 'contract'] as $forbidden) {
+        expect(str_contains(strtolower($encoded), $forbidden))->toBeFalse(
+            "the tenant usage response must not mention [{$forbidden}]"
+        );
+    }
+});
+
+it('blocks an employee from reading account consumption', function () {
+    $employee = User::factory()->role(UserRole::EMPLOYEE)->create();
+    $hotel = meteringHotel();
+    $employee->update(['hotel_id' => $hotel->id]);
+
+    // An employee works in a hotel; they do not represent the customer, and
+    // account-level consumption is commercial information about the account.
+    $this->withHeaders(meteringHeaders())->actingAs($employee->fresh(), 'sanctum')
+        ->getJson('/api/usage')
+        ->assertStatus(403);
+});
+
+it('tells an admin with no account that they belong to none', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+
+    $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
+        ->getJson('/api/usage')
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'You do not belong to any account.');
+});

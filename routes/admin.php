@@ -29,5 +29,8 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// Cross-account super-admin reporting lives in routes/admin.php,
+// registered in bootstrap/app.php with this same middleware stack
+// plus `super_admin`.
 Route::get('/usage', [UsageController::class, 'index']);
 Route::get('/ai-cost', [AiCostController::class, 'index']);

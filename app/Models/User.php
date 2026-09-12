@@ -61,15 +61,42 @@ class User extends Authenticatable
         $metering = app(MeteringService::class);
 
         $metering->safely(function (MeteringService $m): void {
-            $accountId = $this->getAttribute('hotel_group_id')
-                ?? Hotel::withTrashed()
-                    ->whereKey($this->getAttribute('hotel_id'))
-                    ->value('hotel_group_id');
-
-            if ($accountId && $account = HotelGroup::withTrashed()->find($accountId)) {
+            if ($account = $this->account(withTrashed: true)) {
                 $m->recountSeats($account);
             }
         });
+    }
+
+    /**
+     * The account this user belongs to — the hotel group, which is the paying
+     * customer.
+     *
+     * Resolved by query rather than through the `hotelGroup` / `hotel`
+     * relation properties, for the reason given above recountSeats(): reading
+     * a relation caches it on the instance, and a user usually has no hotel
+     * at creation time.
+     *
+     * A user may be attached to the group directly, or only to a hotel that
+     * belongs to one — both are normal, so both resolve.
+     *
+     * `withTrashed` exists for the seat recount, which must still find the
+     * account of a user whose hotel was soft-deleted. Reporting uses the
+     * default: a deleted account is not one anybody should be reading.
+     */
+    public function account(bool $withTrashed = false): ?HotelGroup
+    {
+        $accountId = $this->getAttribute('hotel_group_id')
+            ?? Hotel::withTrashed()
+                ->whereKey($this->getAttribute('hotel_id'))
+                ->value('hotel_group_id');
+
+        if (! $accountId) {
+            return null;
+        }
+
+        return $withTrashed
+            ? HotelGroup::withTrashed()->find($accountId)
+            : HotelGroup::find($accountId);
     }
 
     public function hotel()

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountUsageController;
 use App\Http\Controllers\ActivityCategoryController;
 use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\AiAdvisorController;
@@ -76,8 +77,9 @@ Route::middleware('api.key')->group(function () {
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
         Route::get('/history/{type}/{id}', [HistoryController::class, 'show']);
 
-        // Cross-account super-admin reporting lives in routes/admin.php,
-        // registered in bootstrap/app.php with this same middleware stack
-        // plus `super_admin`.
+        // This account's own consumption. The account is resolved from the
+        // token, so there is deliberately no id in the path — see
+        // AccountUsageController. Cross-account reporting is elsewhere.
+        Route::get('/usage', [AccountUsageController::class, 'index']);
     });
 });

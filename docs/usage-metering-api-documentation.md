@@ -88,9 +88,19 @@ Until the first is measured, the generated-vs-delivered pair — the one that
 separates "our agent is weak" from "the hotel's staff never passed it on" —
 cannot be completed.
 
-## Endpoint
+## Endpoints
 
-`GET /api/admin/usage?from=2026-08-01&to=2026-08-31`
+There are two, answering the same question for different readers. They share
+one aggregation (`App\Services\Metering\UsageReport`) so their numbers can
+never disagree — if a hotel's own figure differed from the figure we quote
+them, the argument that follows is not one anybody wins.
+
+| Route | Reader | Scope |
+|---|---|---|
+| `GET /api/admin/usage` | Super admin | Every account |
+| `GET /api/usage` | Hotel-group admin | Their own account only |
+
+### `GET /api/admin/usage?from=2026-08-01&to=2026-08-31`
 
 Both parameters optional: `from` defaults to the start of the current month,
 `to` to now. Filters on the event's `occurred_at`.
@@ -105,7 +115,7 @@ Totals are summed from `meter_events`, not read from the counters: counters
 are keyed by whole periods and this endpoint answers about an arbitrary range.
 Seats come from the counter, since they are not event-derived.
 
-### Response
+#### Response
 
 ```json
 {
@@ -142,6 +152,63 @@ Seats come from the counter, since they are not event-derived.
 ```
 
 `delivered` is an explicit `null` with a reason, never a zero.
+
+### `GET /api/usage?from=2026-09-01&to=2026-09-30`
+
+The tenant-facing view: what **this** account used. Same parameters, same
+defaults, same feature codes, same `not_measured` gaps — one account instead
+of an `accounts[]` array, so `hotel_group_id`, `seats` and `features` sit at
+the top level of the body.
+
+Open to a hotel-group **admin** or a holder of a `group_role`. An employee
+gets 403: they work in a hotel, they do not represent the customer, and
+account-level consumption is commercial information about the account. A user
+belonging to no account gets 403 as well, with a message saying so.
+
+Two properties of this route matter more than its shape, and both are tested:
+
+**The account comes from the token, never from the request.** There is no
+`hotel_group_id` parameter, and supplying one changes nothing — a filter that
+can be supplied is a filter that can be changed, and the first person to try a
+different UUID would be reading another hotel's numbers.
+
+**It never returns cost.** `ai_usage_logs` is not read here at all. Provider
+cost is our cost of goods, and an account that can see what it costs to serve
+can compute our margin on its own contract — that belongs in a commercial
+conversation, not a dashboard field. A test asserts the response body contains
+no mention of cost, margin, or contract.
+
+It also returns **no plan and no limit**. There are no plans yet (WP-6 is
+deferred), and showing a limit that nothing enforces teaches people to trust a
+number that is not load-bearing. A usage figure with a quota beside it is a
+WP-9 conversation.
+
+#### Response
+
+```json
+{
+  "message": "Usage fetched successfully.",
+  "code": 200,
+  "body": {
+    "from": "2026-09-01",
+    "to": "2026-09-30",
+    "hotel_group_id": "01a08cc8-9b49-7130-aff8-62eb0342df2a",
+    "account": "Grand Harbor Hotel",
+    "seats": { "properties": 1, "users": 4, "guests": 128, "stays": 61 },
+    "features": {
+      "ai_messages": { "used": 8241, "unit": "messages" },
+      "bookings_created": { "used": 96, "unit": "bookings" }
+    },
+    "recommendations": {
+      "generated": 142,
+      "delivered": null,
+      "delivered_basis": "not measured",
+      "delivered_reason": "…"
+    },
+    "not_measured": { "recommendations_delivered": "…", "conversations_handled": "…" }
+  }
+}
+```
 
 ## Recording usage in code
 
