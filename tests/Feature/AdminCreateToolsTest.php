@@ -206,40 +206,6 @@ it('requires a phone number before creating a guest', function () {
         ->and(Guest::withoutGlobalScope('hotel')->count())->toBe(0);
 });
 
-it('records a policy and sends it for embedding', function () {
-    Queue::fake();
-
-    $hotel = toolHotel();
-
-    $result = callTool(new CreateHotelPolicyTool($hotel), [
-        'title' => 'Cancellation policy',
-        'content' => 'Free cancellation up to 48 hours before arrival.',
-        'category' => KnowledgeBaseCategory::HOSPITALITY_BEST_PRACTICES->value,
-        'keywords' => ['cancel', 'refund', ''],
-    ]);
-
-    $policy = HotelPolicy::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->first();
-
-    expect($result)->toContain('Cancellation policy')
-        ->and($policy->content)->toContain('48 hours')
-        ->and($policy->is_active)->toBeTrue()
-        // Blank keywords are dropped rather than stored as empty strings.
-        ->and($policy->keywords)->toBe(['cancel', 'refund']);
-
-    // An active policy is grounding data the concierge quotes to guests, so it
-    // gets embedded — which is real provider spend, metered and costed.
-    Queue::assertPushed(SyncKnowledgeChunksJob::class);
-});
-
-it('refuses to write a policy with no content', function () {
-    $hotel = toolHotel();
-
-    $result = callTool(new CreateHotelPolicyTool($hotel), ['title' => 'Empty policy']);
-
-    expect($result)->toContain('required')
-        ->and(HotelPolicy::withoutGlobalScope('hotel')->count())->toBe(0);
-});
-
 it('gives the admin advisor its create tools, each bound to the admin\'s own hotel', function () {
     $hotel = toolHotel();
     $admin = toolAdmin($hotel);

@@ -4,7 +4,6 @@ namespace App\Ai\Agents;
 
 use App\Ai\Tools\CreateActivityTool;
 use App\Ai\Tools\CreateGuestTool;
-use App\Ai\Tools\CreateHotelPolicyTool;
 use App\Ai\Tools\CreateReservationTool;
 use App\Ai\Tools\CreateRoomTool;
 use App\Ai\Tools\CreateTaskTool;
@@ -72,9 +71,6 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
               Look up the task categories and use a matching id rather than guessing one.
             - A tool to record a guest, matched by phone number. If the guest already exists it tells you so
               and changes nothing — report that back rather than trying again.
-            - A tool to record a hotel policy. **Be most careful with this one.** The guest concierge searches
-              policies when answering guests and is told to let what it finds override its own judgment, so a
-              policy you write is quoted to guests as this hotel's own word.
 
             Four rules for every one of these:
             1. Only create something when the admin has clearly asked you to. Describing a problem is not a
@@ -119,7 +115,6 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             new CreateActivityTool($this->user->hotel),
             new CreateTaskTool($this->user->hotel, $this->user),
             new CreateGuestTool($this->user->hotel),
-            new CreateHotelPolicyTool($this->user->hotel),
         ];
     }
 }
