@@ -33,6 +33,11 @@ enum MeterFeature: string
     case TRANSACTION_ROWS_IMPORTED = 'transaction_rows_imported';
 
     // Scale.
+    // `properties` is the hospitality word for what this system calls a
+    // hotel, and it counts rows in the `hotels` table — nothing else. The
+    // code cannot be renamed: it is written into meter_events and the history
+    // stops adding up if it changes. label() says "Hotels" instead, which is
+    // the half that may be reworded freely because nothing is keyed on it.
     case PROPERTIES = 'properties';
     case USERS = 'users';
     case GUESTS = 'guests';
@@ -48,7 +53,7 @@ enum MeterFeature: string
             self::BOOKINGS_CREATED, self::BOOKINGS_REALISED => 'bookings',
             self::CONVERSATIONS_HANDLED => 'conversations',
             self::TRANSACTION_ROWS_IMPORTED => 'rows',
-            self::PROPERTIES => 'properties',
+            self::PROPERTIES => 'hotels',
             self::USERS => 'users',
             self::GUESTS => 'guests',
             self::STAYS => 'stays',
@@ -83,6 +88,29 @@ enum MeterFeature: string
     }
 
     /**
+     * The name this feature is published under in an API response.
+     *
+     * Almost always the code itself. The exception is `properties`, which is
+     * the hospitality word for a hotel and reads as real estate to everyone
+     * else — it is published as `hotels`.
+     *
+     * The stored code does NOT change and cannot: it is written into
+     * meter_events, and renaming it would orphan every row already recorded.
+     * So the two names are carried together — this one as the key, the
+     * permanent one alongside it as `code` — and anyone correlating a
+     * response against the database can still see which meter a figure came
+     * from. A rename that hides its own provenance is how a reporting layer
+     * stops being reconcilable.
+     */
+    public function publicCode(): string
+    {
+        return match ($this) {
+            self::PROPERTIES => 'hotels',
+            default => $this->value,
+        };
+    }
+
+    /**
      * A short, non-technical name for a customer-facing screen. Feature codes
      * are permanent and therefore ugly; this is the part that may be reworded
      * freely, because nothing is keyed on it.
@@ -99,7 +127,7 @@ enum MeterFeature: string
             self::BOOKINGS_REALISED => 'Bookings realised',
             self::CONVERSATIONS_HANDLED => 'Conversations handled',
             self::TRANSACTION_ROWS_IMPORTED => 'Transaction rows imported',
-            self::PROPERTIES => 'Properties',
+            self::PROPERTIES => 'Hotels',
             self::USERS => 'Users',
             self::GUESTS => 'Guests',
             self::STAYS => 'Stays',

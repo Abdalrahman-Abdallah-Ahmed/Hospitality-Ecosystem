@@ -82,12 +82,52 @@ class UsageReport
         return [
             'hotel_group_id' => $account->id,
             'account' => $account->name,
-            'seats' => $seats->mapWithKeys(fn (UsageCounter $counter) => [
-                $counter->feature_code->value => (int) $counter->used,
-            ])->all(),
+            'seats' => $this->everySeat($seats),
             'features' => $features,
             'recommendations' => $this->recommendationPair($features),
         ];
+    }
+
+    /**
+     * Every seat, published under the name a person should read.
+     *
+     * `properties` counts rows in the `hotels` table and nothing else, so it
+     * is published as `hotels`. The stored code cannot follow: it is written
+     * into meter_events, and renaming it would orphan every row already
+     * recorded. Both therefore travel — `hotels` as the key, `properties` as
+     * `code` — so a figure in a response can still be traced to the meter
+     * behind it. A rename that hides its own provenance is how a reporting
+     * layer stops being reconcilable against its own data.
+     *
+     * A seat with no counter row has never been recounted, which is not the
+     * same as having none: it reads `null` with `measured: false` rather than
+     * `0`, because telling an account it has no hotels when it has one is a
+     * worse answer than admitting nothing has counted yet.
+     *
+     * @param  Collection<int, UsageCounter>  $seats
+     * @return array<string, array<string, mixed>>
+     */
+    private function everySeat(Collection $seats): array
+    {
+        $counted = $seats->mapWithKeys(fn (UsageCounter $counter) => [
+            $counter->feature_code->value => (int) $counter->used,
+        ])->all();
+
+        $result = [];
+
+        foreach (MeterFeature::seats() as $seat) {
+            $known = array_key_exists($seat->value, $counted);
+
+            $result[$seat->publicCode()] = [
+                'code' => $seat->value,
+                'label' => $seat->label(),
+                'used' => $known ? $counted[$seat->value] : null,
+                'unit' => $seat->unit(),
+                'measured' => $known,
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -119,7 +159,8 @@ class UsageReport
 
             $measured = ! $feature->isAwaitingSource();
 
-            $features[$feature->value] = [
+            $features[$feature->publicCode()] = [
+                'code' => $feature->value,
                 'label' => $feature->label(),
                 'category' => $feature->category(),
                 'used' => $measured ? ($recorded[$feature->value] ?? 0) : null,
@@ -143,7 +184,7 @@ class UsageReport
     public function recommendationPair(array $features): array
     {
         return [
-            'generated' => $features[MeterFeature::RECOMMENDATIONS_GENERATED->value]['used'] ?? 0,
+            'generated' => $features[MeterFeature::RECOMMENDATIONS_GENERATED->publicCode()]['used'] ?? 0,
             'delivered' => null,
             'delivered_basis' => 'not measured',
             'delivered_reason' => self::DELIVERED_NOT_MEASURED,

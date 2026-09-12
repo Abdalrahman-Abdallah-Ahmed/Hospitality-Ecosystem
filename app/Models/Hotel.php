@@ -67,14 +67,42 @@ class Hotel extends Model
         // what the recount on delete is here to prevent.
         static::created(fn (self $hotel) => $hotel->recountSeats());
         static::deleted(fn (self $hotel) => $hotel->recountSeats());
+
+        // A hotel can move between accounts — the single-property group above
+        // is explicitly a placeholder that hotels get reassigned out of once
+        // a real group is formed. Both sides are recounted: the group gaining
+        // the property and the one losing it.
+        static::updated(function (self $hotel): void {
+            if (! $hotel->wasChanged('hotel_group_id')) {
+                return;
+            }
+
+            $hotel->recountSeats();
+
+            self::recountAccount($hotel->getOriginal('hotel_group_id'));
+        });
     }
 
     private function recountSeats(): void
     {
+        self::recountAccount($this->getAttribute('hotel_group_id'));
+    }
+
+    /**
+     * Takes a raw id rather than a model so it can be called with a hotel's
+     * *previous* group, which is how the account a hotel just left gets
+     * corrected.
+     */
+    private static function recountAccount(?string $hotelGroupId): void
+    {
+        if (! $hotelGroupId) {
+            return;
+        }
+
         $metering = app(MeteringService::class);
 
-        $metering->safely(function (MeteringService $m): void {
-            if ($account = $this->hotelGroup()->withTrashed()->first()) {
+        $metering->safely(function (MeteringService $m) use ($hotelGroupId): void {
+            if ($account = HotelGroup::withTrashed()->find($hotelGroupId)) {
                 $m->recountSeats($account);
             }
         });

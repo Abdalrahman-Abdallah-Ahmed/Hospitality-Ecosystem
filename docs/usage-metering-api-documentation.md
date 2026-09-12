@@ -61,12 +61,21 @@ bookings?" pricing question has evidence behind it.
 
 ### Scale — what exists right now
 
-`properties`, `users`, `guests`, `stays`.
+`properties`, `users`, `guests`, `stays`. `properties` counts rows in the
+`hotels` table and is **published as `hotels`** — see
+[Reading the response](#reading-the-response).
 
 **Seats are recounted, never incremented.** They are read back from the tables
-that own them, so a deleted hotel actually leaves the count. `properties` and
-`users` recount on create and delete; all four are recounted nightly.
-Calling `record()` with a seat feature throws.
+that own them, so a deleted hotel actually leaves the count. Calling
+`record()` with a seat feature throws.
+
+`properties` and `users` recount on create, delete, **and reassignment** —
+a user or hotel moving between accounts recounts *both* sides, the one gained
+and the one left. The last part matters more than it sounds: a user is
+normally attached to their hotel after both already exist, so recounting only
+on `created` left every account reading zero users until the nightly job
+caught up. All four seats are recounted nightly regardless, which is the
+safety net rather than the mechanism.
 
 ## Not measured, and why
 
@@ -95,10 +104,15 @@ one aggregation (`App\Services\Metering\UsageReport`) so their numbers can
 never disagree — if a hotel's own figure differed from the figure we quote
 them, the argument that follows is not one anybody wins.
 
-| Route | Reader | Scope |
-|---|---|---|
-| `GET /api/admin/usage` | Super admin | Every account |
-| `GET /api/usage` | Hotel-group admin | Their own account only |
+| Route | Reader | Scope | Declared in |
+|---|---|---|---|
+| `GET /api/admin/usage` | Super admin | Every account | `routes/admin.php` |
+| `GET /api/usage` | Hotel-group admin | Their own account only | `routes/api.php` |
+
+Cross-account routes live in their own file, registered in
+`bootstrap/app.php` with the `super_admin` guard applied to the whole file
+rather than to a group inside it — so a route added there is protected by
+construction and cannot be left exposed by forgetting to nest it.
 
 ### `GET /api/admin/usage?from=2026-08-01&to=2026-08-31`
 
@@ -128,12 +142,19 @@ Seats come from the counter, since they are not event-derived.
       {
         "hotel_group_id": "01a07d8e-...",
         "account": "Domina Group",
-        "seats": { "properties": 3, "users": 24, "guests": 1180, "stays": 402 },
+        "seats": {
+          "hotels": { "code": "properties", "label": "Hotels", "used": 3, "unit": "hotels", "measured": true },
+          "users":  { "code": "users", "label": "Users", "used": 24, "unit": "users", "measured": true },
+          "guests": { "code": "guests", "label": "Guests", "used": 1180, "unit": "guests", "measured": true },
+          "stays":  { "code": "stays", "label": "Stays", "used": 402, "unit": "stays", "measured": true }
+        },
         "features": {
-          "ai_messages": { "used": 8241, "unit": "messages" },
-          "recommendations_generated": { "used": 412, "unit": "recommendations" },
-          "bookings_created": { "used": 96, "unit": "bookings" },
-          "embeddings_generated": { "used": 1340, "unit": "chunks" }
+          "ai_messages": { "code": "ai_messages", "label": "AI messages", "category": "cost_driver", "used": 8241, "unit": "messages", "measured": true },
+          "ai_insights_generated": { "code": "ai_insights_generated", "label": "AI insights", "category": "cost_driver", "used": 0, "unit": "insights", "measured": true },
+          "recommendations_generated": { "code": "recommendations_generated", "label": "Recommendations generated", "category": "cost_driver", "used": 412, "unit": "recommendations", "measured": true },
+          "embeddings_generated": { "code": "embeddings_generated", "label": "Knowledge base indexing", "category": "cost_driver", "used": 1340, "unit": "chunks", "measured": true },
+          "recommendations_delivered": { "code": "recommendations_delivered", "label": "Recommendations delivered", "category": "value_signal", "used": null, "unit": "recommendations", "measured": false },
+          "bookings_created": { "code": "bookings_created", "label": "Bookings created", "category": "value_signal", "used": 96, "unit": "bookings", "measured": true }
         },
         "recommendations": {
           "generated": 412,
@@ -156,9 +177,9 @@ Seats come from the counter, since they are not event-derived.
 ### `GET /api/usage?from=2026-09-01&to=2026-09-30`
 
 The tenant-facing view: what **this** account used. Same parameters, same
-defaults, same feature codes, same `not_measured` gaps — one account instead
-of an `accounts[]` array, so `hotel_group_id`, `seats` and `features` sit at
-the top level of the body.
+defaults, same shape for `seats` and `features`, same `not_measured` gaps —
+one account instead of an `accounts[]` array, so `hotel_group_id`, `seats` and
+`features` sit at the top level of the body.
 
 Open to a hotel-group **admin** or a holder of a `group_role`. An employee
 gets 403: they work in a hotel, they do not represent the customer, and
@@ -194,10 +215,15 @@ WP-9 conversation.
     "to": "2026-09-30",
     "hotel_group_id": "01a08cc8-9b49-7130-aff8-62eb0342df2a",
     "account": "Grand Harbor Hotel",
-    "seats": { "properties": 1, "users": 4, "guests": 128, "stays": 61 },
+    "seats": {
+      "hotels": { "code": "properties", "label": "Hotels", "used": 1, "unit": "hotels", "measured": true },
+      "users":  { "code": "users", "label": "Users", "used": 4, "unit": "users", "measured": true },
+      "guests": { "code": "guests", "label": "Guests", "used": 128, "unit": "guests", "measured": true },
+      "stays":  { "code": "stays", "label": "Stays", "used": 61, "unit": "stays", "measured": true }
+    },
     "features": {
-      "ai_messages": { "used": 8241, "unit": "messages" },
-      "bookings_created": { "used": 96, "unit": "bookings" }
+      "ai_messages": { "code": "ai_messages", "label": "AI messages", "category": "cost_driver", "used": 8241, "unit": "messages", "measured": true },
+      "bookings_created": { "code": "bookings_created", "label": "Bookings created", "category": "value_signal", "used": 96, "unit": "bookings", "measured": true }
     },
     "recommendations": {
       "generated": 142,
@@ -209,6 +235,56 @@ WP-9 conversation.
   }
 }
 ```
+
+## Reading the response
+
+Both endpoints return `seats` and `features` in the same shape, built by
+`App\Services\Metering\UsageReport`. Several of these fields exist purely to
+stop a number being misread.
+
+| Field | Meaning |
+|---|---|
+| *(the key)* | The public name. Usually the feature code; see below. |
+| `code` | The permanent code, exactly as stored in `meter_events.feature_code`. |
+| `label` | A display name. Safe to reword — nothing is keyed on it. |
+| `category` | `cost_driver` or `value_signal` (features only). |
+| `used` | The figure, or `null` when nothing is counting it. |
+| `unit` | What is being counted: messages, chunks, bookings. |
+| `measured` | `false` means no source exists yet — see below. |
+
+### `properties` is published as `hotels`
+
+`properties` is the hospitality word for a single hotel, and it counts rows in
+the `hotels` table and nothing else. Outside the industry it reads as real
+estate, so the response publishes it under the key **`hotels`**.
+
+The stored code does **not** change and cannot: it is written into every
+`meter_events` row, and renaming it would orphan the history. So both names
+travel — `hotels` as the key, `properties` as `code` — and a figure on a
+dashboard can still be traced back to the meter behind it. A rename that hides
+its own provenance is how a reporting layer stops being reconcilable against
+its own data.
+
+It is the only feature whose public name differs today. The mapping lives in
+`MeterFeature::publicCode()`.
+
+### Every meter is present, including the unused ones
+
+A feature with no activity returns `"used": 0` rather than being left out.
+Omitting it would force every consumer to carry its own copy of the catalogue
+to render a complete list, and would make *used nothing* indistinguishable
+from *we do not track that* — different answers to give a customer.
+
+### `used: null` with `measured: false` is not zero
+
+Two features have no source recording them yet — `recommendations_delivered`
+and `conversations_handled`. They return `null`, never `0`, because zero is a
+claim nobody can support: nothing is counting, so nobody knows the number.
+Render these as "not tracked", never as an empty bar.
+
+The same applies to a seat that has never been recounted. In practice the
+nightly rebuild writes every seat, so `measured: false` on a seat should only
+appear on data loaded with model events suppressed (as `DatabaseSeeder` does).
 
 ## Recording usage in code
 

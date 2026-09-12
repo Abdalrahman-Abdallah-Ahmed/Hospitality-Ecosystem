@@ -13,6 +13,7 @@ use App\Models\MeterEvent;
 use App\Models\UsageCounter;
 use App\Models\User;
 use App\Services\Metering\MeteringService;
+use App\Services\Metering\UsageReport;
 use App\Services\WhatsAppMessageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -276,7 +277,9 @@ it('reports usage per account per feature, and names what it cannot measure', fu
 
     expect($account['features']['ai_messages']['used'])->toBe(7)
         ->and($account['features']['ai_messages']['unit'])->toBe('messages')
-        ->and($account['seats']['properties'])->toBe(1)
+        ->and($account['seats']['hotels']['used'])->toBe(1)
+        // Published as `hotels`; the stored code stays `properties`.
+        ->and($account['seats']['hotels']['code'])->toBe('properties')
         ->and($account['recommendations']['generated'])->toBe(4)
         // An honest gap, not a zero: nothing measures delivery yet.
         ->and($account['recommendations']['delivered'])->toBeNull()
@@ -327,7 +330,8 @@ it('returns the calling account its own consumption', function () {
         ->and($response->json('body.features.ai_messages.used'))->toBe(9)
         ->and($response->json('body.features.ai_messages.unit'))->toBe('messages')
         ->and($response->json('body.features.bookings_created.used'))->toBe(2)
-        ->and($response->json('body.seats.properties'))->toBe(1)
+        ->and($response->json('body.seats.hotels.used'))->toBe(1)
+        ->and($response->json('body.seats.hotels.label'))->toBe('Hotels')
         // The same explicit gaps the super-admin report names, so a hotel is
         // never shown a zero that actually means "not measured".
         ->and($response->json('body.not_measured.recommendations_delivered'))->toContain('not measured');
@@ -437,4 +441,107 @@ it('lists every AI resource, including the ones with no activity', function () {
     // Seats are not event-derived and are reported separately.
     expect($features)->not->toHaveKey('properties')
         ->and($features)->not->toHaveKey('users');
+});
+
+it('counts a user as a seat when they are linked to a hotel after being created', function () {
+    // The ordinary registration sequence: the user exists before the hotel
+    // does, and is attached to it afterwards. Counting only on `created`
+    // would leave this account reading zero users for good.
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = meteringHotel();
+
+    expect(UsageCounter::where('hotel_group_id', $hotel->hotel_group_id)
+        ->where('feature_code', MeterFeature::USERS->value)->value('used'))->toBe(0);
+
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    expect(UsageCounter::where('hotel_group_id', $hotel->hotel_group_id)
+        ->where('feature_code', MeterFeature::USERS->value)->value('used'))->toBe(1);
+});
+
+it('corrects both accounts when a user moves between them', function () {
+    $from = meteringHotel('From');
+    $to = meteringHotel('To');
+
+    $user = User::factory()->role(UserRole::ADMIN)->create();
+    $user->update(['hotel_id' => $from->id]);
+
+    $seats = fn (string $groupId) => UsageCounter::where('hotel_group_id', $groupId)
+        ->where('feature_code', MeterFeature::USERS->value)->value('used');
+
+    expect($seats($from->hotel_group_id))->toBe(1)
+        ->and($seats($to->hotel_group_id))->toBe(0);
+
+    $user->update(['hotel_id' => $to->id]);
+
+    // The account they left must come down. Recounting only the account
+    // gained would leave the old one permanently overstated — the same
+    // failure as incrementing, which is why seats are recounted at all.
+    expect($seats($from->hotel_group_id))->toBe(0)
+        ->and($seats($to->hotel_group_id))->toBe(1);
+});
+
+it('corrects both accounts when a hotel is reassigned to another group', function () {
+    $hotel = meteringHotel('Movable');
+    $original = $hotel->hotel_group_id;
+    $target = HotelGroup::create(['name' => 'Real Group', 'slug' => 'real-group-'.uniqid()]);
+
+    $seats = fn (string $groupId) => UsageCounter::where('hotel_group_id', $groupId)
+        ->where('feature_code', MeterFeature::PROPERTIES->value)->value('used');
+
+    expect($seats($original))->toBe(1);
+
+    // Exactly the move HotelGroup::singlePropertyFor() anticipates: the
+    // placeholder group is left behind empty when a real one is formed.
+    $hotel->update(['hotel_group_id' => $target->id]);
+
+    expect($seats($original))->toBe(0)
+        ->and($seats($target->id))->toBe(1);
+});
+
+it('publishes the properties seat as hotels, without renaming the permanent code', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = meteringHotel();
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    $seats = $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
+        ->getJson('/api/usage')
+        ->assertOk()
+        ->json('body.seats');
+
+    // Published as `hotels`, because "properties" reads as real estate to
+    // anyone outside hospitality. The STORED code stays `properties` — it is
+    // written into meter_events and the history stops adding up if it
+    // changes — so it travels alongside as `code` and the figure remains
+    // traceable to the meter behind it.
+    expect($seats)->toHaveKey('hotels')
+        ->and($seats)->not->toHaveKey('properties')
+        ->and($seats['hotels']['code'])->toBe('properties')
+        ->and($seats['hotels']['label'])->toBe('Hotels')
+        ->and($seats['hotels']['unit'])->toBe('hotels')
+        ->and($seats['hotels']['used'])->toBe(1)
+        ->and($seats['hotels']['measured'])->toBeTrue();
+
+    // Every seat is present, so a dashboard need not know the catalogue.
+    expect($seats)->toHaveKeys(['hotels', 'users', 'guests', 'stays']);
+});
+
+it('says a seat was never counted rather than reporting it as zero', function () {
+    // Events suppressed, exactly as DatabaseSeeder does — so no recount ever
+    // ran and no counter row exists.
+    $group = HotelGroup::create(['name' => 'Quiet Group', 'slug' => 'quiet-'.uniqid()]);
+
+    $hotel = Hotel::withoutEvents(fn () => Hotel::create([
+        'name' => 'Unrecounted',
+        'slug' => 'unrecounted-'.uniqid(),
+        'currency' => 'USD',
+        'hotel_group_id' => $group->id,
+    ]));
+
+    $described = app(UsageReport::class)->describe($group, collect(), collect());
+
+    // The account owns a hotel. Reporting 0 would be a worse answer than
+    // admitting nothing has counted yet.
+    expect($described['seats']['hotels']['used'])->toBeNull()
+        ->and($described['seats']['hotels']['measured'])->toBeFalse();
 });

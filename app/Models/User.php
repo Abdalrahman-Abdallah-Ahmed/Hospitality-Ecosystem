@@ -47,6 +47,30 @@ class User extends Authenticatable
         // count.
         static::created(fn (self $user) => $user->recountSeats());
         static::deleted(fn (self $user) => $user->recountSeats());
+
+        // A user is very often linked to their hotel AFTER being created —
+        // registration makes the user, then the hotel, then attaches one to
+        // the other — so `created` alone fires while the user still belongs
+        // to nothing and leaves the account reading zero users forever.
+        //
+        // Only attribute changes that move a user between accounts matter;
+        // recounting on every name or password change would run four count
+        // queries for nothing.
+        static::updated(function (self $user): void {
+            if (! $user->wasChanged(['hotel_id', 'hotel_group_id'])) {
+                return;
+            }
+
+            // Both sides: a user who moved has left one account and joined
+            // another, and the account they left is now one seat lighter.
+            // Recounting only the new one would leave the old one overstated.
+            $user->recountSeats();
+
+            self::recountAccount(
+                $user->getOriginal('hotel_group_id'),
+                $user->getOriginal('hotel_id'),
+            );
+        });
     }
 
     /**
@@ -58,10 +82,22 @@ class User extends Authenticatable
      */
     private function recountSeats(): void
     {
+        self::recountAccount($this->getAttribute('hotel_group_id'), $this->getAttribute('hotel_id'));
+    }
+
+    /**
+     * Recount the seats of whichever account those two attributes point at.
+     *
+     * Takes raw ids rather than a model so it can be called with a user's
+     * *previous* values, which is how the account a user just left gets
+     * corrected.
+     */
+    private static function recountAccount(?string $hotelGroupId, ?string $hotelId): void
+    {
         $metering = app(MeteringService::class);
 
-        $metering->safely(function (MeteringService $m): void {
-            if ($account = $this->account(withTrashed: true)) {
+        $metering->safely(function (MeteringService $m) use ($hotelGroupId, $hotelId): void {
+            if ($account = self::resolveAccount($hotelGroupId, $hotelId, withTrashed: true)) {
                 $m->recountSeats($account);
             }
         });
@@ -85,10 +121,18 @@ class User extends Authenticatable
      */
     public function account(bool $withTrashed = false): ?HotelGroup
     {
-        $accountId = $this->getAttribute('hotel_group_id')
-            ?? Hotel::withTrashed()
-                ->whereKey($this->getAttribute('hotel_id'))
-                ->value('hotel_group_id');
+        return self::resolveAccount(
+            $this->getAttribute('hotel_group_id'),
+            $this->getAttribute('hotel_id'),
+            $withTrashed,
+        );
+    }
+
+    private static function resolveAccount(?string $hotelGroupId, ?string $hotelId, bool $withTrashed = false): ?HotelGroup
+    {
+        $accountId = $hotelGroupId ?? Hotel::withTrashed()
+            ->whereKey($hotelId)
+            ->value('hotel_group_id');
 
         if (! $accountId) {
             return null;
