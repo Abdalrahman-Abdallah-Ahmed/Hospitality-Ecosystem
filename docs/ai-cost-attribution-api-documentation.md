@@ -131,12 +131,35 @@ AiModelPrice::supersede(
 That closes the old row the day before the new one starts, so every cost
 already reported against the old price still recomputes to the same figure.
 
-> ⚠ **The seeded prices in `AiModelPriceSeeder` are placeholders.** They exist
-> so the pipeline has something to compute against; they are not the
-> providers' published rates. Replace them before any cost figure is believed.
-> The spread across the providers in `config/ai.php` is more than thirtyfold,
-> so a wrong rate here does not produce a slightly wrong report — it produces
-> a confidently wrong one.
+**Gemini rows are real published rates.** Gemini is what this deployment
+actually bills against — `AI_DEFAULT_PROVIDER` and `default_for_embeddings`
+both resolve there — so those are the numbers the cost report stands on.
+
+> ⚠ **The OpenAI, Anthropic and Cohere rows are still placeholders.** They
+> exist so that switching provider does not immediately produce unpriced
+> calls; they are not published rates. Replace them before believing any
+> figure computed from them. The spread across the providers in
+> `config/ai.php` is more than thirtyfold, so a wrong rate does not produce a
+> slightly wrong report — it produces a confidently wrong one.
+
+### Promotional rates have an end date, and it is recorded
+
+The Gemini 3.x flash models (`3.6`, `3.7`, `3.8`) are on a promotional rate of
+$0.75 / $3.75 per million **through 31 December 2026**. Those rows carry an
+`effective_to` of that date, and no row follows them, because the standard
+rate that replaces them has not been published.
+
+That is deliberate. Leaving the rate open-ended would mean that on 1 January
+2027 every call keeps being costed at a discount that no longer exists, and
+the report would quietly understate what we pay — the exact confidently-wrong
+number this phase exists to prevent. Closing it means those calls become
+**unpriced** instead: `cost_is_estimated = true`, named in `unpriced_models`,
+and logged as a warning. A visible gap demanding an action is the right kind
+of wrong.
+
+**Action required before 1 January 2027:** supersede those three models with
+whatever Google publishes as the standard rate. A test
+(`it stops applying a promotional rate once it expires…`) pins the behaviour.
 
 A model with no price on file is **not free, it is unpriced**. Its calls are
 logged with `cost_is_estimated = true` and a cost of zero, and the endpoint
@@ -276,6 +299,7 @@ and that the schema stores no converted currency.
 | Item | Status |
 |---|---|
 | `contract_value_monthly` | Hand-filled. Superseded cleanly when subscriptions (WP-7) arrive. |
-| Real provider prices | **Outstanding.** The seeder ships placeholders. |
+| Real provider prices | **Gemini: done** (published rates). OpenAI / Anthropic / Cohere still placeholders. |
+| Gemini 3.x promo expiry | **Outstanding, dated.** Supersede the three flash models before 1 Jan 2027. |
 | Rerank pricing | Priced per search, not per token. Seeded at zero; needs its own treatment if it becomes material. |
 | Per-call ceiling behaviour on the guest path | The exception propagates and the job fails. If a stopped account should instead send the guest a fallback message, catch `AiSpendCeilingExceededException` in `ProcessInboundWhatsAppMessageJob`. |

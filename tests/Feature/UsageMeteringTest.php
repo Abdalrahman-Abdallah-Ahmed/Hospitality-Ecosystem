@@ -367,10 +367,15 @@ it('does not expose what the account cost us to serve', function () {
 
     // Provider cost is our cost of goods. An account that can see what it
     // costs to serve can compute our margin on its own contract.
-    $encoded = json_encode($body);
+    //
+    // Matched against money-specific tokens rather than the bare word "cost",
+    // because the feature taxonomy legitimately calls a meter a `cost_driver`
+    // — that is a category name, not a figure. Scanning for "cost" alone
+    // would fail on a word that carries no monetary information at all.
+    $encoded = strtolower(json_encode($body));
 
-    foreach (['cost', 'usd', 'eur', 'margin', 'contract'] as $forbidden) {
-        expect(str_contains(strtolower($encoded), $forbidden))->toBeFalse(
+    foreach (['cost_usd', 'cost_eur', 'ai_cost', 'cost_per', 'margin', 'contract', '_price', 'usd', 'eur'] as $forbidden) {
+        expect(str_contains($encoded, $forbidden))->toBeFalse(
             "the tenant usage response must not mention [{$forbidden}]"
         );
     }
@@ -395,4 +400,41 @@ it('tells an admin with no account that they belong to none', function () {
         ->getJson('/api/usage')
         ->assertStatus(403)
         ->assertJsonPath('message', 'You do not belong to any account.');
+});
+
+it('lists every AI resource, including the ones with no activity', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = meteringHotel();
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    // Only one kind of usage happened this period.
+    metering()->recordForHotel($hotel, MeterFeature::AI_MESSAGES, quantity: 5);
+
+    $features = $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
+        ->getJson('/api/usage')
+        ->assertOk()
+        ->json('body.features');
+
+    // A feature with no events reads an explicit 0 rather than being absent.
+    // Omitting it would make "used nothing" indistinguishable from "we do not
+    // track that", and force the frontend to carry its own copy of the
+    // catalogue to render a complete list.
+    expect($features['ai_messages']['used'])->toBe(5)
+        ->and($features['ai_insights_generated']['used'])->toBe(0)
+        ->and($features['recommendations_generated']['used'])->toBe(0)
+        ->and($features['embeddings_generated']['used'])->toBe(0)
+        ->and($features['embeddings_generated']['label'])->toBe('Knowledge base indexing')
+        ->and($features['embeddings_generated']['category'])->toBe('cost_driver')
+        ->and($features['bookings_created']['category'])->toBe('value_signal');
+
+    // Except where nothing is counting: null with measured=false, because
+    // zero would be a claim we cannot support.
+    expect($features['recommendations_delivered']['used'])->toBeNull()
+        ->and($features['recommendations_delivered']['measured'])->toBeFalse()
+        ->and($features['conversations_handled']['used'])->toBeNull()
+        ->and($features['ai_messages']['measured'])->toBeTrue();
+
+    // Seats are not event-derived and are reported separately.
+    expect($features)->not->toHaveKey('properties')
+        ->and($features)->not->toHaveKey('users');
 });

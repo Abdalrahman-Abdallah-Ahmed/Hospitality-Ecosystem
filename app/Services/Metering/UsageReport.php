@@ -73,12 +73,11 @@ class UsageReport
      */
     public function describe(HotelGroup $account, Collection $totals, Collection $seats): array
     {
-        $features = $totals->mapWithKeys(fn ($row) => [
-            $row->feature_code->value => [
-                'used' => (int) $row->total,
-                'unit' => $row->unit,
-            ],
+        $recorded = $totals->mapWithKeys(fn ($row) => [
+            $row->feature_code->value => (int) $row->total,
         ])->all();
+
+        $features = $this->everyFeature($recorded);
 
         return [
             'hotel_group_id' => $account->id,
@@ -89,6 +88,47 @@ class UsageReport
             'features' => $features,
             'recommendations' => $this->recommendationPair($features),
         ];
+    }
+
+    /**
+     * Every metered feature, whether or not it saw activity.
+     *
+     * A feature with no events reads `0`, present and explicit, rather than
+     * being left out of the response. Omitting it would force every consumer
+     * to carry its own copy of the catalogue in order to render a complete
+     * list — and would make "used nothing" indistinguishable from "we do not
+     * track that", which are different answers to give a customer.
+     *
+     * The exception is a feature with no source to record from yet. Those
+     * read `null` with `measured: false`, because zero would be a claim we
+     * cannot support: nothing is counting, so nobody knows the number. Seats
+     * are excluded here — they are not event-derived and are reported
+     * separately.
+     *
+     * @param  array<string, int>  $recorded
+     * @return array<string, array<string, mixed>>
+     */
+    private function everyFeature(array $recorded): array
+    {
+        $features = [];
+
+        foreach (MeterFeature::cases() as $feature) {
+            if ($feature->isSeat()) {
+                continue;
+            }
+
+            $measured = ! $feature->isAwaitingSource();
+
+            $features[$feature->value] = [
+                'label' => $feature->label(),
+                'category' => $feature->category(),
+                'used' => $measured ? ($recorded[$feature->value] ?? 0) : null,
+                'unit' => $feature->unit(),
+                'measured' => $measured,
+            ];
+        }
+
+        return $features;
     }
 
     /**

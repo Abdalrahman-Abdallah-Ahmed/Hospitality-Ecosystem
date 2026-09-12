@@ -551,3 +551,44 @@ it('keeps the split-out admin routes behind the full middleware stack', function
             ->and($route->gatherMiddleware())->toBe($expected);
     }
 });
+
+it('stops applying a promotional rate once it expires, rather than assuming it continues', function () {
+    $hotel = costHotel();
+
+    // The Gemini 3.x flash promotional rate, as seeded: real until the end of
+    // 2026, with no published standard rate to follow it.
+    AiModelPrice::create([
+        'provider' => 'gemini',
+        'model' => 'gemini-3.6-flash',
+        'input_price_per_million' => 0.7500,
+        'output_price_per_million' => 3.7500,
+        'cached_input_price_per_million' => 0.0750,
+        'currency' => 'USD',
+        'effective_from' => Carbon::parse('2026-01-01'),
+        'effective_to' => Carbon::parse('2026-12-31'),
+    ]);
+
+    $duringPromo = logCall($hotel, AiTriggerKind::GUEST_MESSAGE, [
+        'provider' => 'gemini',
+        'model' => 'gemini-3.6-flash',
+        'inputTokens' => 1_000_000,
+        'occurredAt' => Carbon::parse('2026-12-31 23:00:00'),
+    ]);
+
+    $afterPromo = logCall($hotel, AiTriggerKind::GUEST_MESSAGE, [
+        'provider' => 'gemini',
+        'model' => 'gemini-3.6-flash',
+        'inputTokens' => 1_000_000,
+        'occurredAt' => Carbon::parse('2027-01-01 00:30:00'),
+    ]);
+
+    // During: the discounted rate, measured.
+    expect((float) $duringPromo->cost_usd)->toBe(0.75)
+        ->and($duringPromo->cost_is_estimated)->toBeFalse();
+
+    // After: the call becomes UNPRICED, not silently charged at a discount
+    // that no longer exists. An understated bill would be a confidently wrong
+    // number; a flagged gap is a visible one demanding an action.
+    expect((float) $afterPromo->cost_usd)->toBe(0.0)
+        ->and($afterPromo->cost_is_estimated)->toBeTrue();
+});

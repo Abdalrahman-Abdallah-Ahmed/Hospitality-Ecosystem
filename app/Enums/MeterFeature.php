@@ -56,6 +56,57 @@ enum MeterFeature: string
     }
 
     /**
+     * Which of the three kinds of thing this counts. They share one table but
+     * answer different questions, and a report that mixes them is describing
+     * nothing in particular:
+     *
+     *  - cost_driver  — what we pay for
+     *  - value_signal — what the customer gets
+     *  - seat         — what exists right now
+     */
+    public function category(): string
+    {
+        return match ($this) {
+            self::AI_MESSAGES,
+            self::AI_INSIGHTS_GENERATED,
+            self::RECOMMENDATIONS_GENERATED,
+            self::EMBEDDINGS_GENERATED => 'cost_driver',
+
+            self::RECOMMENDATIONS_DELIVERED,
+            self::BOOKINGS_CREATED,
+            self::BOOKINGS_REALISED,
+            self::CONVERSATIONS_HANDLED,
+            self::TRANSACTION_ROWS_IMPORTED => 'value_signal',
+
+            self::PROPERTIES, self::USERS, self::GUESTS, self::STAYS => 'seat',
+        };
+    }
+
+    /**
+     * A short, non-technical name for a customer-facing screen. Feature codes
+     * are permanent and therefore ugly; this is the part that may be reworded
+     * freely, because nothing is keyed on it.
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::AI_MESSAGES => 'AI messages',
+            self::AI_INSIGHTS_GENERATED => 'AI insights',
+            self::RECOMMENDATIONS_GENERATED => 'Recommendations generated',
+            self::RECOMMENDATIONS_DELIVERED => 'Recommendations delivered',
+            self::EMBEDDINGS_GENERATED => 'Knowledge base indexing',
+            self::BOOKINGS_CREATED => 'Bookings created',
+            self::BOOKINGS_REALISED => 'Bookings realised',
+            self::CONVERSATIONS_HANDLED => 'Conversations handled',
+            self::TRANSACTION_ROWS_IMPORTED => 'Transaction rows imported',
+            self::PROPERTIES => 'Properties',
+            self::USERS => 'Users',
+            self::GUESTS => 'Guests',
+            self::STAYS => 'Stays',
+        };
+    }
+
+    /**
      * A seat is "how many exist right now", read back from its own table. It
      * is never incremented: incrementing produces a property count that only
      * ever rises, surviving every hotel anyone deletes.
