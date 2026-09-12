@@ -85,11 +85,64 @@ The advisor has tool access to real data, scoped to the calling admin's own hote
 
 - **Reservations** — today's arrivals (guest name, room, status, party size).
 - **Tasks** — the hotel's task list.
+- **Task categories** — the categories and the team each belongs to.
 - **Guest messages** — recent guest conversations.
 - **Rooms** — the hotel's rooms (room number, type, floor, status).
+- **Activities** — what the hotel offers, with category and price.
 - **Knowledge base search** — semantic search over this hotel's own articles/policies *and* the shared global knowledge base (see [Knowledge Base Article API Documentation](/D:/Hospitality%20Ecosystem/docs/knowledge-base-article-api-documentation.md)).
 
 If none of the tools have relevant information for a question, the advisor is instructed to say so rather than fabricate an answer — but this is a model instruction, not a hard guarantee; treat replies as advisory, not authoritative source-of-truth data.
+
+### What the Advisor Can Create
+
+A chat turn can **write to the hotel's data**. Six create tools are available,
+and a single message may produce real records:
+
+| Tool | Creates | Notes |
+| --- | --- | --- |
+| `CreateReservationTool` | A reservation | Matches or creates the guest by phone number |
+| `CreateRoomTool` | A room | Room numbers are unique per hotel; a duplicate is refused, not overwritten |
+| `CreateActivityTool` | An activity | Immediately recommendable to guests |
+| `CreateTaskTool` | A staff task | Optionally assigned to a team/person and linked to a room |
+| `CreateGuestTool` | A guest | Matched by phone; an existing guest is returned **unchanged**, never duplicated |
+| `CreateHotelPolicyTool` | A hotel policy | Becomes guest-facing grounding data — see the warning below |
+
+#### The hotel is never taken from the model
+
+Every tool is constructed with `$this->user->hotel` — the authenticated admin's
+own hotel. No argument the model produces can change which property is written
+to.
+
+Ids passed *inside* arguments are a different matter, and are verified rather
+than trusted: a category, team, staff member, or room belonging to another
+hotel is **dropped**, and the record is created without it. A model can emit
+any plausible-looking uuid it has seen, and assigning one hotel's task to
+another hotel's team would put a staff member's work list in front of the
+wrong property. An unassigned task is visible and fixable; a misrouted one is
+not. `tests/Feature/AdminCreateToolsTest.php` asserts this.
+
+#### Two consequences worth knowing before enabling this in a UI
+
+**Policies are quoted to guests.** The guest concierge searches hotel policies
+when answering and is instructed to let what it finds override its own
+judgment. A policy written through this endpoint therefore becomes the hotel's
+own word to guests. The advisor is told to record only what the admin actually
+stated and to ask rather than fill in a plausible-sounding cancellation window
+— but that is a model instruction, not a guarantee. **Show the admin what was
+written and let them confirm it.**
+
+**Creating a policy costs money.** Saving an active policy dispatches
+`SyncKnowledgeChunksJob`, which embeds the content with the AI provider. That
+is a real charge, metered as `embeddings_generated` and attributed to the
+account (see [AI Cost Attribution](/D:/Hospitality%20Ecosystem/docs/ai-cost-attribution-api-documentation.md)).
+
+#### Nothing here replaces the REST endpoints
+
+These tools exist so an admin can act mid-conversation, not as an alternative
+API. They apply no policy authorization, return no validation error shape, and
+skip the `Http/Requests` rules the REST endpoints enforce. Build UI against the
+REST endpoints; treat the advisor as a convenience path with a human reading
+every confirmation it returns.
 
 ## Success Response
 
@@ -177,8 +230,10 @@ curl -X POST http://your-domain.com/api/ai-advisor/chat \
 - `reply` is free-form text, not structured data — render it as a chat bubble, don't try to parse fields out of it.
 - A conversation only remembers its last 10 messages — don't expect perfect recall in very long threads.
 - A `conversation_id` you don't own returns `404`, same as if it didn't exist.
+- **A chat turn can create records** — reservations, rooms, activities, tasks, guests, policies. The reply names what was created and its id. Refresh any list the user is looking at after a turn, and surface the confirmation rather than burying it: this is the only signal that data changed.
 
 ## Related Docs
 
 - [Knowledge Base Article API Documentation](/D:/Hospitality%20Ecosystem/docs/knowledge-base-article-api-documentation.md)
+- [AI Cost Attribution API Documentation](/D:/Hospitality%20Ecosystem/docs/ai-cost-attribution-api-documentation.md)
 - [Auth API Documentation](/D:/Hospitality%20Ecosystem/docs/auth-api-documentation.md)

@@ -2,10 +2,17 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\CreateActivityTool;
+use App\Ai\Tools\CreateGuestTool;
+use App\Ai\Tools\CreateHotelPolicyTool;
 use App\Ai\Tools\CreateReservationTool;
+use App\Ai\Tools\CreateRoomTool;
+use App\Ai\Tools\CreateTaskTool;
+use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetReservationsTool;
 use App\Ai\Tools\GetRoomsTool;
+use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\GetTasksTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Models\User;
@@ -48,11 +55,35 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             - A tool to fetch this hotel's tasks.
             - A tool to fetch this hotel's recent guest messages.
             - A tool to fetch this hotel's rooms, including room number, type, floor, and status.
-            - A tool to create a reservation for this hotel, matching the guest by phone number.
+            - A tool to fetch this hotel's activities, including category and price.
+            - A tool to fetch this hotel's task categories and the team each belongs to.
 
             Always call the relevant tool(s) before answering a question about any of the above — never invent
             or guess data. If none of the tools return anything relevant, say so plainly instead of making up
             an answer.
+
+            You can also create records. These write to the hotel's real data, so they follow stricter rules
+            than answering a question does:
+            - A tool to create a reservation, matching the guest by phone number.
+            - A tool to add a room: room number, type, floor, status. Room numbers are unique per hotel.
+            - A tool to add an activity the hotel offers, with its price and category. Anything you create
+              here becomes recommendable to guests, so only add activities the hotel actually offers.
+            - A tool to create a staff task, optionally assigned to a team or a person and linked to a room.
+              Look up the task categories and use a matching id rather than guessing one.
+            - A tool to record a guest, matched by phone number. If the guest already exists it tells you so
+              and changes nothing — report that back rather than trying again.
+            - A tool to record a hotel policy. **Be most careful with this one.** The guest concierge searches
+              policies when answering guests and is told to let what it finds override its own judgment, so a
+              policy you write is quoted to guests as this hotel's own word.
+
+            Four rules for every one of these:
+            1. Only create something when the admin has clearly asked you to. Describing a problem is not a
+               request to create a task; asking what a policy should say is not a request to write one.
+            2. Write only what the admin actually told you. Never fill in a price, a time, a cancellation
+               window, or any other specific with a plausible-sounding default — ask for it instead.
+            3. Look ids up with the read tools before passing them. Never invent a uuid.
+            4. Confirm back what you created, including its id, and say plainly if anything was skipped or
+               already existed.
 
             You may be sent a photo or screenshot of reservation details (e.g. from a booking platform, ID, or
             handwritten note). Read every visible detail from it and use the create-reservation tool to create
@@ -70,12 +101,25 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
     public function tools(): iterable
     {
         return [
+            // Read.
             new KnowledgeSearchTool($this->user->hotel),
             new GetReservationsTool($this->user->hotel),
             new GetTasksTool($this->user->hotel),
+            new GetTaskCategoriesTool($this->user->hotel),
             new GetGuestMessagesTool($this->user->hotel),
             new GetRoomsTool($this->user->hotel),
+            new GetActivitiesTool($this->user->hotel),
+
+            // Write. Every one of these is scoped to this admin's own hotel by
+            // construction — the hotel comes from the authenticated user, never
+            // from anything the model produces, so no argument it invents can
+            // reach another property's data.
             new CreateReservationTool($this->user->hotel),
+            new CreateRoomTool($this->user->hotel),
+            new CreateActivityTool($this->user->hotel),
+            new CreateTaskTool($this->user->hotel, $this->user),
+            new CreateGuestTool($this->user->hotel),
+            new CreateHotelPolicyTool($this->user->hotel),
         ];
     }
 }
