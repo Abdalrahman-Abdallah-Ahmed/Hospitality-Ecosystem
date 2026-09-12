@@ -26,7 +26,7 @@ jobs:
 
             composer install --optimize-autoloader --no-interaction
 
-            php artisan migrate
+            php artisan migrate:fresh --seed
 
             php artisan optimize
 
