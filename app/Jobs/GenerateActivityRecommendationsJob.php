@@ -4,10 +4,12 @@ namespace App\Jobs;
 
 use App\Ai\Agents\RecommendationAgent;
 use App\Enums\ActorKind;
+use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Services\Metering\MeteringService;
+use App\Support\Ai\AiCostContext;
 use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -47,8 +49,18 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
         $guestName = trim($this->reservation->guest->first_name.' '.$this->reservation->guest->last_name);
 
         // Records this agent's tool-driven writes (recommendations) as ai_agent.
-        EventLogger::asAiAgent(
-            fn () => $agent->prompt("Generate activity recommendations for guest {$guestName}.")
+        //
+        // Triggered on demand by a staff member (an admin asking for
+        // recommendations for this reservation), not by a schedule — so its
+        // cost is attributed to staff_request. The reservation is the trigger
+        // record, which is what makes a per-reservation cost answerable.
+        AiCostContext::for(
+            kind: AiTriggerKind::STAFF_REQUEST,
+            hotel: $this->reservation->hotel,
+            trigger: $this->reservation,
+            callback: fn () => EventLogger::asAiAgent(
+                fn () => $agent->prompt("Generate activity recommendations for guest {$guestName}.")
+            ),
         );
 
         // The agent writes recommendations through a tool, so the only honest

@@ -3,10 +3,12 @@
 namespace App\Jobs;
 
 use App\Enums\ActorKind;
+use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
 use App\Services\Metering\MeteringService;
+use App\Support\Ai\AiCostContext;
 use App\Support\Knowledge\ChunkSynchronizer;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -28,16 +30,24 @@ class SyncKnowledgeChunksJob implements ShouldQueue
      */
     public function handle(MeteringService $metering): void
     {
-        $chunks = ChunkSynchronizer::sync(
-            chunkable: $this->chunkable,
-            content: $this->chunkable->content,
-            hotelId: $this->chunkable->hotel_id,
-            category: $this->chunkable->category->value,
-            metadata: [
-                'title' => $this->chunkable->title,
-                'tags' => $this->chunkable->tags ?? $this->chunkable->keywords,
-                'version' => $this->chunkable->version,
-            ],
+        // Embeddings are pure cost with no visible output, and the easiest
+        // line to forget entirely. The context makes them attributable: they
+        // are our own work, not something a guest asked for.
+        $chunks = AiCostContext::for(
+            kind: AiTriggerKind::SCHEDULED_JOB,
+            hotel: $this->chunkable->hotel,
+            trigger: $this->chunkable,
+            callback: fn () => ChunkSynchronizer::sync(
+                chunkable: $this->chunkable,
+                content: $this->chunkable->content,
+                hotelId: $this->chunkable->hotel_id,
+                category: $this->chunkable->category->value,
+                metadata: [
+                    'title' => $this->chunkable->title,
+                    'tags' => $this->chunkable->tags ?? $this->chunkable->keywords,
+                    'version' => $this->chunkable->version,
+                ],
+            ),
         );
 
         // Embeddings are the cost everyone forgets: no visible output, real

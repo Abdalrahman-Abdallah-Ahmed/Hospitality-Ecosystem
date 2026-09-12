@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\AiCost\FlagAiCostOverrunsJob;
 use App\Jobs\MakeRoomDirtyOvernightJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
@@ -21,3 +22,9 @@ Schedule::job(new MatchRecommendationOutcomesJob)->dailyAt('03:30');
 Schedule::job(new RebuildUsageCountersJob)->dailyAt('04:00');
 
 Schedule::job(new MakeRoomDirtyOvernightJob)->dailyAt('00:01');
+
+// Flags accounts whose AI cost has passed a configured share of what they
+// pay. Alert only — it never throttles: a thin margin is a commercial
+// conversation, not a decision for a cron job. Runs after the counter
+// rebuild so the day's activity has settled.
+Schedule::job(new FlagAiCostOverrunsJob)->dailyAt('04:30');

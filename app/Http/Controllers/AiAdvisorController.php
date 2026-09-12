@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Enums\ActorKind;
+use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Http\Requests\AiAdvisorChatRequest;
 use App\Services\Metering\MeteringService;
+use App\Support\Ai\AiCostContext;
 use Laravel\Ai\Models\Conversation;
 
 class AiAdvisorController extends Controller
@@ -46,7 +48,14 @@ class AiAdvisorController extends Controller
             $agent->forUser($user);
         }
 
-        $response = $agent->prompt($request->validated('message'));
+        // A logged-in human asked for this, so its cost is bounded by staff
+        // behaviour rather than by whoever has the hotel's number.
+        $response = AiCostContext::for(
+            kind: AiTriggerKind::STAFF_REQUEST,
+            hotel: $user->hotel,
+            trigger: $user,
+            callback: fn () => $agent->prompt($request->validated('message')),
+        );
 
         $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
             hotel: $user->hotel,

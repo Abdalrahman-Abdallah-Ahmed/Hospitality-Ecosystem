@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Ai\Agents\InsightsAgent;
 use App\Enums\ActorKind;
 use App\Enums\AiInsightCategories;
+use App\Enums\AiTriggerKind;
 use App\Enums\EvidenceLevel;
 use App\Enums\InsightTypes;
 use App\Enums\MeterFeature;
@@ -14,6 +15,7 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
 use App\Services\Metering\MeteringService;
+use App\Support\Ai\AiCostContext;
 use App\Support\Audit\EventLogger;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -49,12 +51,21 @@ class CreateAiInsightsJob implements ShouldQueue
                 user: $user,
             );
 
-            $response = match ($insightType) {
-                InsightTypes::GENERAL->value => $this->generalInsights($agent),
-                InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
-                InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
-                default => $agent->prompt('You are a helpful insights agent.'),
-            };
+            // Our own work on our own timetable, so its cost sits under
+            // scheduled_job — the half of the bill we control. Note that
+            // generalInsights() makes several prompts; each one is logged,
+            // and all of them are attributed to this same trigger.
+            $response = AiCostContext::for(
+                kind: AiTriggerKind::SCHEDULED_JOB,
+                hotel: $hotel,
+                trigger: $hotel,
+                callback: fn () => match ($insightType) {
+                    InsightTypes::GENERAL->value => $this->generalInsights($agent),
+                    InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
+                    InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
+                    default => $agent->prompt('You are a helpful insights agent.'),
+                },
+            );
 
             EventLogger::asAiAgent(function () use ($response, $insightType, $hotel) {
                 collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {

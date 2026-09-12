@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
 use App\Enums\ActorKind;
+use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Enums\SenderType;
 use App\Models\Guest;
@@ -13,6 +14,7 @@ use App\Models\Reservation;
 use App\Models\User;
 use App\Services\Metering\MeteringService;
 use App\Services\WhatsAppMessageService;
+use App\Support\Ai\AiCostContext;
 use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -92,8 +94,22 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         // The concierge/advisor agents write records through their tools
         // (reservations, service-request tasks, recommendation updates) — all
         // of it belongs to the AI actor, not a human.
-        $response = EventLogger::asAiAgent(
-            fn () => $agent->prompt($messageText, attachments: $attachments)
+        //
+        // Wrapped in a cost context as well: this is the externally-driven
+        // spend path, where anyone who can message the hotel's number can
+        // cause a provider charge. Declaring the trigger here is what lets
+        // the cost report separate guest-driven spend — which nothing we
+        // decide bounds — from our own scheduled work. The context also
+        // enforces the hard daily ceiling for this account.
+        $response = AiCostContext::for(
+            kind: $this->senderType === SenderType::GUEST
+                ? AiTriggerKind::GUEST_MESSAGE
+                : AiTriggerKind::STAFF_REQUEST,
+            hotel: $this->hotel,
+            trigger: $this->sender,
+            callback: fn () => EventLogger::asAiAgent(
+                fn () => $agent->prompt($messageText, attachments: $attachments)
+            ),
         );
 
         $whatsApp->send($this->phoneNumber, $response->text);

@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\User;
-use App\Enums\UserRole;
 use Illuminate\Database\Seeder;
 
 class HospitalitySeeder extends Seeder

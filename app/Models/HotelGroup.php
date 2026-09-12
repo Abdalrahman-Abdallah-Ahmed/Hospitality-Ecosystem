@@ -25,11 +25,14 @@ class HotelGroup extends Model
         'default_timezone',
         'settings',
         'is_active',
+        'contract_value_monthly',
+        'contract_currency',
     ];
 
     protected $casts = [
         'settings' => 'array',
         'is_active' => 'boolean',
+        'contract_value_monthly' => 'decimal:2',
     ];
 
     /**
