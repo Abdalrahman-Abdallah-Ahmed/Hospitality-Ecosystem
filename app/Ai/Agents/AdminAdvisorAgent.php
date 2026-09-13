@@ -9,6 +9,7 @@ use App\Ai\Tools\CreateRoomTool;
 use App\Ai\Tools\CreateTaskTool;
 use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetGuestMessagesTool;
+use App\Ai\Tools\GetGuestsTool;
 use App\Ai\Tools\GetReservationsTool;
 use App\Ai\Tools\GetRoomsTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
@@ -113,6 +114,7 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             new GetGuestMessagesTool($this->user->hotel),
             new GetRoomsTool($this->user->hotel),
             new GetActivitiesTool($this->user->hotel),
+            new GetGuestsTool($this->user->hotel),
 
             // Write. Every one of these is scoped to this admin's own hotel by
             // construction — the hotel comes from the authenticated user, never
