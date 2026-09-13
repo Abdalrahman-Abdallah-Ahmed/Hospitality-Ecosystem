@@ -2,11 +2,14 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\NormalizesPhoneNumber;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class WhatsAppDevicePairRequest extends FormRequest
 {
+    use NormalizesPhoneNumber;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -23,7 +26,7 @@ class WhatsAppDevicePairRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'phone_number' => ['required', 'string'],
+            'phone_number' => $this->phoneNumberRules(),
             'token' => ['required', 'string'],
             'wa_user_id' => ['required', 'string'],
         ];

@@ -150,7 +150,7 @@ This endpoint does not require a bearer token in the header. Instead, it require
 
 ### Validation Rules
 
-- `phone_number`: required, string
+- `phone_number`: required. Send it in any common format — `+20 115 179 3758`, `20-115-179-3758` and `201151793758` are all accepted. The server strips everything but digits, and the result must be **7–15 digits including the country code**. It is stored digits-only, which is also the format Meta's webhook uses.
 - `token`: required, string
 - `wa_user_id`: required, string
 
@@ -165,7 +165,7 @@ HTTP `201 Created`
   "body": {
     "id": 1,
     "user_id": 12,
-    "phone_number": "+201000000000",
+    "phone_number": "201000000000",
     "hotel_id": "550e8400-e29b-41d4-a716-446655440000",
     "wa_user_id": "whatsapp-user-123",
     "status": "active",
@@ -207,6 +207,10 @@ Required (changed 2026-09-13 — this endpoint used to need only the API key):
 - `X-API-KEY: {your_api_key}`
 - `Authorization: Bearer {login_token}`
 
+### Phone Number Format
+
+Send the number however the person typed it — `+`, spaces, dashes and brackets are fine, so `+20 115 179 3758` works as-is (URL-encode it in the query string). The server keeps only the digits, which must be **7–15 digits including the country code**. A number typed without its country code (e.g. `01151793758`) is a different number and will not match. Anything else returns `422` on `phone_number`.
+
 ### Scope
 
 Only devices and users belonging to the caller's own hotel(s) are considered. A phone number that belongs to another hotel reports as not paired, with `user_name` and `user_role` both `null`.
@@ -219,6 +223,7 @@ Only devices and users belonging to the caller's own hotel(s) are considered. A 
 | `202` | `User has a paired WhatsApp device, but it is not active.` | `{ paired: true, device }` |
 | `201` | `User not paired.` | `{ paired: false, user_role, user_name }` — the user fields are `null` when no user in your hotel(s) has that number |
 | `401` | `Unauthenticated.` | Missing or invalid bearer token |
+| `422` | Validation error | `phone_number` missing, or not 7–15 digits once formatting is stripped |
 
 ## Error Cases
 

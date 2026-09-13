@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CheckPairedRequest;
 use App\Http\Requests\WhatsAppDevicePairRequest;
 use App\Http\Resources\WhatsAppDeviceResource;
 use App\Jobs\ProcessInboundWhatsAppMessageJob;
@@ -136,8 +137,11 @@ class WhatsAppController extends Controller
         // who works at another property. The webhook has no tenant context
         // and matches across every hotel, which sender recognition needs.
         // The device lookup above is limited the same way by BelongsToHotel.
+        //
+        // $phoneNumber arrives as digits (see PhoneNumber); users.phone_number
+        // holds whatever was typed, so it is compared by its digits too.
         $hotelIds = TenantContext::hotelIds();
-        $user = User::where('phone_number', $phoneNumber)
+        $user = User::whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [$phoneNumber])
             ->when($hotelIds !== null, fn ($query) => $query->whereIn('hotel_id', $hotelIds))
             ->first();
 
@@ -164,13 +168,9 @@ class WhatsAppController extends Controller
      * Endpoint the dashboard polls to check WhatsApp pairing status for a
      * phone number within the caller's own hotels.
      */
-    public function checkPaired(Request $request)
+    public function checkPaired(CheckPairedRequest $request)
     {
-        $validated = $request->validate([
-            'phone_number' => 'required|string|max:12',
-        ]);
-
-        $pairing = $this->pairingStatus($validated['phone_number']);
+        $pairing = $this->pairingStatus($request->validated('phone_number'));
 
         if ($pairing['paired']) {
             return $pairing['active']

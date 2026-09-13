@@ -185,7 +185,61 @@ it('rejects pairing when the user already has a paired whatsapp device', functio
     expect(WhatsAppDevice::count())->toBe(1);
 });
 
+it('stores a paired device phone number as digits only, however it was typed', function () {
+    [$user] = whatsappDeviceOwner();
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/pair', [...pairWith(pairingCodeFor($user)), 'phone_number' => '+20 115-179-3758'])
+        ->assertOk()
+        ->assertJsonPath('body.phone_number', '201151793758');
+});
+
 // check-paired
+
+it('accepts a number typed with a plus and spaces on check-paired', function () {
+    [$user, $hotel] = whatsappDeviceOwner();
+    WhatsAppDevice::create([
+        'user_id' => $user->id,
+        'phone_number' => '201151793758',
+        'hotel_id' => $hotel->id,
+        'wa_user_id' => 'EG.1586110233134033',
+        'status' => 'active',
+    ]);
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->actingAs($user, 'sanctum')
+        ->getJson('/api/check-paired?'.http_build_query(['phone_number' => '+20 115 179 3758']))
+        ->assertStatus(200)
+        ->assertJsonPath('body.paired', true);
+});
+
+it('finds a user whose number was saved with a plus when check-paired is sent digits', function () {
+    [$caller, $hotel] = whatsappDeviceOwner();
+    $admin = User::factory()->role(UserRole::ADMIN)->create([
+        'phone_number' => '+201151793758',
+        'hotel_id' => $hotel->id,
+    ]);
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->actingAs($caller, 'sanctum')
+        ->getJson('/api/check-paired?phone_number=201151793758')
+        ->assertStatus(201)
+        ->assertJsonPath('body.user_name', $admin->name);
+});
+
+it('rejects a check-paired number that cannot be a full phone number', function (string $phoneNumber) {
+    [$user] = whatsappDeviceOwner();
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->actingAs($user, 'sanctum')
+        ->getJson('/api/check-paired?'.http_build_query(['phone_number' => $phoneNumber]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['phone_number']);
+})->with([
+    'no digits' => ['not a number'],
+    'too short' => ['+20 115'],
+    'too long' => ['+20 1151 7937 5812 34'],
+]);
 
 it('requires authentication for check-paired', function () {
     $this->withHeader('X-API-KEY', 'test-api-key')

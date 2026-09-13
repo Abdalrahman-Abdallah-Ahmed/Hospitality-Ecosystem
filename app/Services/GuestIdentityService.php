@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Guest;
+use App\Support\PhoneNumber;
 
 /**
  * Conservative, exact-match guest identity resolution: the same email, or
@@ -25,7 +26,7 @@ class GuestIdentityService
             return 'email:'.hash('sha256', $email);
         }
 
-        if ($phone = static::normalizePhone($guest->phone_number)) {
+        if ($phone = PhoneNumber::digits($guest->phone_number)) {
             return 'phone:'.hash('sha256', $phone);
         }
 
@@ -63,19 +64,5 @@ class GuestIdentityService
         $email = strtolower(trim((string) $email));
 
         return $email !== '' ? $email : null;
-    }
-
-    /**
-     * A best-effort E.164-style normalisation: strips everything but
-     * digits, so "+20 115 179 3758", "201151793758", and "01151793758"
-     * (missing country code) are the closest this can get without a real
-     * phone-number library — good enough for conservative exact matching,
-     * not a substitute for proper E.164 parsing.
-     */
-    protected static function normalizePhone(?string $phone): ?string
-    {
-        $digits = preg_replace('/\D+/', '', (string) $phone);
-
-        return $digits !== '' ? $digits : null;
     }
 }
