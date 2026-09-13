@@ -224,7 +224,7 @@ it('pairs a device when an admin sends their connect() token as a message', func
         'currency' => 'USD',
     ]);
     $admin->update(['hotel_id' => $hotel->id]);
-    $token = $admin->createToken('whatsapp_device_token')->plainTextToken;
+    $token = pairingCodeFor($admin);
 
     $payload = whatsappInboundPayload('201151793758', $token);
     $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))
@@ -235,7 +235,7 @@ it('pairs a device when an admin sends their connect() token as a message', func
 });
 
 it('replies with guidance when the pairing token is invalid', function () {
-    $token = User::factory()->create()->createToken('whatsapp_device_token')->plainTextToken;
+    $token = pairingCodeFor(User::factory()->create());
     [$tokenId] = explode('|', $token, 2);
     $invalidToken = $tokenId.'|not-the-right-plaintext-and-its-forty-chars-long';
 

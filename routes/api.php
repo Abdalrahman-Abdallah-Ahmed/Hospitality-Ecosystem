@@ -36,7 +36,6 @@ Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore']);
     Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->name('login');
     Route::post('/pair', [WhatsAppController::class, 'pair']);
-    Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
 
     Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
@@ -44,6 +43,7 @@ Route::middleware('api.key')->group(function () {
             return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->load(['hotel', 'team'])));
         });
         Route::post('/connect', [WhatsAppController::class, 'connect']);
+        Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);

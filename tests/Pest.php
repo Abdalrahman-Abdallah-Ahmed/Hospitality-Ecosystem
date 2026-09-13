@@ -12,8 +12,10 @@ use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Models\WhatsAppDevice;
 use App\Services\BookingService;
 use App\Services\TransactionService;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -69,6 +71,18 @@ function something()
 | three test files that need them so no file depends on another having been
 | loaded first.
 */
+
+/**
+ * A pairing code as connect() issues it: named for pairing and expiring. The
+ * device and webhook tests both redeem one.
+ */
+function pairingCodeFor(User $user, ?CarbonInterface $expiresAt = null): string
+{
+    return $user->createToken(
+        WhatsAppDevice::PAIRING_TOKEN_NAME,
+        expiresAt: $expiresAt ?? now()->addMinutes(15),
+    )->plainTextToken;
+}
 
 function wp5Headers(): array
 {

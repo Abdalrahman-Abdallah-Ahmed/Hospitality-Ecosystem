@@ -11,11 +11,18 @@ use App\Models\WhatsAppDevice;
 use App\Services\SenderRecognitionService;
 use App\Services\WhatsAppMessageService;
 use App\Support\RecognizedSender;
+use App\Support\Tenancy\TenantContext;
 use Illuminate\Http\Request;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class WhatsAppController extends Controller
 {
+    /**
+     * How long a pairing code stays redeemable. Long enough to open WhatsApp
+     * and send it; short enough that a code someone glimpsed is soon useless.
+     */
+    private const PAIRING_CODE_TTL_MINUTES = 15;
+
     public function __construct(
         private readonly SenderRecognitionService $senderRecognitionService,
         private readonly WhatsAppMessageService $whatsAppMessageService,
@@ -23,9 +30,10 @@ class WhatsAppController extends Controller
 
     public function connect(Request $request)
     {
-        $user = $request->user();
-
-        $token = $user->createToken('whatsapp_device_token')->plainTextToken;
+        $token = $request->user()->createToken(
+            WhatsAppDevice::PAIRING_TOKEN_NAME,
+            expiresAt: now()->addMinutes(self::PAIRING_CODE_TTL_MINUTES),
+        )->plainTextToken;
 
         return apiResponse('WhatsApp device token created successfully.', 200, [
             'token' => $token,
@@ -57,7 +65,7 @@ class WhatsAppController extends Controller
     {
         $accessToken = PersonalAccessToken::findToken($token);
 
-        if (! $accessToken) {
+        if (! $this->isRedeemablePairingCode($accessToken)) {
             return ['status' => 'invalid_token'];
         }
 
@@ -78,7 +86,23 @@ class WhatsAppController extends Controller
             'status' => 'active',
         ]);
 
+        // Single use: a redeemed code must not be able to pair anything again.
+        $accessToken->delete();
+
         return ['status' => 'paired', 'device' => $device];
+    }
+
+    /**
+     * Only an unexpired code issued by connect(). A login token is refused
+     * even though Sanctum would accept it: pairing hands a WhatsApp number
+     * the owner's advisor access, and a code the owner deliberately issued
+     * should be the only way to grant that.
+     */
+    private function isRedeemablePairingCode(?PersonalAccessToken $token): bool
+    {
+        return $token !== null
+            && $token->name === WhatsAppDevice::PAIRING_TOKEN_NAME
+            && $token->expires_at?->isFuture() === true;
     }
 
     /**
@@ -97,16 +121,25 @@ class WhatsAppController extends Controller
 
     /**
      * Check whether a phone number contacting us already has a paired
-     * WhatsApp device, and whether it's active. Used both by the public
-     * checkPaired() endpoint (the frontend polls this for pairing status)
-     * and internally by whatsappWebhook().
+     * WhatsApp device, and whether it's active. Used both by the
+     * authenticated checkPaired() endpoint (the dashboard polls this for
+     * pairing status) and internally by whatsappWebhook().
      *
      * @return array{paired: bool, active: bool, device: ?WhatsAppDevice, user_role: mixed, user_name: ?string}
      */
     private function pairingStatus(string $phoneNumber): array
     {
         $whatsappDevice = WhatsAppDevice::where('phone_number', $phoneNumber)->first();
-        $user = User::where('phone_number', $phoneNumber)->first();
+
+        // Inside an authenticated request the lookup is limited to the
+        // caller's own hotels, so a phone number cannot be used to find out
+        // who works at another property. The webhook has no tenant context
+        // and matches across every hotel, which sender recognition needs.
+        // The device lookup above is limited the same way by BelongsToHotel.
+        $hotelIds = TenantContext::hotelIds();
+        $user = User::where('phone_number', $phoneNumber)
+            ->when($hotelIds !== null, fn ($query) => $query->whereIn('hotel_id', $hotelIds))
+            ->first();
 
         if ($whatsappDevice) {
             return [
@@ -128,8 +161,8 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Public endpoint the frontend polls to check WhatsApp pairing status
-     * for a phone number.
+     * Endpoint the dashboard polls to check WhatsApp pairing status for a
+     * phone number within the caller's own hotels.
      */
     public function checkPaired(Request $request)
     {

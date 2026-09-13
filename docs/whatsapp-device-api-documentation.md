@@ -116,9 +116,11 @@ HTTP `200 OK`
 
 ### Frontend / Claude Note
 
-- This token is created from Laravel Sanctum.
-- It should be passed to the pairing endpoint as the `token` field.
-- This is different from the user's normal login token, even though both are Sanctum tokens.
+- This token is a **pairing code**, not a login token. It should be passed to the pairing endpoint as the `token` field, or sent as a WhatsApp message to the hotel number.
+- It **expires 15 minutes** after it is issued. Call `/api/connect` again for a fresh one.
+- It is **single use**: it is deleted as soon as a device is paired with it.
+- It is **not an API credential**. Sending it as `Authorization: Bearer …` returns `401` on every authenticated route.
+- Conversely, a normal login token is rejected by `/api/pair` (`Invalid token.`).
 
 ## 2. Pair WhatsApp Device
 
@@ -183,12 +185,40 @@ Notes:
 
 The pairing endpoint applies these checks:
 
-1. The provided `token` must match an existing Sanctum token.
+1. The provided `token` must be an unexpired pairing code issued by `/api/connect` (a login token, an expired code, or an already-redeemed code counts as invalid).
 2. The token must belong to a valid user.
 3. That user must be associated with a hotel.
 4. That user must not already have a paired WhatsApp device.
 
-If any of these checks fail, the API returns an error instead of creating a device.
+If any of these checks fail, the API returns an error instead of creating a device. On success the pairing code is revoked.
+
+## 3. Check Pairing Status
+
+Reports whether a phone number has a paired WhatsApp device. The dashboard polls this after showing a pairing code.
+
+### Endpoint
+
+`GET /api/check-paired?phone_number={phone_number}`
+
+### Authentication
+
+Required (changed 2026-09-13 — this endpoint used to need only the API key):
+
+- `X-API-KEY: {your_api_key}`
+- `Authorization: Bearer {login_token}`
+
+### Scope
+
+Only devices and users belonging to the caller's own hotel(s) are considered. A phone number that belongs to another hotel reports as not paired, with `user_name` and `user_role` both `null`.
+
+### Responses
+
+| HTTP | `message` | `body` |
+| --- | --- | --- |
+| `200` | `User has a paired WhatsApp device.` | `{ paired: true, device }` |
+| `202` | `User has a paired WhatsApp device, but it is not active.` | `{ paired: true, device }` |
+| `201` | `User not paired.` | `{ paired: false, user_role, user_name }` — the user fields are `null` when no user in your hotel(s) has that number |
+| `401` | `Unauthenticated.` | Missing or invalid bearer token |
 
 ## Error Cases
 
@@ -303,8 +333,9 @@ curl -X POST http://your-domain.com/api/pair \
 
 ## Summary for Claude
 
-- Call `POST /api/connect` as an authenticated user to generate a WhatsApp pairing token
+- Call `POST /api/connect` as an authenticated user to generate a WhatsApp pairing token — it expires in 15 minutes and works once
 - Call `POST /api/pair` with `phone_number`, `token`, and `wa_user_id`
+- Call `GET /api/check-paired` with a bearer token to poll pairing status
 - Always send `X-API-KEY` if the backend server uses `API_KEY`
 - Expect `401` for an invalid token and `400` for business-rule failures
 - On success, the device is created with `status = active`
