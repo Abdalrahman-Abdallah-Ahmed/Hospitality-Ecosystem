@@ -34,9 +34,9 @@ X-API-KEY: {your_api_key}
 
 Notes:
 
-- The backend checks the `API_KEY` environment variable.
-- If `API_KEY` is empty on the server, requests are allowed without this header.
-- If the key is configured and missing or wrong, the API returns HTTP `401`:
+- The backend checks the configured `API_KEY` (read through config, so it keeps working after `php artisan optimize`).
+- If no key is configured, requests are allowed without this header **only** in a `local` or `testing` environment. In any other environment an unset key rejects every request.
+- If the key is missing or wrong, the API returns HTTP `401`:
 
 ```json
 {

@@ -7,6 +7,7 @@ uses(RefreshDatabase::class);
 
 it('registers a new user through the api', function () {
     putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
         ->postJson('/api/register', [
@@ -26,6 +27,7 @@ it('registers a new user through the api', function () {
 
 it('logs in an existing user through the api', function () {
     putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
 
     $user = User::factory()->create([
         'email' => 'bob@example.com',
@@ -44,6 +46,7 @@ it('logs in an existing user through the api', function () {
 
 it('registers a user through the api endpoint', function () {
     putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')
         ->postJson('/api/register', [
