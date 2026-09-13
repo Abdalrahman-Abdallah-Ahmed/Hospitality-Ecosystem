@@ -27,7 +27,7 @@ class UserPolicy
      */
     public function view(User $user, User $model): bool
     {
-        return $user->isAdmin() && $model->hotel_id === $user->hotel?->id;
+        return $this->managesUser($user, $model);
     }
 
     /**
@@ -43,7 +43,7 @@ class UserPolicy
      */
     public function update(User $user, User $model): bool
     {
-        return $user->isAdmin() && $model->hotel_id === $user->hotel?->id;
+        return $this->managesUser($user, $model);
     }
 
     /**
@@ -51,7 +51,7 @@ class UserPolicy
      */
     public function delete(User $user, User $model): bool
     {
-        return $user->isAdmin() && $model->hotel_id === $user->hotel?->id;
+        return $this->managesUser($user, $model);
     }
 
     /**
@@ -68,5 +68,21 @@ class UserPolicy
     public function forceDelete(User $user, User $model): bool
     {
         return false;
+    }
+
+    /**
+     * An admin manages the non-super-admin users of their own hotel.
+     *
+     * The null guard is load-bearing: without it an admin with no hotel
+     * matches every other hotel-less user, and super admins have no hotel.
+     */
+    private function managesUser(User $user, User $model): bool
+    {
+        $hotelId = $user->hotel?->id;
+
+        return $user->isAdmin()
+            && ! $model->isSuperAdmin()
+            && $hotelId !== null
+            && $model->hotel_id === $hotelId;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\UserRole;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
@@ -9,10 +10,18 @@ use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 
 class UserController extends Controller
 {
+    /**
+     * Columns that decide which hotels a user can reach. Only a super admin
+     * may write them: an admin who could would join themselves to another
+     * account and read its data through the tenant scope.
+     */
+    private const ACCOUNT_ATTRIBUTES = ['hotel_group_id', 'group_role'];
+
     /**
      * Display a listing of the resource.
      */
@@ -46,7 +55,11 @@ class UserController extends Controller
     {
         $this->authorize('create', User::class);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+        if ($denied = $this->denySuperAdminGrant($request)) {
+            return $denied;
+        }
+
+        $validated = $this->assignableAttributes($request);
 
         if ($request->user()->isSuperAdmin()) {
             $hotel = ($id = $request->validated()['hotel_id'] ?? null) ? Hotel::find($id) : null;
@@ -86,7 +99,11 @@ class UserController extends Controller
     {
         $this->authorize('update', $user);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+        if ($denied = $this->denySuperAdminGrant($request)) {
+            return $denied;
+        }
+
+        $validated = $this->assignableAttributes($request);
 
         $hotel = $user->hotel_id ? Hotel::find($user->hotel_id) : null;
         $teamId = $validated['team_id'] ?? $user->team_id;
@@ -110,5 +127,33 @@ class UserController extends Controller
         $user->delete();
 
         return apiResponse('User deleted successfully.', 200);
+    }
+
+    /**
+     * Only a super admin can create or promote a super admin. The rule turns
+     * on who is asking rather than on the value, so the schema-derived
+     * validation rules cannot express it.
+     */
+    private function denySuperAdminGrant(FormRequest $request): ?JsonResponse
+    {
+        if ($request->user()->isSuperAdmin() || $request->validated('role') !== UserRole::SUPER_ADMIN->value) {
+            return null;
+        }
+
+        return apiResponse('Only a super admin can assign the super admin role.', 403);
+    }
+
+    /**
+     * hotel_id is never written from the payload — store() resolves it and
+     * update() keeps the current one. Account membership is dropped the same
+     * way for anyone but a super admin.
+     */
+    private function assignableAttributes(FormRequest $request): array
+    {
+        $ignored = $request->user()->isSuperAdmin()
+            ? ['hotel_id']
+            : ['hotel_id', ...self::ACCOUNT_ATTRIBUTES];
+
+        return unsetAttributes($request->validated(), $ignored);
     }
 }

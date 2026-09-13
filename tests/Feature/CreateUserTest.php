@@ -9,6 +9,7 @@
 // each admin user can only manage users that belong to their own hotel
 
 use App\Enums\UserRole;
+use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Team;
 use App\Models\User;
@@ -330,6 +331,133 @@ it('lets a super admin update a user belonging to any hotel', function () {
         ->putJson("/api/users/{$staff->id}", ['name' => 'Updated by Super Admin'])
         ->assertOk()
         ->assertJsonPath('body.name', 'Updated by Super Admin');
+});
+
+// privilege and account boundaries
+
+it('rejects an admin creating a super admin', function () {
+    [$admin] = adminWithOwnedHotelForUsers();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/users', [
+            'name' => 'Escalated',
+            'email' => 'escalated@example.com',
+            'password' => 'Password123!',
+            'role' => UserRole::SUPER_ADMIN->value,
+        ])
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'Only a super admin can assign the super admin role.');
+
+    expect(User::where('email', 'escalated@example.com')->exists())->toBeFalse();
+});
+
+it('rejects an admin promoting themselves to super admin', function () {
+    [$admin] = adminWithOwnedHotelForUsers();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$admin->id}", ['role' => UserRole::SUPER_ADMIN->value])
+        ->assertStatus(403);
+
+    expect($admin->fresh()->isSuperAdmin())->toBeFalse();
+});
+
+it('still lets an admin create another admin for their own hotel', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/users', [
+            'name' => 'Co-Manager',
+            'email' => 'co-manager@example.com',
+            'password' => 'Password123!',
+            'role' => UserRole::ADMIN->value,
+        ])
+        ->assertStatus(201)
+        ->assertJsonPath('body.role', UserRole::ADMIN->value)
+        ->assertJsonPath('body.hotel_id', $hotel->id);
+});
+
+it('ignores account membership an admin sends on update, so they cannot join another account', function () {
+    [$admin] = adminWithOwnedHotelForUsers();
+    [, $otherHotel] = adminWithOwnedHotelForUsers();
+    $otherGuest = Guest::create([
+        'hotel_id' => $otherHotel->id,
+        'external_id' => 'other-account-guest',
+        'channel' => 'booking_com',
+    ]);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$admin->id}", [
+            'hotel_group_id' => $otherHotel->hotel_group_id,
+            'group_role' => 'owner',
+        ])
+        ->assertOk();
+
+    $admin->refresh();
+    expect($admin->hotel_group_id)->toBeNull()
+        ->and($admin->group_role)->toBeNull();
+
+    $guests = $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/guest')
+        ->assertOk();
+
+    expect(collect($guests->json('body.data'))->pluck('id'))->not->toContain($otherGuest->id);
+});
+
+it('ignores account membership an admin sends on create', function () {
+    [$admin] = adminWithOwnedHotelForUsers();
+    [, $otherHotel] = adminWithOwnedHotelForUsers();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/users', [
+            'name' => 'New Hire',
+            'email' => 'new-hire@example.com',
+            'password' => 'Password123!',
+            'hotel_group_id' => $otherHotel->hotel_group_id,
+            'group_role' => 'owner',
+        ])
+        ->assertStatus(201);
+
+    $created = User::where('email', 'new-hire@example.com')->first();
+    expect($created->hotel_group_id)->toBeNull()
+        ->and($created->group_role)->toBeNull();
+});
+
+it('rejects an admin updating a super admin attached to their own hotel', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create(['hotel_id' => $hotel->id]);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$superAdmin->id}", ['email' => 'taken-over@example.com'])
+        ->assertStatus(403);
+
+    expect($superAdmin->fresh()->email)->not->toBe('taken-over@example.com');
+});
+
+it('rejects an admin with no hotel managing another hotel-less user', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotelLessUser = User::factory()->role(UserRole::ADMIN)->create();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson("/api/users/{$hotelLessUser->id}")
+        ->assertStatus(403);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$hotelLessUser->id}", ['name' => 'Hijacked'])
+        ->assertStatus(403);
+
+    expect($hotelLessUser->fresh()->name)->not->toBe('Hijacked');
+});
+
+it('lets a super admin assign the super admin role', function () {
+    [, $hotel] = adminWithOwnedHotelForUsers();
+    $staff = staffForUsers($hotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['role' => UserRole::SUPER_ADMIN->value])
+        ->assertOk();
+
+    expect($staff->fresh()->isSuperAdmin())->toBeTrue();
 });
 
 // destroy
