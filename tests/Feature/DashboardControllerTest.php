@@ -131,3 +131,71 @@ it('sums room_revenue_today from stays currently in house', function () {
     $response->assertOk();
     expect((float) $response->json('body.room_revenue_today'))->toBe(300.0);
 });
+
+// VIP guests
+
+function dashboardGuestWithStay(Hotel $hotel, bool $isVip, string $status, string $arrivalDate, ?Room $room = null): Guest
+{
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Guest '.uniqid(), 'is_vip' => $isVip]);
+
+    Stay::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'room_id' => $room?->id,
+        'planned_arrival_date' => $arrivalDate,
+        'planned_departure_date' => now()->addDays(5)->toDateString(),
+        'status' => $status,
+    ]);
+
+    return $guest;
+}
+
+it('lists VIP guests who are in house or arriving today', function () {
+    [$admin, $hotel] = userWithOwnHotel();
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+
+    $inHouse = dashboardGuestWithStay($hotel, true, 'in_house', now()->subDay()->toDateString(), $room);
+    $arrivingToday = dashboardGuestWithStay($hotel, true, 'expected', now()->toDateString());
+    dashboardGuestWithStay($hotel, true, 'expected', now()->addDay()->toDateString());
+    dashboardGuestWithStay($hotel, true, 'departed', now()->subDays(3)->toDateString());
+    dashboardGuestWithStay($hotel, false, 'in_house', now()->subDay()->toDateString());
+
+    $response = $this->withHeaders(dashboardApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/dashboard')
+        ->assertOk();
+
+    $vipGuests = collect($response->json('body.vip_guests'))->keyBy('id');
+
+    expect($response->json('body.vip_guests_count'))->toBe(2)
+        ->and($vipGuests->keys()->all())->toEqualCanonicalizing([$inHouse->id, $arrivingToday->id])
+        ->and($vipGuests[$inHouse->id]['stays'][0]['room']['room_number'])->toBe('101')
+        ->and($vipGuests[$arrivingToday->id]['stays'][0]['status'])->toBe('expected');
+});
+
+it('leaves guest contact details out of the dashboard VIP list', function () {
+    [$admin, $hotel] = userWithOwnHotel();
+    $guest = dashboardGuestWithStay($hotel, true, 'in_house', now()->subDay()->toDateString());
+    $guest->update(['email' => 'vip@example.test', 'phone_number' => '201000000001']);
+
+    $vipGuest = $this->withHeaders(dashboardApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/dashboard')
+        ->assertOk()
+        ->json('body.vip_guests.0');
+
+    expect($vipGuest['id'])->toBe($guest->id)
+        ->and($vipGuest)->not->toHaveKey('email')
+        ->and($vipGuest)->not->toHaveKey('phone_number');
+});
+
+it('never lists another hotel\'s VIP guests on the dashboard', function () {
+    [$admin, $hotel] = userWithOwnHotel();
+    [, $otherHotel] = userWithOwnHotel();
+    $ownVip = dashboardGuestWithStay($hotel, true, 'in_house', now()->subDay()->toDateString());
+    dashboardGuestWithStay($otherHotel, true, 'in_house', now()->subDay()->toDateString());
+
+    $response = $this->withHeaders(dashboardApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/dashboard')
+        ->assertOk();
+
+    expect($response->json('body.vip_guests.*.id'))->toBe([$ownVip->id]);
+});

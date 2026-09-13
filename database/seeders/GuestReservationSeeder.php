@@ -23,6 +23,7 @@ class GuestReservationSeeder extends Seeder
             'preferred_language' => 'en',
             'nationality' => 'EG',
             'loyalty_status' => 'silver',
+            'is_vip' => true,
             'marketing_consent' => true,
         ]);
 

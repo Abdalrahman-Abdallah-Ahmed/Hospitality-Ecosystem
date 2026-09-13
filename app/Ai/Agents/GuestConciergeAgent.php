@@ -45,6 +45,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
         return <<<PROMPT
             You are a helpful concierge for {$this->guest->first_name} at {$this->hotel->name}, talking to
             them over WhatsApp. Be warm, concise, and helpful.
+            {$this->vipInstructions()}
 
             You have tools available:
             - A knowledge-base search tool covering this hotel's own articles/policies and the shared global
@@ -99,6 +100,22 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             follow-up task (via the task tool) asking a team member to contact the guest and help them book
             it, naming the specific activity. Don't create a follow-up task for lukewarm or neutral reactions.
             PROMPT;
+    }
+
+    /**
+     * Extra guidance for a guest the hotel has flagged as VIP. Empty for
+     * everyone else, so their prompt is unchanged.
+     */
+    protected function vipInstructions(): string
+    {
+        if (! $this->guest->is_vip) {
+            return '';
+        }
+
+        return 'This guest is one of the hotel\'s VIP guests. Treat them with extra warmth and attentiveness: '
+            .'address them by name, anticipate their needs, go out of your way to accommodate their requests, '
+            .'and favour premium, personalised suggestions. Never mention VIP status or any internal '
+            .'classification to the guest.';
     }
 
     /**

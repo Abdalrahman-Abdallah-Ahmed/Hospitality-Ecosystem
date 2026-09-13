@@ -75,12 +75,26 @@ A second concurrent reversal now returns `422 This transaction has already been 
 
 **Full doc:** [WhatsApp Device API § 3](/D:/Hospitality%20Ecosystem/docs/whatsapp-device-api-documentation.md#3-check-pairing-status)
 
+## 10. New: VIP Flag on Guests
+
+Guests have a new boolean `is_vip`, default `false` (migration `2026_09_13_000002`). It is additive: no existing field or status code changes.
+
+- Every guest object now includes `is_vip`. Send `is_vip: true` or `false` on `POST /api/guest` or `PUT /api/guest/{id}`. Admins only, like the rest of the guest endpoints. A non-boolean value returns `422` on `is_vip`.
+- List VIP guests with `GET /api/guest?filter[is_vip]=true`.
+- `GET /api/dashboard` has new `vip_guests_count` and `vip_guests` fields: VIP guests checked in now or arriving today, with their current stay and room. Names only, no contact details. See [Dashboard API](/D:/Hospitality%20Ecosystem/docs/dashboard-api-documentation.md#field-notes-for-the-ui).
+- If `POST /api/guest` reuses an existing guest (same email or phone), the submitted `is_vip` is not applied. Flag an existing guest with `PUT`.
+- The WhatsApp concierge is warmer and more attentive with a VIP guest and never mentions the status to them. Every service request it creates for a VIP guest is `high` priority, whatever priority it would otherwise have chosen.
+
+**Full doc:** [Guest API](/D:/Hospitality%20Ecosystem/docs/guest-api-documentation.md#the-guest-object)
+
 ## Checklist
 
 - [ ] Confirm `API_KEY` is set on the production server before this deploys.
+- [ ] Guests screen: add a VIP toggle to the guest form, and a VIP badge and filter to the list.
+- [ ] Dashboard: show `vip_guests` (checked in now or arriving today).
 - [ ] Send the login bearer token on `GET /api/check-paired`.
 - [ ] Handle an expired pairing code: show a "generate a new code" action.
 - [ ] Connect WhatsApp modal: send the number as typed (URL-encoded), ask for it with the country code, and show the `422` `phone_number` message inline.
 - [ ] Remove "Super admin" from a regular admin's role picker, and don't send `hotel_group_id` / `group_role` from admin screens.
 - [ ] Booking status UI: only offer the moves in the transition table, and surface a `422` message if a stale screen tries another.
-- [ ] Run `php artisan migrate` (included in the deploy workflow) — it changes the `reservations` unique index.
+- [ ] Run `php artisan migrate` (included in the deploy workflow) — it changes the `reservations` unique index and adds `guests.is_vip`.

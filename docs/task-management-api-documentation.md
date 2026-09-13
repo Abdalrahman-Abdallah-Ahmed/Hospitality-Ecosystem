@@ -264,7 +264,7 @@ Field notes:
 
 - `created_by` is a fixed enum: `ai`, `system`, `guest`, `maintenance_schedule`, `manual`. Defaults to `ai` if omitted.
 - `status` is a fixed enum: `pending`, `in_progress`, `completed`, `cancelled`. Defaults to `pending`.
-- `priority` is a fixed enum: `low`, `normal`, `high`. Defaults to `normal`.
+- `priority` is a fixed enum: `low`, `normal`, `high`. Defaults to `normal`. A service request the WhatsApp concierge creates for a VIP guest (`guest.is_vip`) is always `high`.
 - Unlike `category` on hotel-policy or `status` on room, **these three fields are real, server-enforced enums** — sending any other string returns a `422`.
 - **Tasks use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row. (Teams and task categories do **not** soft-delete — only Task does.)
 - `index`, `show`, `store`, and `update` all eager-load only `hotel`, `guest`, `room`. **`assignedToTeam`, `assignedToUser`, `taskCategory`, `reservation`, and `createdByUser` are never eager-loaded** — you only get the raw `*_id` values for those. If you need to display the team name, category name, or assignee name on a task row, resolve those ids client-side against data you've already fetched from `GET /api/team` / `GET /api/task-category` / your user list, rather than expecting them embedded here.

@@ -331,6 +331,7 @@ Creates a guest for the authenticated user's hotel.
     "bed_type": "king"
   },
   "loyalty_status": "gold",
+  "is_vip": false,
   "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking_com"
@@ -343,6 +344,7 @@ Creates a guest for the authenticated user's hotel.
 - `first_name`, `last_name`, `email`, `phone_number`, `nationality`, `loyalty_status`, and `external_id` are optional strings.
 - `preferred_language` defaults to `en`.
 - `preferences` is a JSON object/array.
+- `is_vip` is boolean and defaults to `false`. It marks a guest the hotel treats as VIP. It is separate from `loyalty_status`, which usually comes from the PMS. If the guest is reused (see above), the submitted `is_vip` is not applied; set it with `PUT /api/guest/{id}` instead.
 - `marketing_consent` is boolean.
 - `channel` must be one of the allowed reservation-channel enum values.
 

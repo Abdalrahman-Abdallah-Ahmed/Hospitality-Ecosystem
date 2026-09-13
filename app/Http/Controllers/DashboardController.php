@@ -6,6 +6,8 @@ use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
 use App\Http\Resources\ReservationResource;
+use App\Http\Resources\VipGuestResource;
+use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\Stay;
@@ -59,6 +61,19 @@ class DashboardController extends Controller
 
         $roomRevenueToday = Stay::where('status', StayStatus::IN_HOUSE)->sum('room_revenue');
 
+        // VIPs staff need to look after right now: checked in, or due today.
+        $currentVipStays = fn ($query) => $query->where(fn ($query) => $query
+            ->where('status', StayStatus::IN_HOUSE)
+            ->orWhere(fn ($query) => $query
+                ->where('status', StayStatus::EXPECTED)
+                ->whereDate('planned_arrival_date', now()->toDateString())));
+
+        $vipGuests = Guest::where('is_vip', true)
+            ->whereHas('stays', $currentVipStays)
+            ->with(['stays' => fn ($query) => $currentVipStays($query)->with('room')])
+            ->orderBy('first_name')
+            ->get();
+
         $data = [
             'pending_tasks' => $pendingTasks,
             'in_progress_tasks' => $inProgressTasks,
@@ -66,6 +81,8 @@ class DashboardController extends Controller
             'today_arrivals' => ReservationResource::collection($todayArrivals),
             'today_departures_count' => $todayDepartures->count(),
             'today_departures' => ReservationResource::collection($todayDepartures),
+            'vip_guests_count' => $vipGuests->count(),
+            'vip_guests' => VipGuestResource::collection($vipGuests),
             'occupancy' => [
                 'date' => $requestedDate ?? now()->toDateString(),
                 'occupied_rooms' => $occupiedRooms,

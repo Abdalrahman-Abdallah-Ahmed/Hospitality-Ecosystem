@@ -88,6 +88,7 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, `co
     "high_floor": true
   },
   "loyalty_status": "gold",
+  "is_vip": true,
   "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking",
@@ -135,6 +136,7 @@ Field notes for the UI:
 - `id` and `hotel_id` are UUID strings, not integers.
 - `preferences` is a JSON object/array field and comes back as parsed JSON, not a string.
 - `marketing_consent` is a boolean.
+- `is_vip` is a boolean, `false` unless an admin flags the guest. Use it for a VIP badge. It is separate from `loyalty_status`, which is free text that usually comes from the PMS. For a VIP guest, the WhatsApp concierge is warmer and more attentive but never mentions the status, and every service request it creates is `high` priority.
 - `preferred_language` defaults to `"en"` at the database level when omitted on create.
 - `channel` is an enum-like field server-side. It must be one of the reservation channel values defined by the backend; do not send arbitrary strings.
 - `email` is currently only validated as a plain string by the generic validator, not with an email-format rule. The frontend should still validate email format client-side.
@@ -162,6 +164,8 @@ All optional:
 | `per_page` | integer, 1-100 | `per_page=25` | Page size. Defaults to 15. |
 
 `filter`/`sort` are validated against the guests table's real columns, so an unknown key returns a `422`.
+
+To list VIP guests, use `filter[is_vip]=true`; `filter[is_vip]=false` lists everyone else.
 
 ### Success Response
 
@@ -203,6 +207,7 @@ HTTP `422`:
     "bed_type": "king"
   },
   "loyalty_status": "gold",
+  "is_vip": true,
   "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking"
@@ -222,6 +227,7 @@ HTTP `422`:
 | `nationality` | optional, string, max 255. |
 | `preferences` | optional, array/object. |
 | `loyalty_status` | optional, string, max 255. |
+| `is_vip` | optional, boolean. Defaults to `false` if omitted. |
 | `marketing_consent` | optional, boolean. Defaults to `false` if omitted. |
 | `external_id` | optional, string, max 255. |
 | `channel` | optional, must be one of the backend enum values. |
@@ -392,3 +398,4 @@ The UI should distinguish this from custom business-rule errors like:
 - `email` should be validated client-side even though the backend currently treats it as a generic string.
 - `DELETE` is soft-delete, not hard-delete.
 - **New:** `POST /api/guest` no longer creates a duplicate row for a guest who already exists at this hotel with the same `email` or `phone_number`, even if `channel`/`external_id` differ — it reuses (and restores, if soft-deleted) the existing guest instead. Check `body.id` against a guest you already knew about if your UI needs to tell "reused" apart from "newly created."
+- **New:** `is_vip` flags a VIP guest. Set it on create or update, and list VIPs with `filter[is_vip]=true`. When create reuses an existing guest, the submitted `is_vip` is not applied, so flag an existing guest with `PUT`.

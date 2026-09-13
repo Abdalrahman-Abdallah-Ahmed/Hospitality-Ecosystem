@@ -69,6 +69,28 @@ HTTP `200 OK`:
     "today_departures": [
       { "...": "same shape as today_arrivals, filtered by departure_date instead" }
     ],
+    "vip_guests_count": 1,
+    "vip_guests": [
+      {
+        "id": "019fabcd-1234-7000-9000-123456789abc",
+        "first_name": "Sara",
+        "last_name": "Ahmed",
+        "preferred_language": "en",
+        "stays": [
+          {
+            "id": "019fabcd-5555-7000-9000-abcdef123456",
+            "status": "in_house",
+            "room_id": "019f9b37-c268-738c-bc46-53281c1763cf",
+            "...": "the full stay object, as on the guest object in the Guest API doc",
+            "room": {
+              "id": "019f9b37-c268-738c-bc46-53281c1763cf",
+              "room_number": "101",
+              "...": "..."
+            }
+          }
+        ]
+      }
+    ],
     "occupancy": {
       "date": "2026-08-26",
       "occupied_rooms": 5,
@@ -94,6 +116,8 @@ HTTP `200 OK`:
 | `today_arrivals` | The **full reservation objects** for the same set — not just ids. Each has `room` eager-loaded (see [Room Object](#room_number-caveat) below), but **not** `guest` — resolve guest names from data you already have if needed. |
 | `today_departures_count` | Same as `today_arrivals_count`, but for `departure_date`. |
 | `today_departures` | Same shape as `today_arrivals`, filtered by `departure_date` instead of `arrival_date`. |
+| `vip_guests_count` | Number of entries in `vip_guests`. |
+| `vip_guests` | Guests flagged `is_vip` at the caller's hotel who are checked in now (a stay with `status: in_house`) or due to arrive today (`status: expected` with `planned_arrival_date` today), ordered by first name. Each entry has `id`, `first_name`, `last_name`, `preferred_language` and `stays`. `stays` holds only those matching stays, each with `room` loaded; `room` can be `null`. **No email or phone number:** this endpoint is open to every hotel user, and guest contact details are admin-only. Not affected by `?date=`. For every VIP guest, use `GET /api/guest?filter[is_vip]=true`. |
 | `occupancy` | See [Occupancy Object](#occupancy-object) below. **Replaces** the old flat `occupancy_percentage` field. |
 | `booking_value_today` | Sum of `reservation_value` across all reservations in the caller's hotel **created today** (`created_at`, not `arrival_date`). **Renamed from `revenue_today`** — the old name was misleading: this is the value of bookings *made* today, not revenue for stays happening today (see `room_revenue_today` below). This is a raw SQL `SUM()`, not a hydrated model field, so its type is inconsistent: when there's at least one matching reservation it comes back as a **numeric string** (e.g. `"1250.75"`) — but when there are **no** matching reservations it comes back as the **plain number `0`**, not `"0.00"` or `null`. Handle both shapes (`Number(booking_value_today)` works for either in JS). This total is also **not** filtered by `status` — a reservation created today and immediately cancelled still counts toward it. |
 | `room_revenue_today` | **Now a real number** (Phase 1 WP-2 shipped) — the sum of `room_revenue` across every `stay` currently `in_house` at the caller's hotel. A stay's `room_revenue` is set from its reservation's `reservation_value` when the stay is created (Phase 1 has no per-night rate breakdown yet, so the whole reservation value stands in for room revenue). Same numeric-string-or-`0` typing caveat as `booking_value_today`. |
@@ -162,6 +186,7 @@ curl -X GET http://your-domain.com/api/dashboard \
 - `today_arrivals`/`today_departures` are full reservation objects (with `room`, not `guest`), not just counts — use the paired `*_count` fields for KPI tiles and the arrays for a table/list widget.
 - These arrival/departure lists are **not** status-filtered — cancelled reservations for today still show up; filter client-side if that matters for the widget.
 - `room` on a reservation can be `null` — null-check before reading `room.room_number`.
+- **New:** `vip_guests` / `vip_guests_count` list VIP guests checked in now or arriving today, with their current stay and room, for a VIP widget. They carry no contact details.
 - **Breaking change:** the old flat `occupancy_percentage` and `revenue_today` fields are gone. `occupancy_percentage` is now `occupancy.percentage`. `revenue_today` is renamed `booking_value_today` (same value, honest name) — the old name implied stay revenue, which is what `room_revenue_today` is for.
 - `booking_value_today` sums `reservation_value` for reservations **created** today (not arriving today), includes cancelled ones, and switches type between a numeric string and plain `0` depending on whether any rows matched — coerce with `Number(...)` rather than assuming one type.
 - **`occupancy` and `room_revenue_today` now work for any date** (Phase 1 WP-2 shipped): `occupancy.occupied_rooms`/`percentage` are real numbers for a past/future `?date=` too (computed from `stays`, `basis: "stay_events"`), not `null` like they briefly were. `room_revenue_today` is a real sum of in-house stays' room revenue, not always `null` anymore.
