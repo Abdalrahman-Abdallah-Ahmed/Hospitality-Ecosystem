@@ -79,30 +79,57 @@ Successful custom API responses use this structure:
 ```json
 {
   "id": "019facde-1111-7000-9000-abcdef123456",
-  "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
-  "team_id": "019fabcd-1234-7000-9000-123456789abc",
   "name": "Youssef Kamal",
   "email": "youssef@example.com",
-  "phone_number": "+201234567890",
   "role": "employee",
+  "phone_number": "+201234567890",
+  "team_id": "019fabcd-1234-7000-9000-123456789abc",
+  "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+  "hotel_group_id": null,
+  "group_role": null,
   "email_verified_at": null,
-  "created_at": "2026-08-01T10:00:00.000000Z",
-  "updated_at": "2026-08-01T10:00:00.000000Z",
+  "team": {
+    "id": "019fabcd-1234-7000-9000-123456789abc",
+    "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+    "name": "Housekeeping",
+    "description": "Room cleaning and turndown",
+    "is_active": true,
+    "created_at": "2026-07-15T09:00:00.000000Z",
+    "updated_at": "2026-07-15T09:00:00.000000Z"
+  },
   "hotel": {
     "id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+    "owner_id": "019f9b37-0000-7000-9000-000000000001",
+    "hotel_group_id": null,
     "name": "Grand Harbor Hotel",
-    "slug": "grand-harbor-hotel"
-  }
+    "slug": "grand-harbor-hotel",
+    "timezone": "Africa/Cairo",
+    "currency": "EGP",
+    "country_code": "EG",
+    "city": "Alexandria",
+    "address": "1 Corniche Road",
+    "whatsapp_number": "201000000000",
+    "email": "info@grandharbor.example",
+    "phone": "+2031234567",
+    "branding": null,
+    "ai_preferences": null,
+    "is_active": true,
+    "created_at": "2026-07-01T08:00:00.000000Z",
+    "updated_at": "2026-07-01T08:00:00.000000Z"
+  },
+  "created_at": "2026-08-01T10:00:00.000000Z",
+  "updated_at": "2026-08-01T10:00:00.000000Z"
 }
 ```
 
 Field notes for the UI:
 
-- `id`, `hotel_id`, and `team_id` are UUID strings, not integers. `hotel_id` and `team_id` can both be `null`.
-- `password` and `remember_token` are **never** included in the response — they're hidden at the model level.
+- `id`, `hotel_id`, `team_id`, and `hotel_group_id` are UUID strings, not integers. All three foreign keys can be `null`.
+- `password` and `remember_token` are **never** included in the response — the body is built by `UserResource`, which doesn't output them.
 - `role` is one of `admin`, `employee`, `super_admin`. Defaults to `employee` at the database level if omitted on create.
-- `hotel` is eager-loaded and included on every response from this controller (`show`, `store`, `update`, and each row in `index`). It can be `null` if the user has no `hotel_id`.
-- There is **no `team` relation** eager-loaded here — you only get `team_id`. Resolve the team name from your own team list/cache if you need to display it.
+- `hotel_group_id` and `group_role` describe account (hotel group) membership; both are `null` for a user who isn't a group member. Only a super admin can write them — see [Create](#2-create-a-user).
+- `hotel` and `team` are both eager-loaded on every response from this controller (`show`, `store`, `update`, and each row in `index`). Either can be `null` if the matching id is unset.
+- `hotel` is the full hotel object (`HotelResource`), not a trimmed summary. Its own nested `owner` and `hotel_group` are not loaded, so those keys are absent. `team` is `TeamResource` without its `hotel`, `members`, or `task_categories`.
 - Users are **not** soft-deleted — `DELETE` permanently removes the row (see [Delete a User](#5-delete-a-user)).
 
 ## 1. List Users
@@ -129,7 +156,41 @@ All optional:
 
 ### Success Response
 
-HTTP `200 OK`. `body` is a Laravel paginator object; `body.data` contains [user objects](#the-user-object).
+HTTP `200 OK`. `body` is a Laravel **API Resource collection** (`UserResource::collection($paginator)`), not a flat paginator. `body.data` holds [user objects](#the-user-object), and pagination lives under `body.meta` and `body.links`, not at the top level of `body`:
+
+```json
+{
+  "message": "Users fetched successfully.",
+  "code": 200,
+  "body": {
+    "data": [
+      { "...": "one or more user objects, see The User Object above" }
+    ],
+    "links": {
+      "first": "http://your-domain.com/api/users?page=1",
+      "last": "http://your-domain.com/api/users?page=1",
+      "prev": null,
+      "next": null
+    },
+    "meta": {
+      "current_page": 1,
+      "from": 1,
+      "last_page": 1,
+      "links": [
+        { "url": null, "label": "&laquo; Previous", "page": null, "active": false },
+        { "url": "http://your-domain.com/api/users?page=1", "label": "1", "page": 1, "active": true },
+        { "url": null, "label": "Next &raquo;", "page": null, "active": false }
+      ],
+      "path": "http://your-domain.com/api/users",
+      "per_page": 15,
+      "to": 4,
+      "total": 4
+    }
+  }
+}
+```
+
+For pagination UI, read `body.meta.current_page`, `body.meta.last_page`, `body.meta.total`, and `body.meta.per_page`, not `body.current_page` and so on.
 
 ### Error: Unknown Filter/Sort Column
 
@@ -404,6 +465,8 @@ curl -X DELETE http://your-domain.com/api/users/019facde-1111-7000-9000-abcdef12
 - `/api/users` (plural, this document) is the admin/super-admin user-management CRUD. `/api/user` (singular) is an unrelated "who am I" endpoint open to any authenticated user — don't conflate the two in routing/permissions logic.
 - Employees (any non-admin, non-super-admin) get `403` on every route here — treat as "not your page," don't render this UI for them at all.
 - `index` scoping differs by role: an admin sees only their own hotel's users (plus themselves, always); a super admin sees every user in the system.
+- `index`'s pagination metadata is nested under `body.meta` (`current_page`, `last_page`, `total`, `per_page`), not flat on `body`.
+- Every user object carries both the `hotel_id`/`team_id` scalars and the nested `hotel`/`team` objects (either can be `null`).
 - Never send `hotel_id` on **update** — it's always forced server-side and any value you send is silently ignored.
 - On **create**, only a super admin's `hotel_id` is actually used; a regular admin's is always overwritten with their own hotel. A super admin who omits `hotel_id` creates a hotel-less user — make sure your super-admin create form always sends one for regular staff.
 - `team_id` (create and update) must belong to the same hotel the user is/will be in, or you get a `403` with a dedicated message — surface it as a form-level error near the team picker.

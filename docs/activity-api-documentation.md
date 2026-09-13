@@ -81,7 +81,6 @@ Every endpoint that returns an activity (`index`, `store`, `show`, `update`) eag
   "is_active": true,
   "created_at": "2026-08-01T10:00:00.000000Z",
   "updated_at": "2026-08-01T10:00:00.000000Z",
-  "deleted_at": null,
   "category": {
     "id": "019fabcd-1234-7000-9000-123456789abc",
     "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
@@ -99,7 +98,7 @@ Field notes for the UI:
 - `id`, `hotel_id`, and `category_id` are UUID strings, not integers.
 - `price` is cast as `decimal:2` — it comes back as a **string** (e.g. `"35.50"`), not a JSON number. Parse it before doing math on it.
 - `currency` is a free-text 3-character string, not a restricted enum server-side — the frontend should constrain it to real currency codes.
-- **Activities use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row (unlike rooms, which hard-delete). A deleted activity simply stops showing up in `index`/`show`.
+- **Activities use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row (unlike rooms, which hard-delete). A deleted activity simply stops showing up in `index`/`show`. `deleted_at` is not part of the response body (`ActivityResource` doesn't output it).
 - `category_id` is nullable — an activity can exist with no category, in which case **`category` comes back as `null`**, not an object. Always null-check `activity.category` before reading `activity.category.name`. Populate the category picker itself from [`GET /api/activity-category`](#activity-category-api) (this embedded object is read-only convenience, not a substitute for the picker list).
 
 ## 1. List Activities
