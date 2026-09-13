@@ -17,6 +17,7 @@ use App\Services\BookingService;
 use App\Services\TransactionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Laravel\Ai\Tools\Request;
 
 uses(RefreshDatabase::class);
@@ -105,6 +106,48 @@ it('refuses to reopen a cancelled booking', function () {
     app(BookingService::class)->cancel($booking, 'weather');
 
     expect(fn () => app(BookingService::class)->realise($booking))->toThrow(RuntimeException::class);
+});
+
+it('never moves a realised booking back', function () {
+    [, $hotel] = bookingAdminWithHotel();
+    $booking = bookingFor($hotel);
+    $service = app(BookingService::class);
+
+    $service->realise($booking);
+
+    // The guest attended; a stale request must not rewrite that.
+    expect(fn () => $service->confirm($booking))->toThrow(RuntimeException::class, 'A realised booking cannot be marked confirmed.');
+    expect(fn () => $service->markNoShow($booking))->toThrow(RuntimeException::class);
+    expect(fn () => $service->cancel($booking, 'too late'))->toThrow(RuntimeException::class);
+
+    expect($booking->fresh()->status)->toBe(BookingStatus::REALISED)
+        ->and($booking->fresh()->realised_at)->not->toBeNull();
+});
+
+it('lets a no-show become realised when the guest turns up late, but not cancelled', function () {
+    [, $hotel] = bookingAdminWithHotel();
+    $booking = bookingFor($hotel);
+    $service = app(BookingService::class);
+
+    $service->markNoShow($booking);
+
+    expect(fn () => $service->cancel($booking, 'rewriting history'))->toThrow(RuntimeException::class);
+
+    $service->realise($booking);
+
+    expect($booking->fresh()->status)->toBe(BookingStatus::REALISED)
+        ->and($booking->fresh()->realised_at)->not->toBeNull();
+});
+
+it('treats repeating a status change as a no-op that keeps the original time', function () {
+    [, $hotel] = bookingAdminWithHotel();
+    $booking = bookingFor($hotel);
+    $service = app(BookingService::class);
+
+    $service->realise($booking, Carbon::parse('2026-09-10 18:00:00'));
+    $service->realise($booking, Carbon::parse('2026-09-11 09:00:00'));
+
+    expect($booking->fresh()->realised_at->toDateTimeString())->toBe('2026-09-10 18:00:00');
 });
 
 it('refuses to settle an included booking', function () {

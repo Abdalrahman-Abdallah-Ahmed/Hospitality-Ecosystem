@@ -46,6 +46,18 @@ The all-inclusive case is the clearest: revenue zero, outcome ideal.
 a commitment, the other one who withdrew it in time. Different operational
 responses, different signals.
 
+Status only moves forward (enforced by `BookingService`):
+
+| From | May move to |
+| --- | --- |
+| `pending` | `confirmed`, `realised`, `no_show`, `cancelled` |
+| `confirmed` | `realised`, `no_show`, `cancelled` |
+| `no_show` | `realised` — the guest turned up late |
+| `realised`, `cancelled` | nothing — final |
+
+Asking for the status a booking already has is a no-op: it succeeds and keeps
+the original timestamp (`confirmed_at`, `realised_at`, `cancellation_reason`).
+
 Bookings are **never deleted** — they are cancelled, with a reason. The history
 is the point, same rule as the ledger.
 
@@ -180,9 +192,11 @@ system can observe attendance — not the agent, not the ledger (an included
 activity produces no transaction), not the importer. Without it,
 `realisation_rate` has nothing to measure.
 
-A cancelled booking cannot be reopened (`422`) — letting a stale process
-resurrect a commitment the guest withdrew is worse than making someone create
-a new one.
+A move the [transition table](#bookingstatus) does not allow returns `422` with
+a message such as `A realised booking cannot be marked confirmed.` — a cancelled
+booking cannot be reopened, and a realised one cannot be marked anything else.
+Letting a stale process rewrite what happened is worse than making someone
+create a new booking.
 
 ## Related Docs
 

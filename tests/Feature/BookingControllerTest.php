@@ -114,6 +114,17 @@ it('refuses to reopen a cancelled booking through the endpoint', function () {
     bookingApi($admin, 'POST', "/api/booking/{$booking->id}/status", ['status' => 'realised'])->assertStatus(422);
 });
 
+it('refuses to move a realised booking back through the endpoint', function () {
+    [$admin, $hotel] = wp5AdminWithHotel();
+    $booking = wp5Booking($hotel, ['guest_id' => wp5Recommendation($hotel)[1]->id]);
+
+    bookingApi($admin, 'POST', "/api/booking/{$booking->id}/status", ['status' => 'realised'])->assertOk();
+
+    bookingApi($admin, 'POST', "/api/booking/{$booking->id}/status", ['status' => 'confirmed'])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'A realised booking cannot be marked confirmed.');
+});
+
 it('rejects a guest from another hotel', function () {
     [$admin, $hotel] = wp5AdminWithHotel();
     [, $otherHotel] = wp5AdminWithHotel();
