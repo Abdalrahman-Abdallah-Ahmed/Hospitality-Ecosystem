@@ -9,6 +9,7 @@ use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\JsonResponse;
 
 class UserController extends Controller
@@ -65,6 +66,8 @@ class UserController extends Controller
         }
 
         $user = User::create([...$validated, 'hotel_id' => $hotel?->id]);
+
+        Registered::dispatch($user);
 
         return apiResponse('User created successfully.', 201, UserResource::make($user->load(['hotel', 'team'])));
     }
