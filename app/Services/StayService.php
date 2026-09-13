@@ -16,33 +16,42 @@ use Illuminate\Support\Carbon;
 class StayService
 {
     /**
-     * Every reservation produces exactly one stay. Idempotent by design —
-     * re-importing the same reservation (or otherwise calling this twice
-     * for the same reservation_id) returns the existing stay rather than
-     * creating a duplicate; the database's unique index on stays.reservation_id
-     * backs this up even under concurrent calls.
+     * Every reservation has exactly one stay, and the stay's planned side
+     * follows the reservation. A moved room, changed dates, or a corrected
+     * party size must reach the stay, or occupancy history and transaction
+     * attribution keep reading the booking as it was first entered.
+     *
+     * Idempotent: calling it again returns the same stay (the unique index
+     * on stays.reservation_id backs this). What actually happened — status,
+     * check-in and check-out times, nights — is never touched here; that is
+     * checkIn() and friends.
      */
-    public function createFromReservation(Reservation $reservation): Stay
+    public function syncFromReservation(Reservation $reservation): Stay
     {
-        return Stay::firstOrCreate(
+        $planned = [
+            'guest_id' => $reservation->guest_id,
+            'room_id' => $reservation->room_id,
+            'planned_arrival_date' => $reservation->arrival_date,
+            'planned_departure_date' => $reservation->departure_date,
+            'adults' => $reservation->adults ?? 1,
+            'children' => $reservation->children ?? 0,
+            // A simple proxy for now: Phase 1 keeps one room per stay and
+            // has no per-night rate breakdown, so the reservation's total
+            // value stands in for room revenue until WP-3's ledger exists.
+            'room_revenue' => $reservation->reservation_value ?? 0,
+            'currency' => $reservation->currency ?? 'EUR',
+            'source_channel' => $reservation->source,
+        ];
+
+        $stay = Stay::firstOrCreate(
             ['reservation_id' => $reservation->id],
-            [
-                'hotel_id' => $reservation->hotel_id,
-                'guest_id' => $reservation->guest_id,
-                'room_id' => $reservation->room_id,
-                'planned_arrival_date' => $reservation->arrival_date,
-                'planned_departure_date' => $reservation->departure_date,
-                'status' => StayStatus::EXPECTED,
-                'adults' => $reservation->adults ?? 1,
-                'children' => $reservation->children ?? 0,
-                // A simple proxy for now: Phase 1 keeps one room per stay and
-                // has no per-night rate breakdown, so the reservation's total
-                // value stands in for room revenue until WP-3's ledger exists.
-                'room_revenue' => $reservation->reservation_value ?? 0,
-                'currency' => $reservation->currency ?? 'EUR',
-                'source_channel' => $reservation->source,
-            ]
+            ['hotel_id' => $reservation->hotel_id, 'status' => StayStatus::EXPECTED, ...$planned],
         );
+
+        // A no-op on the call that just created it; carries edits on every later one.
+        $stay->update($planned);
+
+        return $stay;
     }
 
     /**

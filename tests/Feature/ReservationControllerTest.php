@@ -6,6 +6,7 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\User;
+use App\Support\Reservations\ReservationCreator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -194,6 +195,88 @@ it('restores a soft-deleted reservation instead of throwing a duplicate-key erro
     expect(Reservation::count())->toBe(1);
     expect(Reservation::withTrashed()->count())->toBe(1);
     expect($reservation->fresh()->trashed())->toBeFalse();
+});
+
+it('lets two hotels use the same reservation id', function () {
+    [$admin, $hotel] = adminWithHotel();
+    [, $otherHotel] = adminWithHotel();
+    reservationFor($otherHotel, ['reservation_id' => 'RES-SHARED01']);
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-own', 'channel' => 'booking_com']);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', [
+            'hotel_id' => $hotel->id,
+            'guest_id' => $guest->id,
+            'reservation_id' => 'RES-SHARED01',
+            'arrival_date' => '2026-10-01',
+            'departure_date' => '2026-10-04',
+        ])
+        ->assertCreated();
+
+    expect(Reservation::withoutGlobalScope('hotel')->where('reservation_id', 'RES-SHARED01')->count())->toBe(2);
+});
+
+it('rejects a reservation id the same hotel already uses', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $existing = reservationFor($hotel, ['reservation_id' => 'RES-TAKEN01']);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', [
+            'hotel_id' => $hotel->id,
+            'guest_id' => $existing->guest_id,
+            'reservation_id' => 'RES-TAKEN01',
+            'arrival_date' => '2026-10-01',
+            'departure_date' => '2026-10-04',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['reservation_id']);
+
+    expect(Reservation::withoutGlobalScope('hotel')->where('reservation_id', 'RES-TAKEN01')->count())->toBe(1);
+});
+
+it('rejects changing a reservation id to one another reservation in the hotel uses', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $taken = reservationFor($hotel, ['reservation_id' => 'RES-TAKEN02']);
+    $reservation = Reservation::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $taken->guest_id,
+        'reservation_id' => 'RES-MINE0001',
+        'arrival_date' => '2026-09-01',
+        'departure_date' => '2026-09-04',
+    ]);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/reservation/{$reservation->id}", ['reservation_id' => 'RES-TAKEN02'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['reservation_id']);
+
+    expect($reservation->fresh()->reservation_id)->toBe('RES-MINE0001');
+});
+
+it('never restores another hotel soft-deleted reservation that shares its id', function () {
+    [, $hotel] = adminWithHotel();
+    [, $otherHotel] = adminWithHotel();
+    $theirs = reservationFor($otherHotel, ['reservation_id' => 'RES-SHARED02', 'adults' => 1]);
+    $theirs->delete();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-own', 'channel' => 'booking_com']);
+
+    // No tenant context here — the same as the queued WhatsApp job that
+    // creates reservations through this method.
+    $ours = ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-SHARED02',
+        'arrival_date' => '2026-10-01',
+        'departure_date' => '2026-10-04',
+        'adults' => 3,
+    ]);
+
+    $theirsNow = Reservation::withoutGlobalScope('hotel')->withTrashed()->find($theirs->id);
+
+    expect($ours->id)->not->toBe($theirs->id)
+        ->and($ours->hotel_id)->toBe($hotel->id)
+        ->and($theirsNow->trashed())->toBeTrue()
+        ->and($theirsNow->adults)->toBe(1);
 });
 
 // show
