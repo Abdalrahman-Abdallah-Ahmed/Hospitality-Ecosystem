@@ -3,28 +3,23 @@
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Tools\CreateActivityTool;
 use App\Ai\Tools\CreateGuestTool;
-use App\Ai\Tools\CreateHotelPolicyTool;
 use App\Ai\Tools\CreateRoomTool;
 use App\Ai\Tools\CreateTaskTool;
 use App\Enums\CreatedBy;
-use App\Enums\KnowledgeBaseCategory;
 use App\Enums\Priority;
 use App\Enums\RoomTypes;
 use App\Enums\TaskStatus;
 use App\Enums\UserRole;
-use App\Jobs\SyncKnowledgeChunksJob;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
 use App\Models\Guest;
 use App\Models\Hotel;
-use App\Models\HotelPolicy;
 use App\Models\Room;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Tools\Request;
 
 uses(RefreshDatabase::class);
@@ -220,6 +215,9 @@ it('gives the admin advisor its create tools, each bound to the admin\'s own hot
         'CreateActivityTool',
         'CreateTaskTool',
         'CreateGuestTool',
-        'CreateHotelPolicyTool',
     );
+
+    // Policies are quoted to guests as the hotel's own word, so the advisor
+    // is deliberately not given a way to write one.
+    expect($tools)->not->toContain('CreateHotelPolicyTool');
 });
