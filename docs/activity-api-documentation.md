@@ -36,14 +36,16 @@ Both resources follow the same shape: `App\Policies\ActivityPolicy` / `App\Polic
 
 | Resource | Action | Rule (non-super-admin) |
 | --- | --- | --- |
-| Activity | `index`, `store` | `role` must be `admin`. |
-| Activity | `show`, `update`, `destroy` | `role` must be `admin`, **and** the activity's `hotel_id` must equal the caller's own hotel. |
+| Activity | `index` | `role` must be `admin` or `employee`. |
+| Activity | `show` | `role` must be `admin` or `employee`, **and** the activity's `hotel_id` must equal the caller's own hotel. |
+| Activity | `store` | `role` must be `admin`. |
+| Activity | `update`, `destroy` | `role` must be `admin`, **and** the activity's `hotel_id` must equal the caller's own hotel. |
 | Activity Category | `index`, `store` | `role` must be `admin`. |
 | Activity Category | `show`, `update`, `destroy` | `role` must be `admin`, **and** the category's `hotel_id` must equal the caller's own hotel. |
 
 Practical implications for the UI:
 
-- A non-admin user (`employee`) should never reach either screen — treat any `403` here as "this user shouldn't be able to see this page," not a recoverable in-page error.
+- An `employee` can list and view activities (for the booking form's activity picker) but gets `403` on every write, and on every activity-category endpoint. Hide the management screens for them.
 - A `403` on `show`/`update`/`destroy` for a specific id most likely means the id belongs to a different hotel (e.g. a stale link/bookmark) — show a "not found or not yours" style message rather than a raw permission error.
 - Both `index` queries are separately scoped to `where('hotel_id', <the user's hotel>)`, so the list only ever contains rows for the user's own hotel.
 

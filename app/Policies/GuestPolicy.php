@@ -16,11 +16,13 @@ class GuestPolicy
     }
 
     /**
-     * Determine whether the user can view any models.
+     * Employees can read guests as well as admins: they take bookings at the
+     * desk (see BookingPolicy), and a booking needs a guest picked from this
+     * list. Changing a guest stays with admins.
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $user->isAdmin() || $user->isEmployee();
     }
 
     /**
@@ -28,7 +30,8 @@ class GuestPolicy
      */
     public function view(User $user, Guest $guest): bool
     {
-        return $user->isAdmin() && $guest->hotel_id === $user->hotel?->id;
+        return ($user->isAdmin() || $user->isEmployee())
+            && $guest->hotel_id === $user->hotel?->id;
     }
 
     /**

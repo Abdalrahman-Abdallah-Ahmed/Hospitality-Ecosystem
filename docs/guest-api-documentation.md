@@ -41,13 +41,14 @@ Every action is gated by `App\Policies\GuestPolicy`, on top of the bearer-token 
 
 | Action | Rule |
 | --- | --- |
-| `index` (list) | The logged-in user's `role` must be `admin`. |
+| `index` (list) | The logged-in user's `role` must be `admin` or `employee`. |
+| `show` | The user must be `admin` or `employee`, **and** the guest's `hotel_id` must equal the user's hotel. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
-| `show` / `update` / `destroy` | The user must be `admin`, **and** the guest's `hotel_id` must equal the hotel the user owns. |
+| `update` / `destroy` | The user must be `admin`, **and** the guest's `hotel_id` must equal the hotel the user owns. |
 
 Practical implications for the UI:
 
-- A non-admin user should never reach this screen; treat any `403` here as "this user should not be on this page," not an in-page recoverable state.
+- Employees can read guests (they need a guest picker to take bookings) but get `403` on create, update and delete. Hide those actions for them.
 - A `403` on `show`/`update`/`destroy` for a specific guest id most likely means the id belongs to a different hotel. Treat it the same as "not found or not yours."
 - `index` is additionally query-scoped to `where('hotel_id', <the user's hotel>)`, so the list only ever contains guests from the current admin's hotel.
 

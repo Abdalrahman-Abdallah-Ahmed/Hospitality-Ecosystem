@@ -350,3 +350,43 @@ it('never lists another hotel\'s VIP guests', function () {
 
     expect($response->json('body.data.*.id'))->toBe([$ownVip->id]);
 });
+
+it('lets an employee list and view their own hotel guests for the booking form', function () {
+    [, $hotel] = adminWithGuestHotel();
+    [, $otherHotel] = adminWithGuestHotel();
+    $employee = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
+    $own = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Own']);
+    $other = Guest::create(['hotel_id' => $otherHotel->id, 'first_name' => 'Other']);
+
+    $list = $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->getJson('/api/guest')
+        ->assertOk();
+
+    expect($list->json('body.data.*.id'))->toBe([$own->id]);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->getJson("/api/guest/{$own->id}")
+        ->assertOk();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->getJson("/api/guest/{$other->id}")
+        ->assertForbidden();
+});
+
+it('does not let an employee change guests', function () {
+    [, $hotel] = adminWithGuestHotel();
+    $employee = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Own']);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'first_name' => 'New'])
+        ->assertForbidden();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['first_name' => 'Changed'])
+        ->assertForbidden();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->deleteJson("/api/guest/{$guest->id}")
+        ->assertForbidden();
+});

@@ -24,6 +24,14 @@ class TaskCategoryPolicy
     }
 
     /**
+     * Determine whether the user can view the model.
+     */
+    public function view(User $user, TaskCategory $taskCategory): bool
+    {
+        return $user->isAdmin() && $taskCategory->hotel_id === $user->hotel?->id;
+    }
+
+    /**
      * Determine whether the user can create models.
      */
     public function create(User $user): bool

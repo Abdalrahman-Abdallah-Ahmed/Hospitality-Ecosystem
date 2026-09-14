@@ -40,6 +40,8 @@ Notes:
 
 with HTTP status `401`.
 
+**The API key is not a secret.** A browser frontend ships it in its bundle, so anyone can read it. It identifies the client app; it is not access control. Every protected route is guarded by the bearer token and the per-role policies, and `register` / `login` are rate limited (see [Rate Limiting](#rate-limiting)).
+
 ### 2. JSON Content Type
 
 For request bodies, send:
@@ -232,6 +234,27 @@ HTTP `200 OK`
 
 - Logout removes the **current** access token only.
 - If the same user is logged in on multiple devices or sessions, other tokens remain active.
+
+## Rate Limiting
+
+| Endpoint | Limit |
+| --- | --- |
+| `POST /api/login` | 5 attempts per minute per email + IP, and 20 per minute per IP across all emails. |
+| `POST /api/register` | 5 attempts per minute per IP. |
+
+Every attempt counts, successful or not. Over the limit the API returns HTTP `429` with a `Retry-After` header (seconds):
+
+```json
+{
+  "message": "Too Many Attempts."
+}
+```
+
+On `429`, show "Too many attempts, try again in N seconds" using `Retry-After`, and disable the submit button until then.
+
+## Browser Origins (CORS)
+
+Only the origins in the server's `CORS_ALLOWED_ORIGINS` (comma-separated; defaults to `http://localhost:3000`) may call the API from a browser. A frontend served from any other origin fails the CORS preflight. Add each deployed frontend URL to that variable.
 
 ## Validation Error Format
 

@@ -33,8 +33,8 @@ Route::post('/whatsapp', [WhatsAppController::class, 'whatsappWebhook'])
     ->middleware('whatsapp.signature');
 
 Route::middleware('api.key')->group(function () {
-    Route::post('/register', [RegisterUserController::class, 'apiStore']);
-    Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->name('login');
+    Route::post('/register', [RegisterUserController::class, 'apiStore'])->middleware('throttle:register');
+    Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->middleware('throttle:login')->name('login');
     Route::post('/pair', [WhatsAppController::class, 'pair']);
 
     Route::middleware(['auth:sanctum', 'tenant'])->group(function () {

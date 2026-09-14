@@ -44,6 +44,38 @@ it('logs in an existing user through the api', function () {
         ->assertJsonPath('body.user.email', $user->email);
 });
 
+it('throttles repeated failed logins for the same email', function () {
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+
+    $user = User::factory()->create(['email' => 'carol@example.com']);
+
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        $this->withHeader('X-API-KEY', 'test-api-key')
+            ->postJson('/api/login', ['email' => $user->email, 'password' => 'wrong-password'])
+            ->assertStatus(401);
+    }
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/login', ['email' => $user->email, 'password' => 'wrong-password'])
+        ->assertStatus(429);
+});
+
+it('throttles failed logins sprayed across many emails from one ip', function () {
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+
+    foreach (range(1, 20) as $attempt) {
+        $this->withHeader('X-API-KEY', 'test-api-key')
+            ->postJson('/api/login', ['email' => "user{$attempt}@example.com", 'password' => 'wrong-password'])
+            ->assertStatus(401);
+    }
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/login', ['email' => 'another@example.com', 'password' => 'wrong-password'])
+        ->assertStatus(429);
+});
+
 it('registers a user through the api endpoint', function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);

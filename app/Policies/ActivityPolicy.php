@@ -16,11 +16,13 @@ class ActivityPolicy
     }
 
     /**
-     * Determine whether the user can view any models.
+     * Employees can read activities as well as admins: a booking taken at the
+     * desk (see BookingPolicy) is for an activity picked from this list.
+     * Changing the catalogue stays with admins.
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $user->isAdmin() || $user->isEmployee();
     }
 
     /**
@@ -28,7 +30,8 @@ class ActivityPolicy
      */
     public function view(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
+        return ($user->isAdmin() || $user->isEmployee())
+            && $activity->hotel_id === $user->hotel?->id;
     }
 
     /**

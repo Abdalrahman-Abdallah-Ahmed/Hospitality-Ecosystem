@@ -23,7 +23,7 @@ All endpoints below are defined in `routes/api.php`, served under:
 Examples:
 
 - `GET /api/team`, `POST /api/team`, `PUT /api/team/{id}`, `DELETE /api/team/{id}`, `POST /api/team/{id}/members`
-- `GET /api/task-category`, `POST /api/task-category`, `PUT /api/task-category/{id}`, `DELETE /api/task-category/{id}`
+- `GET /api/task-category`, `POST /api/task-category`, `GET /api/task-category/{id}`, `PUT /api/task-category/{id}`, `DELETE /api/task-category/{id}`
 - `GET /api/task`, `POST /api/task`, `GET /api/task/{id}`, `PUT /api/task/{id}`, `DELETE /api/task/{id}`
 
 ## Required Headers
@@ -50,7 +50,7 @@ All three policies follow the same shape: a `before()` hook lets **`super_admin`
 | Team | `index`, `create` | `role` must be `admin`. |
 | Team | `show`, `update`, `delete`, add member | `role` must be `admin`, **and** the team's `hotel_id` must equal the caller's own hotel. |
 | Task Category | `index`, `create` | `role` must be `admin`. |
-| Task Category | `update`, `delete` | `role` must be `admin`, **and** the category's `hotel_id` must equal the caller's own hotel. |
+| Task Category | `show`, `update`, `delete` | `role` must be `admin`, **and** the category's `hotel_id` must equal the caller's own hotel. |
 | Task | `index`, `create` | `role` must be `admin`. |
 | Task | `show`, `update`, `delete` | `role` must be `admin`, **and** the task's `hotel_id` must equal the caller's own hotel. |
 
@@ -193,13 +193,15 @@ Task categories and tasks are safe by comparison: `task_categories.team_id` and 
 - No soft deletes — `DELETE` is permanent.
 - `index` eager-loads `hotel` and `team`. `store`/`update` also load `hotel` and `team`.
 
-**There is currently no `GET /api/task-category/{id}` (show) endpoint working**, even though the route is registered (`Route::resource(...)->except(['edit', 'create'])` includes `show` by default). `TaskCategoryController` has no `show()` method, so hitting that URL will error server-side rather than return `404` cleanly. **Do not build a single-category detail fetch against this endpoint** — build the detail/edit view from the row you already have in the list, the same workaround used for `hotel-policy` (see `docs/hotel-policy-api-documentation.md`). Flag this to the backend team if you need it fixed.
-
 ### 2.1 List Task Categories — `GET /api/task-category`
 
 Same generic `filter`/`search`/`sort`/`page`/`per_page` params. Filterable/sortable columns: `id`, `hotel_id`, `team_id`, `name`, `description`, `created_at`, `updated_at`.
 
-### 2.2 Create a Task Category — `POST /api/task-category`
+### 2.2 Get a Task Category — `GET /api/task-category/{id}`
+
+Success: `200`, `body` is the [task category object](#the-task-category-object) with `hotel` and `team` loaded. `404` if the id doesn't exist, `403` if it belongs to a different hotel or the caller isn't an admin.
+
+### 2.3 Create a Task Category — `POST /api/task-category`
 
 ```json
 {
@@ -219,7 +221,7 @@ Same generic `filter`/`search`/`sort`/`page`/`per_page` params. Filterable/sorta
 
 Success: `201`, `body` is the created [task category object](#the-task-category-object).
 
-### 2.3 Update a Task Category — `PUT /api/task-category/{id}`
+### 2.4 Update a Task Category — `PUT /api/task-category/{id}`
 
 Same fields, all optional. `hotel_id` is still forced server-side to the record's own hotel on every update — you cannot reassign a category to a different hotel this way. `team_id`, if sent, is re-validated against the caller's hotel the same way as create.
 
@@ -227,7 +229,7 @@ Same fields, all optional. `hotel_id` is still forced server-side to the record'
 
 Success: `200`, `body` is the updated [task category object](#the-task-category-object).
 
-### 2.4 Delete a Task Category — `DELETE /api/task-category/{id}`
+### 2.5 Delete a Task Category — `DELETE /api/task-category/{id}`
 
 Hard delete. Tasks referencing this category have `task_category_id` set to `NULL` automatically (`nullOnDelete()`).
 
@@ -457,7 +459,7 @@ curl -X POST http://your-domain.com/api/task \
 - `hotel_id` is required in the request body on every Team/TaskCategory/Task create call (send the caller's own hotel id), but it is **always overwritten server-side** — you can never create or move a record into a different hotel through these endpoints.
 - Team membership is single (`team_id` on the user), managed only via `POST /api/team/{id}/members`, and restricted to users with `role: employee`.
 - Filter the task-category picker by the chosen team (`filter[team_id]=`) before letting the user pick a category on a task — the backend rejects team/category combinations that don't match.
-- `GET /api/task-category/{id}` does not work — don't build a detail fetch against it.
+- `GET /api/task-category/{id}` returns a single category with `hotel` and `team` loaded.
 - Task's `status`/`priority`/`created_by` are real server-side enums (see [The Task Object](#the-task-object) for the fixed value lists) — safe to drive a `<select>` directly from them.
 - None of Task's relation ids (`assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `room_id`, `guest_id`, `reservation_id`, `created_by_user_id`) come back with the related object embedded — resolve names from data you already have.
 - Task deletion is soft (`deleted_at`); Team and TaskCategory deletion is permanent.

@@ -8,8 +8,12 @@ use App\Models\KnowledgeBaseArticle;
 use App\Models\WhatsAppDevice;
 use App\Observers\HotelPolicyObserver;
 use App\Observers\KnowledgeBaseArticleObserver;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Laravel\Ai\Events\AgentFailedOver;
 use Laravel\Ai\Events\AgentPrompted;
 use Laravel\Ai\Events\EmbeddingsGenerated;
@@ -40,8 +44,37 @@ class AppServiceProvider extends ServiceProvider
         KnowledgeBaseArticle::observe(KnowledgeBaseArticleObserver::class);
         HotelPolicy::observe(HotelPolicyObserver::class);
 
+        $this->refuseDebugOutsideLocal();
         $this->recordAiCost();
         $this->refusePairingCodesAsApiTokens();
+        $this->throttleAuthentication();
+    }
+
+    /**
+     * Debug mode renders stack traces with server paths into API error
+     * responses. A deployed .env left with APP_DEBUG=true would publish them,
+     * so it is only honoured where nobody else can reach the server.
+     */
+    private function refuseDebugOutsideLocal(): void
+    {
+        if (! $this->app->environment('local', 'testing')) {
+            config(['app.debug' => false]);
+        }
+    }
+
+    /**
+     * The API key is shipped in the frontend bundle, so it does not stop
+     * anyone reaching these routes. Login is limited per email and per IP so a
+     * password can't be guessed against one account or sprayed across many.
+     */
+    private function throttleAuthentication(): void
+    {
+        RateLimiter::for('login', fn (Request $request) => [
+            Limit::perMinute(5)->by(Str::lower((string) $request->input('email')).'|'.$request->ip()),
+            Limit::perMinute(20)->by($request->ip()),
+        ]);
+
+        RateLimiter::for('register', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
     }
 
     /**
