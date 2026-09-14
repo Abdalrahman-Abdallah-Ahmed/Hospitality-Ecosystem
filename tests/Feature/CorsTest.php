@@ -13,6 +13,12 @@ it('allows a preflight from a configured frontend origin', function () {
         ->assertHeader('Access-Control-Allow-Origin', 'https://app.example');
 });
 
+it('exposes Retry-After to the frontend so it can show a throttle countdown', function () {
+    $this->withHeaders(['Origin' => 'https://app.example'])
+        ->postJson('/api/login')
+        ->assertHeader('Access-Control-Expose-Headers', 'Retry-After');
+});
+
 it('does not allow a preflight from any other origin', function () {
     $response = $this->withHeaders([
         'Origin' => 'https://evil.example',

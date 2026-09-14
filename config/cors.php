@@ -28,7 +28,8 @@ return [
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => [],
+    // Lets a browser frontend read how long to wait after a 429 on login.
+    'exposed_headers' => ['Retry-After'],
 
     'max_age' => 0,
 

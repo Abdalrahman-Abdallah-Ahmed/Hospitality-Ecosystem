@@ -250,7 +250,7 @@ Every attempt counts, successful or not. Over the limit the API returns HTTP `42
 }
 ```
 
-On `429`, show "Too many attempts, try again in N seconds" using `Retry-After`, and disable the submit button until then.
+On `429`, show "Too many attempts, try again in N seconds" using `Retry-After`, and disable the submit button until then. The header is listed in `Access-Control-Expose-Headers`, so a browser frontend on an allowed origin can read it.
 
 ## Browser Origins (CORS)
 
