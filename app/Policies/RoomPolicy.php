@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Room;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class RoomPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class RoomPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::ROOMS_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class RoomPolicy
      */
     public function view(User $user, Room $room): bool
     {
-        return $user->isAdmin() && $room->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ROOMS_VIEW, $room);
     }
 
     /**
@@ -36,7 +40,7 @@ class RoomPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::ROOMS_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class RoomPolicy
      */
     public function update(User $user, Room $room): bool
     {
-        return $user->isAdmin() && $room->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ROOMS_UPDATE, $room);
     }
 
     /**
@@ -52,7 +56,7 @@ class RoomPolicy
      */
     public function delete(User $user, Room $room): bool
     {
-        return $user->isAdmin() && $room->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ROOMS_DELETE, $room);
     }
 
     /**

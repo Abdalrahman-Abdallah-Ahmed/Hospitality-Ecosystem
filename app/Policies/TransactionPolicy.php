@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class TransactionPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class TransactionPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TRANSACTIONS_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class TransactionPolicy
      */
     public function view(User $user, Transaction $transaction): bool
     {
-        return $user->isAdmin() && $transaction->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TRANSACTIONS_VIEW, $transaction);
     }
 
     /**
@@ -36,16 +40,17 @@ class TransactionPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TRANSACTIONS_IMPORT);
     }
 
     /**
      * Determine whether the user can reverse the model. Reversal is the only
-     * sanctioned correction — the ledger has no update or delete.
+     * sanctioned correction — the ledger has no update or delete, whatever
+     * permissions a role grants.
      */
     public function reverse(User $user, Transaction $transaction): bool
     {
-        return $user->isAdmin() && $transaction->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TRANSACTIONS_REVERSE, $transaction);
     }
 
     public function update(User $user, Transaction $transaction): bool

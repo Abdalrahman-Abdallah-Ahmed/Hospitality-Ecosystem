@@ -38,6 +38,8 @@ Notes:
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `reservations.view` (index, show), `reservations.create`, `reservations.update`, `reservations.delete`, and `reservations.import` (import has its own permission and no longer reuses `create`). Employees without a role have none of these.
+
 Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-token check above:
 
 | Action | Rule |
@@ -45,7 +47,7 @@ Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-
 | `index` (list) | The logged-in user's `role` must be `admin`. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user must be `admin`, **and** the reservation's `hotel_id` must equal the hotel the user owns. |
-| `import` (bulk upload) | Same `create` check as above — `role` must be `admin`. **Unlike every other write endpoint, a super admin cannot target an arbitrary hotel here** — see [§6](#6-import-reservations-bulk-upload). |
+| `import` (bulk upload) | `role` must be `admin` (or an employee with `reservations.import`). **Unlike every other write endpoint, a super admin cannot target an arbitrary hotel here** — see [§6](#6-import-reservations-bulk-upload). |
 
 Practical implications for the UI:
 

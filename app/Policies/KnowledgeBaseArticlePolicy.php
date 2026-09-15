@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class KnowledgeBaseArticlePolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class KnowledgeBaseArticlePolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::KNOWLEDGE_BASE_ARTICLES_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class KnowledgeBaseArticlePolicy
      */
     public function view(User $user, KnowledgeBaseArticle $knowledgeBaseArticle): bool
     {
-        return $user->isAdmin() && $knowledgeBaseArticle->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::KNOWLEDGE_BASE_ARTICLES_VIEW, $knowledgeBaseArticle);
     }
 
     /**
@@ -36,7 +40,7 @@ class KnowledgeBaseArticlePolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::KNOWLEDGE_BASE_ARTICLES_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class KnowledgeBaseArticlePolicy
      */
     public function update(User $user, KnowledgeBaseArticle $knowledgeBaseArticle): bool
     {
-        return $user->isAdmin() && $knowledgeBaseArticle->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::KNOWLEDGE_BASE_ARTICLES_UPDATE, $knowledgeBaseArticle);
     }
 
     /**
@@ -52,6 +56,6 @@ class KnowledgeBaseArticlePolicy
      */
     public function delete(User $user, KnowledgeBaseArticle $knowledgeBaseArticle): bool
     {
-        return $user->isAdmin() && $knowledgeBaseArticle->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::KNOWLEDGE_BASE_ARTICLES_DELETE, $knowledgeBaseArticle);
     }
 }

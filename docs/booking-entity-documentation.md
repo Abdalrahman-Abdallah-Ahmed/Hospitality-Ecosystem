@@ -149,6 +149,11 @@ admin bypasses). Deliberately wider than most write endpoints here — the perso
 at the dive centre is the one who knows whether the guest turned up, and an
 attendance instrument only admins can reach will not record attendance.
 
+Since 2026-09-15 this is the default for employees without a
+[staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
+A role replaces it: `bookings.view` (list, show), `bookings.create`,
+`bookings.update_status`. No role can grant editing or deleting a booking.
+
 ### `POST /api/booking`
 
 ```json

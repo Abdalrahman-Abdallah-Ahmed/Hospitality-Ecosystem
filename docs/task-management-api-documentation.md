@@ -43,6 +43,8 @@ Content-Type: application/json
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `teams.view`, `teams.create`, `teams.update` (also covers adding a member), `teams.delete`; `task_categories.view`, `.create`, `.update`, `.delete`; `tasks.view`, `.create`, `.update`, `.delete`. Employees without a role have none of these.
+
 All three policies follow the same shape: a `before()` hook lets **`super_admin` bypass every check below, unconditionally**.
 
 | Resource | Action | Rule (non-super-admin) |

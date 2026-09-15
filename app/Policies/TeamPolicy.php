@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Team;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class TeamPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class TeamPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TEAMS_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class TeamPolicy
      */
     public function view(User $user, Team $team): bool
     {
-        return $user->isAdmin() && $team->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TEAMS_VIEW, $team);
     }
 
     /**
@@ -36,15 +40,15 @@ class TeamPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TEAMS_CREATE);
     }
 
     /**
-     * Determine whether the user can update the model.
+     * Determine whether the user can update the model, including its members.
      */
     public function update(User $user, Team $team): bool
     {
-        return $user->isAdmin() && $team->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TEAMS_UPDATE, $team);
     }
 
     /**
@@ -52,7 +56,7 @@ class TeamPolicy
      */
     public function delete(User $user, Team $team): bool
     {
-        return $user->isAdmin() && $team->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TEAMS_DELETE, $team);
     }
 
     /**

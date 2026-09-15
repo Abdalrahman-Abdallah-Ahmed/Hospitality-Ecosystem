@@ -124,7 +124,7 @@ class ReservationController extends Controller
      */
     public function import(ImportReservationsRequest $request): JsonResponse
     {
-        $this->authorize('create', Reservation::class);
+        $this->authorize('import', Reservation::class);
 
         $hotel = $request->user()->hotel;
         if (! $hotel) {

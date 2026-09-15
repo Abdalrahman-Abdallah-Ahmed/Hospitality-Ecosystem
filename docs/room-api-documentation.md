@@ -37,6 +37,8 @@ Notes:
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `rooms.view` (index, show), `rooms.create`, `rooms.update`, `rooms.delete`. Employees without a role have none of these.
+
 Every action is gated by `App\Policies\RoomPolicy`, on top of the bearer-token check above:
 
 | Action | Rule |

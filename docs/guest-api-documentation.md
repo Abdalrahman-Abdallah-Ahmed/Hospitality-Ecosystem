@@ -37,6 +37,8 @@ Notes:
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** the `employee` rules below are the defaults for an employee without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md). A role replaces them, always within the employee's own hotel: `guests.view` (index, show), `guests.create`, `guests.update`, `guests.delete`. A role without `guests.view` removes read access too.
+
 Every action is gated by `App\Policies\GuestPolicy`, on top of the bearer-token check above:
 
 | Action | Rule |

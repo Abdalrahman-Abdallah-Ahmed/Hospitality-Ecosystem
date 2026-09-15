@@ -32,6 +32,8 @@ Content-Type: application/json
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** the `employee` rules below are the defaults for an employee without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md). A role replaces them, always within the employee's own hotel: `activities.view` (index, show), `activities.create`, `activities.update`, `activities.delete`, and `activity_categories.view`, `.create`, `.update`, `.delete`.
+
 Both resources follow the same shape: `App\Policies\ActivityPolicy` / `App\Policies\ActivityCategoryPolicy`, each with a `before()` hook that lets `super_admin` bypass every rule below unconditionally — but see [Super Admin Caveats](#super-admin-caveats), because several of these endpoints have a separate hotel check that isn't bypassed.
 
 | Resource | Action | Rule (non-super-admin) |

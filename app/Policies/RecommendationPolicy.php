@@ -2,12 +2,16 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class RecommendationPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -21,7 +25,7 @@ class RecommendationPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::RECOMMENDATIONS_VIEW);
     }
 
     /**
@@ -29,7 +33,7 @@ class RecommendationPolicy
      */
     public function view(User $user, Recommendation $recommendation): bool
     {
-        return $user->isAdmin() && $recommendation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RECOMMENDATIONS_VIEW, $recommendation);
     }
 
     /**
@@ -39,11 +43,7 @@ class RecommendationPolicy
      */
     public function create(User $user, ?Reservation $reservation = null): bool
     {
-        if (! $user->isAdmin()) {
-            return false;
-        }
-
-        return $reservation === null || $reservation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RECOMMENDATIONS_GENERATE, $reservation);
     }
 
     /**
@@ -51,21 +51,15 @@ class RecommendationPolicy
      */
     public function update(User $user, Recommendation $recommendation): bool
     {
-        return $user->isAdmin() && $recommendation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RECOMMENDATIONS_UPDATE, $recommendation);
     }
 
     /**
      * Determine whether the user can record what happened to a recommendation.
-     *
-     * Deliberately wider than every other write ability here: employees are
-     * the people standing at the desk when a guest says no, and a
-     * refusal-capture instrument only admins can use will not capture
-     * refusals. Still scoped to their own hotel.
      */
     public function recordOutcome(User $user, Recommendation $recommendation): bool
     {
-        return ($user->isAdmin() || $user->isEmployee())
-            && $recommendation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RECOMMENDATIONS_RECORD_OUTCOME, $recommendation);
     }
 
     /**
@@ -73,7 +67,7 @@ class RecommendationPolicy
      */
     public function delete(User $user, Recommendation $recommendation): bool
     {
-        return $user->isAdmin() && $recommendation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RECOMMENDATIONS_DELETE, $recommendation);
     }
 
     /**

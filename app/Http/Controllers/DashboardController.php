@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Permission;
 use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
@@ -18,6 +19,10 @@ class DashboardController extends Controller
 {
     public function generalData(Request $request)
     {
+        if (! $request->user()->hasPermission(Permission::DASHBOARD_VIEW)) {
+            return apiResponse('This action is unauthorized.', 403);
+        }
+
         $hotel = $request->user()->hotel;
 
         if (! $hotel) {

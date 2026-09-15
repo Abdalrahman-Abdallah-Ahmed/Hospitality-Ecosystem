@@ -195,6 +195,11 @@ class Hotel extends Model
         return $this->hasMany(KnowledgeBaseArticle::class);
     }
 
+    public function staffRoles(): HasMany
+    {
+        return $this->hasMany(StaffRole::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

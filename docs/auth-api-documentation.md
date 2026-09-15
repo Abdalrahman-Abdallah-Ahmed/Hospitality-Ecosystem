@@ -113,13 +113,21 @@ HTTP `201 Created`
   "code": 201,
   "body": {
     "user": {
-      "id": 1,
+      "id": "019facde-1111-7000-9000-abcdef123456",
       "name": "John Doe",
-      "email": "john@example.com"
-    }
+      "email": "john@example.com",
+      "role": "admin",
+      "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+      "staff_role_id": null,
+      "staff_role": null,
+      "permissions": ["activities.view", "activities.create", "...every permission"]
+    },
+    "hotel": { "...": "HotelResource" }
   }
 }
 ```
+
+The registering user is always the new hotel's `admin`, so `permissions` lists every permission and `staff_role` is `null`. See [Staff Roles API](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
 
 ### Important Frontend Note
 
@@ -166,13 +174,27 @@ HTTP `200 OK`
     "token": "1|exampleSanctumTokenHere",
     "token_type": "Bearer",
     "user": {
-      "id": 1,
+      "id": "019facde-1111-7000-9000-abcdef123456",
       "name": "John Doe",
-      "email": "john@example.com"
+      "email": "john@example.com",
+      "role": "employee",
+      "staff_role_id": "019fb2a0-1111-7000-9000-abcdef123456",
+      "staff_role": {
+        "id": "019fb2a0-1111-7000-9000-abcdef123456",
+        "name": "Housekeeping",
+        "permissions": ["rooms.view", "tasks.view", "tasks.update"]
+      },
+      "permissions": ["rooms.view", "tasks.view", "tasks.update"],
+      "hotel": { "...": "HotelResource" },
+      "team": null
     }
   }
 }
 ```
+
+`body.user` is the full user object (see [User Management API § The User Object](/D:/Hospitality%20Ecosystem/docs/user-management-api-documentation.md#the-user-object)), with `hotel`, `team` and `staff_role` loaded. `staff_role` above is shortened.
+
+`permissions` is the user's effective permission list: every permission for an admin, and the role's list or the defaults for an employee. See [Staff Roles API](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
 
 ### Frontend Handling
 
@@ -185,6 +207,8 @@ After a successful login:
 ```http
 Authorization: Bearer {token}
 ```
+
+4. Use `body.user.permissions` to build navigation and actions right away. There's no need to call `GET /api/user` first.
 
 ### Invalid Credentials Response
 

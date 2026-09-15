@@ -8,9 +8,12 @@
 
 // each admin user can only manage users that belong to their own hotel
 
+use App\Enums\Permission;
 use App\Enums\UserRole;
+use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\StaffRole;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -483,6 +486,114 @@ it('rejects an admin deleting a user belonging to a different hotel', function (
         ->assertStatus(403);
 
     expect(User::find($staff->id))->not->toBeNull();
+});
+
+// staff roles
+
+function staffRoleForUsers(Hotel $hotel, array $overrides = []): StaffRole
+{
+    return StaffRole::create(array_merge([
+        'hotel_id' => $hotel->id,
+        'name' => 'Front Desk',
+        'permissions' => [Permission::ROOMS_VIEW->value],
+    ], $overrides));
+}
+
+it('lets an admin assign a staff role from their own hotel and records it', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $staff = staffForUsers($hotel);
+    $role = staffRoleForUsers($hotel);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['staff_role_id' => $role->id])
+        ->assertOk()
+        ->assertJsonPath('body.staff_role_id', $role->id)
+        ->assertJsonPath('body.staff_role.name', 'Front Desk')
+        ->assertJsonPath('body.permissions', [Permission::ROOMS_VIEW->value]);
+
+    $event = EventLog::withoutGlobalScopes()
+        ->where('event_type', 'user.staff_role_assigned')
+        ->where('subject_id', $staff->id)
+        ->first();
+
+    expect($event)->not->toBeNull()
+        ->and($event->changes['staff_role_id'])->toBe(['from' => null, 'to' => $role->id]);
+});
+
+it('creates an employee with a staff role', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $role = staffRoleForUsers($hotel);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/users', [
+            'name' => 'New Hire',
+            'email' => 'new-hire@example.com',
+            'password' => 'Password123!',
+            'staff_role_id' => $role->id,
+        ])
+        ->assertStatus(201)
+        ->assertJsonPath('body.staff_role_id', $role->id);
+});
+
+it('rejects assigning a staff role belonging to a different hotel', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $staff = staffForUsers($hotel);
+    [, $otherHotel] = adminWithOwnedHotelForUsers();
+    $role = staffRoleForUsers($otherHotel);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['staff_role_id' => $role->id])
+        ->assertStatus(403);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/users', [
+            'name' => 'New Hire',
+            'email' => 'new-hire@example.com',
+            'password' => 'Password123!',
+            'staff_role_id' => $role->id,
+        ])
+        ->assertStatus(403);
+
+    expect($staff->fresh()->staff_role_id)->toBeNull()
+        ->and(User::where('email', 'new-hire@example.com')->exists())->toBeFalse();
+});
+
+it('rejects giving a staff role to an admin', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $coManager = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
+    $role = staffRoleForUsers($hotel);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$coManager->id}", ['staff_role_id' => $role->id])
+        ->assertStatus(422);
+
+    expect($coManager->fresh()->staff_role_id)->toBeNull();
+});
+
+it('clears the staff role of an employee promoted to admin', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $role = staffRoleForUsers($hotel);
+    $staff = staffForUsers($hotel, ['staff_role_id' => $role->id]);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['role' => UserRole::ADMIN->value])
+        ->assertOk()
+        ->assertJsonPath('body.staff_role_id', null);
+});
+
+it('moves an employee back to the default permissions when their role is removed', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $role = staffRoleForUsers($hotel);
+    $staff = staffForUsers($hotel, ['staff_role_id' => $role->id]);
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['staff_role_id' => null])
+        ->assertOk()
+        ->assertJsonPath('body.staff_role_id', null)
+        ->assertJsonPath('body.permissions', array_map(
+            fn (Permission $permission) => $permission->value,
+            Permission::employeeDefaults(),
+        ));
 });
 
 it('lets a super admin delete a user belonging to any hotel', function () {

@@ -2,10 +2,14 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class AiInsightsPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -19,7 +23,7 @@ class AiInsightsPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::AI_INSIGHTS_VIEW);
     }
 
     /**
@@ -27,6 +31,6 @@ class AiInsightsPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::AI_INSIGHTS_GENERATE);
     }
 }

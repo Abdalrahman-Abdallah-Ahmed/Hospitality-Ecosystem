@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\EventLog;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class EventLogPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,12 +24,12 @@ class EventLogPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::HISTORY_VIEW);
     }
 
     public function view(User $user, EventLog $eventLog): bool
     {
-        return $user->isAdmin() && $eventLog->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::HISTORY_VIEW, $eventLog);
     }
 
     // The event log has no write API — it is populated only by RecordsEvents.

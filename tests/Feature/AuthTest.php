@@ -1,5 +1,9 @@
 <?php
 
+use App\Enums\Permission;
+use App\Enums\UserRole;
+use App\Models\Hotel;
+use App\Models\StaffRole;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -42,6 +46,39 @@ it('logs in an existing user through the api', function () {
 
     $response->assertStatus(200)
         ->assertJsonPath('body.user.email', $user->email);
+});
+
+it('returns the staff role and effective permissions on login', function () {
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create([
+        'owner_id' => $admin->id,
+        'name' => 'Login Hotel',
+        'slug' => 'login-hotel-'.$admin->id,
+        'currency' => 'USD',
+    ]);
+    $role = StaffRole::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Housekeeping',
+        'permissions' => [Permission::ROOMS_VIEW->value],
+    ]);
+    $employee = User::factory()->create([
+        'email' => 'dana@example.com',
+        'password' => bcrypt('Password123!'),
+        'hotel_id' => $hotel->id,
+        'staff_role_id' => $role->id,
+    ]);
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/login', [
+            'email' => $employee->email,
+            'password' => 'Password123!',
+        ])
+        ->assertOk()
+        ->assertJsonPath('body.user.staff_role.name', 'Housekeeping')
+        ->assertJsonPath('body.user.permissions', [Permission::ROOMS_VIEW->value]);
 });
 
 it('throttles repeated failed logins for the same email', function () {
@@ -93,7 +130,13 @@ it('registers a user through the api endpoint', function () {
         ]);
 
     $response->assertStatus(201)
-        ->assertJsonPath('body.user.email', 'api@example.com');
+        ->assertJsonPath('body.user.email', 'api@example.com')
+        ->assertJsonPath('body.user.role', UserRole::ADMIN->value)
+        ->assertJsonPath('body.user.staff_role', null)
+        ->assertJsonPath('body.user.permissions', array_map(
+            fn (Permission $permission) => $permission->value,
+            Permission::cases(),
+        ));
 
     expect(User::where('email', 'api@example.com')->exists())->toBeTrue();
 });

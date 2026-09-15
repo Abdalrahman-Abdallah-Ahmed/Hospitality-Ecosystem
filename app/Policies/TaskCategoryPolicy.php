@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\TaskCategory;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class TaskCategoryPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class TaskCategoryPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TASK_CATEGORIES_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class TaskCategoryPolicy
      */
     public function view(User $user, TaskCategory $taskCategory): bool
     {
-        return $user->isAdmin() && $taskCategory->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TASK_CATEGORIES_VIEW, $taskCategory);
     }
 
     /**
@@ -36,7 +40,7 @@ class TaskCategoryPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TASK_CATEGORIES_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class TaskCategoryPolicy
      */
     public function update(User $user, TaskCategory $taskCategory): bool
     {
-        return $user->isAdmin() && $taskCategory->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TASK_CATEGORIES_UPDATE, $taskCategory);
     }
 
     /**
@@ -52,7 +56,7 @@ class TaskCategoryPolicy
      */
     public function delete(User $user, TaskCategory $taskCategory): bool
     {
-        return $user->isAdmin() && $taskCategory->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TASK_CATEGORIES_DELETE, $taskCategory);
     }
 
     /**

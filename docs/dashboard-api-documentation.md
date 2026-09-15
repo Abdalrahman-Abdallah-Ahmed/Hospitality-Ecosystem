@@ -24,7 +24,7 @@ Accept: application/json
 
 ## Who Can Call This
 
-Any authenticated user, **as long as they belong to a hotel.** A user with no `hotel_id` (e.g. a super admin, who typically has no owned hotel) gets a `403` — see below. There is no hotel-scoping query param; the response is always scoped to the caller's own hotel, with no way for a super admin to request another hotel's dashboard through this endpoint. (There is an optional `?date=` param — see [Occupancy Object](#occupancy-object) — but it only changes which date the occupancy figures describe, not which hotel.)
+Any authenticated user holding `dashboard.view` (admins, employees without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md), and employees whose role grants it), **as long as they belong to a hotel.** An employee whose role leaves out `dashboard.view` gets `403` `{ "message": "This action is unauthorized.", "code": 403, "body": null }`. A user with no `hotel_id` (e.g. a super admin, who typically has no owned hotel) gets a `403` — see below. There is no hotel-scoping query param; the response is always scoped to the caller's own hotel, with no way for a super admin to request another hotel's dashboard through this endpoint. (There is an optional `?date=` param — see [Occupancy Object](#occupancy-object) — but it only changes which date the occupancy figures describe, not which hotel.)
 
 ## Response Format
 

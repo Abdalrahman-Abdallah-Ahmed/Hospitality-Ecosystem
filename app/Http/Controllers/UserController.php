@@ -9,6 +9,7 @@ use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
+use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,8 @@ class UserController extends Controller
      */
     private const ACCOUNT_ATTRIBUTES = ['hotel_group_id', 'group_role'];
 
+    private const RELATIONS = ['hotel', 'team', 'staffRole'];
+
     /**
      * Display a listing of the resource.
      */
@@ -29,7 +32,7 @@ class UserController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $query = User::with(['hotel', 'team']);
+        $query = User::with(self::RELATIONS);
 
         if (! $request->user()->isSuperAdmin()) {
             $hotelId = $request->user()->hotel?->id;
@@ -77,9 +80,17 @@ class UserController extends Controller
             return apiResponse('The selected team does not belong to you.', 403);
         }
 
+        $role = $validated['role'] ?? UserRole::EMPLOYEE->value;
+
+        if ($denied = $this->denyStaffRole($validated, $hotel, $role)) {
+            return $denied;
+        }
+
         $user = User::create([...$validated, 'hotel_id' => $hotel?->id]);
 
-        return apiResponse('User created successfully.', 201, UserResource::make($user->load(['hotel', 'team'])));
+        $this->recordStaffRoleAssignment($user, from: null);
+
+        return apiResponse('User created successfully.', 201, UserResource::make($user->load(self::RELATIONS)));
     }
 
     /**
@@ -89,7 +100,7 @@ class UserController extends Controller
     {
         $this->authorize('view', $user);
 
-        return apiResponse('User fetched successfully.', 200, UserResource::make($user->load(['hotel', 'team'])));
+        return apiResponse('User fetched successfully.', 200, UserResource::make($user->load(self::RELATIONS)));
     }
 
     /**
@@ -112,9 +123,25 @@ class UserController extends Controller
             return apiResponse('The selected team does not belong to you.', 403);
         }
 
+        $role = $validated['role'] ?? $user->role->value;
+
+        if ($denied = $this->denyStaffRole($validated, $hotel, $role)) {
+            return $denied;
+        }
+
+        // A user who stops being an employee loses their staff role, rather
+        // than keeping one that would silently apply again on a demotion.
+        if ($role !== UserRole::EMPLOYEE->value) {
+            $validated['staff_role_id'] = null;
+        }
+
+        $previousStaffRoleId = $user->staff_role_id;
+
         $user->update($validated);
 
-        return apiResponse('User updated successfully.', 200, UserResource::make($user->load(['hotel', 'team'])));
+        $this->recordStaffRoleAssignment($user, from: $previousStaffRoleId);
+
+        return apiResponse('User updated successfully.', 200, UserResource::make($user->load(self::RELATIONS)));
     }
 
     /**
@@ -141,6 +168,45 @@ class UserController extends Controller
         }
 
         return apiResponse('Only a super admin can assign the super admin role.', 403);
+    }
+
+    /**
+     * A staff role can only be given to an employee — admins already hold
+     * every permission — and must belong to the user's hotel. The schema rule
+     * only checks the id exists somewhere.
+     */
+    private function denyStaffRole(array $validated, ?Hotel $hotel, string $role): ?JsonResponse
+    {
+        $staffRoleId = $validated['staff_role_id'] ?? null;
+
+        if ($staffRoleId === null) {
+            return null;
+        }
+
+        if ($role !== UserRole::EMPLOYEE->value) {
+            return apiResponse('Only employees can be given a staff role.', 422);
+        }
+
+        if (! $hotel || invalidRelation($hotel, ['staffRoles' => $staffRoleId])) {
+            return apiResponse('The selected staff role does not belong to you.', 403);
+        }
+
+        return null;
+    }
+
+    /**
+     * User is not an audited model, so a change of staff role — a change of
+     * what someone may do — is recorded here explicitly.
+     */
+    private function recordStaffRoleAssignment(User $user, ?string $from): void
+    {
+        if ($user->staff_role_id === $from) {
+            return;
+        }
+
+        EventLogger::record($user, 'staff_role_assigned', [
+            'staff_role_id' => ['from' => $from, 'to' => $user->staff_role_id],
+        ]);
     }
 
     /**
