@@ -83,6 +83,18 @@ Every endpoint that returns an activity (`index`, `store`, `show`, `update`) eag
   "price": "35.50",
   "currency": "USD",
   "is_active": true,
+  "available_from": "2026-10-01",
+  "available_until": "2027-04-30",
+  "operating_hours": {
+    "monday": [
+      { "start": "09:00", "end": "12:00" },
+      { "start": "14:00", "end": "18:00" }
+    ],
+    "saturday": [{ "start": "10:00", "end": "16:00" }]
+  },
+  "unavailable_periods": [
+    { "start_date": "2026-12-24", "end_date": "2026-12-26", "reason": "Holiday closure" }
+  ],
   "created_at": "2026-08-01T10:00:00.000000Z",
   "updated_at": "2026-08-01T10:00:00.000000Z",
   "category": {
@@ -104,6 +116,45 @@ Field notes for the UI:
 - `currency` is a free-text 3-character string, not a restricted enum server-side — the frontend should constrain it to real currency codes.
 - **Activities use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row (unlike rooms, which hard-delete). A deleted activity simply stops showing up in `index`/`show`. `deleted_at` is not part of the response body (`ActivityResource` doesn't output it).
 - `category_id` is nullable — an activity can exist with no category, in which case **`category` comes back as `null`**, not an object. Always null-check `activity.category` before reading `activity.category.name`. Populate the category picker itself from [`GET /api/activity-category`](#activity-category-api) (this embedded object is read-only convenience, not a substitute for the picker list).
+- `available_from`, `available_until`, `operating_hours`, and `unavailable_periods` describe when the activity can be done. Each one is `null` when not set, and `null` means no restriction. See [Activity Timeframe](#activity-timeframe).
+
+## Activity Timeframe
+
+*Added 2026-09-18.* Four optional fields describe when an activity can be done. They are additive: existing activities have all four set to `null` and stay available at any time.
+
+| Field | Format | Meaning |
+| --- | --- | --- |
+| `available_from` | `"Y-m-d"` date or `null` | First day of the season the activity is offered. `null` = no start limit. |
+| `available_until` | `"Y-m-d"` date or `null` | Last day of the season (inclusive). `null` = no end limit. Must be on or after `available_from`. |
+| `operating_hours` | object keyed by weekday, or `null` | Working hours. Each key is one of `monday` … `sunday` and holds a list of `{ "start": "HH:MM", "end": "HH:MM" }` slots. |
+| `unavailable_periods` | list, or `null` | Date ranges when the activity is closed (maintenance, holidays, private events). Each item is `{ "start_date": "Y-m-d", "end_date": "Y-m-d", "reason": "..." }`. |
+
+How to read `operating_hours`:
+
+- `null` means no fixed hours: the activity is available at any time of day, every day.
+- Once it is an object, a weekday that is **missing or has an empty list is closed** that day.
+- A day can have several slots, for example a lunch break (`09:00–12:00` and `14:00–18:00`).
+- Times are 24-hour `HH:MM` in the **hotel's own timezone** (`hotels.timezone`), not UTC.
+- `end` must be after `start`, so a slot can't run past midnight. Use `23:59` for "until midnight". Slots on the same day must not overlap, but can meet (`12:00` end, `12:00` start).
+
+How to read `unavailable_periods`:
+
+- `start_date` and `end_date` are both inclusive whole days in the hotel's timezone. For a one-day closure, set both to the same date.
+- `reason` is optional free text (max 255), for showing to staff or guests.
+- The order of the list has no meaning.
+
+Validation errors come back as standard `422` responses. They are keyed by path, so the frontend can attach them to the right row:
+
+| Problem | Error key |
+| --- | --- |
+| Unknown weekday key | `operating_hours` |
+| Bad time format, or `end` not after `start` | `operating_hours.monday.0.start` / `operating_hours.monday.0.end` |
+| Overlapping slots on one day | `operating_hours.monday` |
+| `available_until` before `available_from` | `available_until` (on update, this is checked against the stored value of the field you didn't send) |
+| Bad or reversed period dates | `unavailable_periods.0.start_date` / `unavailable_periods.0.end_date` |
+| `unavailable_periods` sent as an object instead of a list | `unavailable_periods` |
+
+These fields are **informational**. Creating a booking does not check them yet. They are shown to the WhatsApp AI concierge, so it can tell guests when an activity is open.
 
 ## 1. List Activities
 
@@ -123,7 +174,7 @@ All optional, same generic behavior as every other list endpoint in this API:
 | `page` | integer | `page=2` | Page number, 1-indexed. |
 | `per_page` | integer, 1–100 | `per_page=25` | Page size. Defaults to 15. |
 
-`filter`/`sort` are validated against the activities table's real columns: `id`, `hotel_id`, `category_id`, `name`, `description`, `price`, `currency`, `is_active`, `created_at`, `updated_at`, `deleted_at`. An unknown key in either returns a `422`.
+`filter`/`sort` are validated against the activities table's real columns: `id`, `hotel_id`, `category_id`, `name`, `description`, `price`, `currency`, `is_active`, `available_from`, `available_until`, `operating_hours`, `unavailable_periods`, `created_at`, `updated_at`, `deleted_at`. An unknown key in either returns a `422`. Only filter or sort on the two date columns (e.g. `sort=available_from`). `operating_hours` and `unavailable_periods` are JSON and can't be matched usefully.
 
 ### Example Request
 
@@ -190,7 +241,15 @@ HTTP `422`:
   "description": "Private airport transfer for guests.",
   "price": 35.5,
   "currency": "USD",
-  "is_active": true
+  "is_active": true,
+  "available_from": "2026-10-01",
+  "available_until": "2027-04-30",
+  "operating_hours": {
+    "monday": [{ "start": "09:00", "end": "17:00" }]
+  },
+  "unavailable_periods": [
+    { "start_date": "2026-12-24", "end_date": "2026-12-26", "reason": "Holiday closure" }
+  ]
 }
 ```
 
@@ -205,6 +264,9 @@ HTTP `422`:
 | `price` | optional, numeric. Defaults to `0` at the database level if omitted. |
 | `currency` | optional, string, max 3. Defaults to `USD` if omitted. |
 | `is_active` | optional, boolean. Defaults to `true` if omitted. |
+| `available_from`, `available_until` | optional, `Y-m-d` date or `null`. `available_until` must be on or after `available_from`. |
+| `operating_hours` | optional, object keyed by weekday, or `null`. See [Activity Timeframe](#activity-timeframe). |
+| `unavailable_periods` | optional, list of `{start_date, end_date, reason}`, or `null`. See [Activity Timeframe](#activity-timeframe). |
 
 **Important — hotel scoping:** unlike `room`/`guest` (which reject a mismatched `hotel_id` with a `403`), `activity` follows the same pattern as `team`/`task-category`/`task`: whatever `hotel_id` you send is **discarded**, and the record is always created under the caller's own hotel. Auto-fill and hide this field rather than trying to validate it client-side.
 
@@ -299,6 +361,8 @@ Send only the fields you want to change — every field is optional on update:
 ### Validation Rules
 
 Same field-level rules as [create](#validation-rules), except every field is optional (`sometimes` instead of `required`).
+
+`operating_hours` and `unavailable_periods` are **replaced as a whole**, not merged. To change one day's hours, send the full weekly object. Send `null` to clear a timeframe field.
 
 **`hotel_id` is still forced server-side** to the caller's own hotel on every update, exactly like create — you cannot reassign an activity to a different hotel through this endpoint, even though the target activity's authorization already required it to match your hotel anyway.
 
@@ -508,6 +572,7 @@ curl -X POST http://your-domain.com/api/activity-category \
 - `price` comes back as a **string** (`"35.50"`), not a number, due to the `decimal:2` cast — parse before doing math.
 - `currency` is free-text server-side — enforce a real currency-code list client-side.
 - Deleting an activity is a **soft delete** (`deleted_at`); it simply disappears from list/show results.
+- The optional timeframe fields (`available_from`, `available_until`, `operating_hours`, `unavailable_periods`) set the season, weekly working hours in hotel local time, and closed date ranges. `null` means no restriction. `operating_hours` and `unavailable_periods` are replaced whole on update. See [Activity Timeframe](#activity-timeframe).
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours" (or you're not an admin).
 - A cross-hotel `category_id` error names the relation (`"activityCategories"`), not the field — show it as a form-level error, not tied to one input.
 - A `super_admin` can view/edit/delete an individual activity by id, but currently **cannot** list or create activities (see [Super Admin Caveats](#super-admin-caveats)) — don't build a super-admin activity console assuming full parity with a regular admin yet.

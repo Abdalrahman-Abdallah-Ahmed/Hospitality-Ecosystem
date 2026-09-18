@@ -193,6 +193,7 @@ Creates a hotel activity for the authenticated user's hotel.
 - `price` is numeric and defaults to `0`.
 - `currency` is a 3-character string and defaults to `USD`.
 - `is_active` is boolean and defaults to `true`.
+- `available_from`, `available_until`, `operating_hours`, and `unavailable_periods` are optional and set when the activity can be done. See [Activity Timeframe](/D:/Hospitality%20Ecosystem/docs/activity-api-documentation.md#activity-timeframe) for their format.
 
 ### Frontend Recommendations
 
