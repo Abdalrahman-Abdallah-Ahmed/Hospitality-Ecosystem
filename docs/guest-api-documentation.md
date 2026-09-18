@@ -92,7 +92,6 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, `co
   },
   "loyalty_status": "gold",
   "is_vip": true,
-  "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking",
   "identity_hash": "phone:9f2c1a...",
@@ -138,7 +137,7 @@ Field notes for the UI:
 
 - `id` and `hotel_id` are UUID strings, not integers.
 - `preferences` is a JSON object/array field and comes back as parsed JSON, not a string.
-- `marketing_consent` is a boolean.
+- `marketing_consent` was removed on 2026-09-18: guests consent when they make the reservation. It is no longer returned, and if sent on create or update it is ignored.
 - `is_vip` is a boolean, `false` unless an admin flags the guest. Use it for a VIP badge. It is separate from `loyalty_status`, which is free text that usually comes from the PMS. For a VIP guest, the WhatsApp concierge is warmer and more attentive but never mentions the status, and every service request it creates is `high` priority.
 - `preferred_language` defaults to `"en"` at the database level when omitted on create.
 - `channel` is an enum-like field server-side. It must be one of the reservation channel values defined by the backend; do not send arbitrary strings.
@@ -211,7 +210,6 @@ HTTP `422`:
   },
   "loyalty_status": "gold",
   "is_vip": true,
-  "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking"
 }
@@ -231,7 +229,6 @@ HTTP `422`:
 | `preferences` | optional, array/object. |
 | `loyalty_status` | optional, string, max 255. |
 | `is_vip` | optional, boolean. Defaults to `false` if omitted. |
-| `marketing_consent` | optional, boolean. Defaults to `false` if omitted. |
 | `external_id` | optional, string, max 255. |
 | `channel` | optional, must be one of the backend enum values. |
 
@@ -311,7 +308,6 @@ Send only the fields you want to change:
 ```json
 {
   "phone_number": "+201111111111",
-  "marketing_consent": false,
   "preferences": {
     "bed_type": "twin"
   }

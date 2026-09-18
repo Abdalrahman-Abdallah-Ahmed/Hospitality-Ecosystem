@@ -26,7 +26,6 @@ class GuestResource extends JsonResource
             'preferences' => $this->preferences,
             'loyalty_status' => $this->loyalty_status,
             'is_vip' => $this->is_vip,
-            'marketing_consent' => $this->marketing_consent,
             'external_id' => $this->external_id,
             'channel' => $this->channel,
             // identity_hash itself stays internal — only whether identity

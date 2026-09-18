@@ -57,7 +57,6 @@ class CreateGuestTool implements Tool
             'last_name' => $request->string('last_name')->toString() ?: null,
             'email' => $request->string('email')->toString() ?: null,
             'nationality' => $request->string('nationality')->toString() ?: null,
-            'marketing_consent' => $request->boolean('marketing_consent', false),
         ];
 
         // `preferred_language` is NOT NULL with a database default. Passing an
@@ -86,9 +85,6 @@ class CreateGuestTool implements Tool
             'email' => $schema->string()->description("The guest's email address, if given."),
             'preferred_language' => $schema->string()->description('Preferred language, if mentioned (e.g. "en", "it").'),
             'nationality' => $schema->string()->description('Nationality, if mentioned.'),
-            'marketing_consent' => $schema->boolean()
-                ->description('Only true if the admin explicitly says the guest agreed to marketing contact. Never assume consent.')
-                ->default(false),
         ];
     }
 }

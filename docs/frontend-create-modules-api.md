@@ -332,7 +332,6 @@ Creates a guest for the authenticated user's hotel.
   },
   "loyalty_status": "gold",
   "is_vip": false,
-  "marketing_consent": true,
   "external_id": "OTA-9981",
   "channel": "booking_com"
 }
@@ -345,7 +344,6 @@ Creates a guest for the authenticated user's hotel.
 - `preferred_language` defaults to `en`.
 - `preferences` is a JSON object/array.
 - `is_vip` is boolean and defaults to `false`. It marks a guest the hotel treats as VIP. It is separate from `loyalty_status`, which usually comes from the PMS. If the guest is reused (see above), the submitted `is_vip` is not applied; set it with `PUT /api/guest/{id}` instead.
-- `marketing_consent` is boolean.
 - `channel` must be one of the allowed reservation-channel enum values.
 
 ### Allowed `channel` Values
@@ -366,7 +364,6 @@ You can also fetch these from:
 - Auto-fill and hide `hotel_id`.
 - Validate `email` format client-side.
 - Use a select for `channel`, ideally populated from `GET /api/available-channels`.
-- Use switches/checkboxes for `marketing_consent`.
 
 ## Suggested Create-Form Strategy
 

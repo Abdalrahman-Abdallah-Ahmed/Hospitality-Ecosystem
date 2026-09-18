@@ -41,7 +41,6 @@ class Guest extends Model
         'preferences',
         'loyalty_status',
         'is_vip',
-        'marketing_consent',
         'external_id',
         'channel',
     ];
@@ -49,7 +48,6 @@ class Guest extends Model
     protected $casts = [
         'preferences' => 'array',
         'is_vip' => 'boolean',
-        'marketing_consent' => 'boolean',
         'identity_resolved_at' => 'datetime',
     ];
 
@@ -77,7 +75,7 @@ class Guest extends Model
         return [
             'first_name', 'last_name', 'email', 'phone_number',
             'preferred_language', 'nationality', 'preferences', 'loyalty_status', 'is_vip',
-            'marketing_consent', 'external_id', 'channel', 'master_guest_id',
+            'external_id', 'channel', 'master_guest_id',
         ];
     }
 

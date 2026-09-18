@@ -24,7 +24,6 @@ class GuestReservationSeeder extends Seeder
             'nationality' => 'EG',
             'loyalty_status' => 'silver',
             'is_vip' => true,
-            'marketing_consent' => true,
         ]);
 
         // Via ReservationCreator, not Reservation::create(), so this seeded
