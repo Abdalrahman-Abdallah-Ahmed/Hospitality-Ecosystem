@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Task;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class TaskPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class TaskPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TASKS_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class TaskPolicy
      */
     public function view(User $user, Task $task): bool
     {
-        return $user->isAdmin() && $task->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TASKS_VIEW, $task);
     }
 
     /**
@@ -36,7 +40,7 @@ class TaskPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::TASKS_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class TaskPolicy
      */
     public function update(User $user, Task $task): bool
     {
-        return $user->isAdmin() && $task->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TASKS_UPDATE, $task);
     }
 
     /**
@@ -52,7 +56,7 @@ class TaskPolicy
      */
     public function delete(User $user, Task $task): bool
     {
-        return $user->isAdmin() && $task->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::TASKS_DELETE, $task);
     }
 
     /**

@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Reservation;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class ReservationPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class ReservationPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::RESERVATIONS_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class ReservationPolicy
      */
     public function view(User $user, Reservation $reservation): bool
     {
-        return $user->isAdmin() && $reservation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RESERVATIONS_VIEW, $reservation);
     }
 
     /**
@@ -36,7 +40,15 @@ class ReservationPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::RESERVATIONS_CREATE);
+    }
+
+    /**
+     * Determine whether the user can bulk-import reservations from a file.
+     */
+    public function import(User $user): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_IMPORT);
     }
 
     /**
@@ -44,7 +56,7 @@ class ReservationPolicy
      */
     public function update(User $user, Reservation $reservation): bool
     {
-        return $user->isAdmin() && $reservation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RESERVATIONS_UPDATE, $reservation);
     }
 
     /**
@@ -52,7 +64,7 @@ class ReservationPolicy
      */
     public function delete(User $user, Reservation $reservation): bool
     {
-        return $user->isAdmin() && $reservation->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::RESERVATIONS_DELETE, $reservation);
     }
 
     /**

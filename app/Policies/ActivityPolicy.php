@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Activity;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class ActivityPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class ActivityPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::ACTIVITIES_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class ActivityPolicy
      */
     public function view(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ACTIVITIES_VIEW, $activity);
     }
 
     /**
@@ -36,7 +40,7 @@ class ActivityPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::ACTIVITIES_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class ActivityPolicy
      */
     public function update(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ACTIVITIES_UPDATE, $activity);
     }
 
     /**
@@ -52,7 +56,7 @@ class ActivityPolicy
      */
     public function delete(User $user, Activity $activity): bool
     {
-        return $user->isAdmin() && $activity->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ACTIVITIES_DELETE, $activity);
     }
 
     /**

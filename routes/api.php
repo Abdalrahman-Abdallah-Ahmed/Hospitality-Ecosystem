@@ -15,9 +15,11 @@ use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
 use App\Http\Controllers\KnowledgeBaseArticleController;
+use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
+use App\Http\Controllers\StaffRoleController;
 use App\Http\Controllers\TaskCategoryController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TeamController;
@@ -33,17 +35,17 @@ Route::post('/whatsapp', [WhatsAppController::class, 'whatsappWebhook'])
     ->middleware('whatsapp.signature');
 
 Route::middleware('api.key')->group(function () {
-    Route::post('/register', [RegisterUserController::class, 'apiStore']);
-    Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->name('login');
+    Route::post('/register', [RegisterUserController::class, 'apiStore'])->middleware('throttle:register');
+    Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->middleware('throttle:login')->name('login');
     Route::post('/pair', [WhatsAppController::class, 'pair']);
-    Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
 
     Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
         Route::get('/user', function (Request $request) {
-            return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->load(['hotel', 'team'])));
+            return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->load(['hotel', 'team', 'staffRole'])));
         });
         Route::post('/connect', [WhatsAppController::class, 'connect']);
+        Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
@@ -72,6 +74,8 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/task-category', TaskCategoryController::class)->except(['edit', 'create']);
         Route::resource('/task', TaskController::class)->except(['edit', 'create']);
         Route::resource('/users', UserController::class)->except(['edit', 'create']);
+        Route::get('/permissions', [PermissionController::class, 'index']);
+        Route::resource('/staff-roles', StaffRoleController::class)->except(['edit', 'create']);
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
         Route::resource('/knowledge-base-articles', KnowledgeBaseArticleController::class)->except(['edit', 'create']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);

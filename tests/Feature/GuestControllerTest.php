@@ -270,3 +270,123 @@ it('reuses an already-active identity match instead of resurrecting an unrelated
     expect($trashed->fresh()->trashed())->toBeTrue();
     expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
 });
+
+// VIP flag
+
+it('creates a guest as not VIP by default', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'first_name' => 'Walk-in'])
+        ->assertCreated()
+        ->assertJsonPath('body.is_vip', false);
+});
+
+it('creates a guest flagged as VIP', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'first_name' => 'Youssef', 'is_vip' => true])
+        ->assertCreated()
+        ->assertJsonPath('body.is_vip', true);
+
+    expect(Guest::sole()->is_vip)->toBeTrue();
+});
+
+it('flags and unflags a guest as VIP on update', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef']);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['is_vip' => true])
+        ->assertOk()
+        ->assertJsonPath('body.is_vip', true);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['is_vip' => false])
+        ->assertOk()
+        ->assertJsonPath('body.is_vip', false);
+
+    expect($guest->fresh()->is_vip)->toBeFalse();
+});
+
+it('rejects a VIP flag that is not a boolean', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef']);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['is_vip' => 'maybe'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('is_vip');
+});
+
+it('lists only VIP or only regular guests when filtered by the VIP flag', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    $vip = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Vip', 'is_vip' => true]);
+    $regular = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Regular']);
+
+    $vips = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/guest?filter[is_vip]=true')
+        ->assertOk();
+
+    expect($vips->json('body.data.*.id'))->toBe([$vip->id]);
+
+    $regulars = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/guest?filter[is_vip]=false')
+        ->assertOk();
+
+    expect($regulars->json('body.data.*.id'))->toBe([$regular->id]);
+});
+
+it('never lists another hotel\'s VIP guests', function () {
+    [$admin, $hotel] = adminWithGuestHotel();
+    [, $otherHotel] = adminWithGuestHotel();
+    $ownVip = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Own', 'is_vip' => true]);
+    Guest::create(['hotel_id' => $otherHotel->id, 'first_name' => 'Other', 'is_vip' => true]);
+
+    $response = $this->withHeaders(guestApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/guest?filter[is_vip]=true')
+        ->assertOk();
+
+    expect($response->json('body.data.*.id'))->toBe([$ownVip->id]);
+});
+
+it('lets an employee list and view their own hotel guests for the booking form', function () {
+    [, $hotel] = adminWithGuestHotel();
+    [, $otherHotel] = adminWithGuestHotel();
+    $employee = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
+    $own = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Own']);
+    $other = Guest::create(['hotel_id' => $otherHotel->id, 'first_name' => 'Other']);
+
+    $list = $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->getJson('/api/guest')
+        ->assertOk();
+
+    expect($list->json('body.data.*.id'))->toBe([$own->id]);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->getJson("/api/guest/{$own->id}")
+        ->assertOk();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->getJson("/api/guest/{$other->id}")
+        ->assertForbidden();
+});
+
+it('does not let an employee change guests', function () {
+    [, $hotel] = adminWithGuestHotel();
+    $employee = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
+    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Own']);
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->postJson('/api/guest', ['hotel_id' => $hotel->id, 'first_name' => 'New'])
+        ->assertForbidden();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->putJson("/api/guest/{$guest->id}", ['first_name' => 'Changed'])
+        ->assertForbidden();
+
+    $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
+        ->deleteJson("/api/guest/{$guest->id}")
+        ->assertForbidden();
+});

@@ -107,3 +107,19 @@ it('recognizes an existing guest even when the phone number is formatted differe
     expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
     expect(Reservation::where('hotel_id', $hotel->id)->where('guest_id', $existing->id)->exists())->toBeTrue();
 });
+
+it('skips a row whose reservation id the hotel already uses, writing nothing for it', function () {
+    [$admin, $hotel] = adminWithHotel();
+    reservationFor($hotel, ['reservation_id' => 'RES-DUP00001']);
+
+    $path = tempnam(sys_get_temp_dir(), 'reservations').'.csv';
+    file_put_contents($path, "guest_phone,arrival_date,departure_date,reservation_id\n555-0100,2026-09-01,2026-09-04,RES-DUP00001");
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)])
+        ->assertOk()
+        ->assertJsonPath('body.imported', 0)
+        ->assertJsonPath('body.skipped.0.reason', 'Reservation id RES-DUP00001 already exists.');
+
+    expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0100')->exists())->toBeFalse();
+});

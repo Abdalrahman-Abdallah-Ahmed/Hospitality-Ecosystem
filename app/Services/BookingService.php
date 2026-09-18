@@ -114,10 +114,7 @@ class BookingService
      */
     public function confirm(Booking $booking): Booking
     {
-        $this->guardOpen($booking, 'confirmed');
-
-        $booking->update([
-            'status' => BookingStatus::CONFIRMED,
+        $this->moveTo($booking, BookingStatus::CONFIRMED, [
             'confirmed_at' => $booking->confirmed_at ?? Carbon::now(),
         ]);
 
@@ -133,16 +130,15 @@ class BookingService
      */
     public function realise(Booking $booking, ?CarbonInterface $at = null): Booking
     {
-        $this->guardOpen($booking, 'realised');
-
-        $booking->update([
-            'status' => BookingStatus::REALISED,
+        $moved = $this->moveTo($booking, BookingStatus::REALISED, [
             'realised_at' => $at ?? Carbon::now(),
         ]);
 
         // Created counts intent; realised counts what actually happened. The
         // gap between them is the number worth watching.
-        $this->meter($booking, MeterFeature::BOOKINGS_REALISED);
+        if ($moved) {
+            $this->meter($booking, MeterFeature::BOOKINGS_REALISED);
+        }
 
         return $booking;
     }
@@ -154,10 +150,7 @@ class BookingService
      */
     public function markNoShow(Booking $booking): Booking
     {
-        $this->guardOpen($booking, 'no_show');
-
-        $booking->update([
-            'status' => BookingStatus::NO_SHOW,
+        $this->moveTo($booking, BookingStatus::NO_SHOW, [
             'realised_at' => null,
         ]);
 
@@ -170,12 +163,7 @@ class BookingService
      */
     public function cancel(Booking $booking, string $reason): Booking
     {
-        if ($booking->status === BookingStatus::REALISED) {
-            throw new RuntimeException('A realised booking cannot be cancelled; it already happened.');
-        }
-
-        $booking->update([
-            'status' => BookingStatus::CANCELLED,
+        $this->moveTo($booking, BookingStatus::CANCELLED, [
             'cancelled_at' => Carbon::now(),
             'cancellation_reason' => $reason,
         ]);
@@ -208,13 +196,43 @@ class BookingService
     }
 
     /**
-     * A cancelled booking is closed. Reopening it would let a stale process
-     * quietly resurrect a commitment the guest withdrew.
+     * Apply a status change and return whether the status actually moved.
+     *
+     * Asking for the status the booking already has does nothing, so a
+     * repeated click neither fails nor overwrites the original timestamp.
+     *
+     * @throws RuntimeException when the move is not allowed from here
      */
-    private function guardOpen(Booking $booking, string $target): void
+    private function moveTo(Booking $booking, BookingStatus $target, array $attributes): bool
     {
-        if ($booking->status === BookingStatus::CANCELLED) {
-            throw new RuntimeException("A cancelled booking cannot be marked {$target}.");
+        if ($booking->status === $target) {
+            return false;
         }
+
+        if (! in_array($target, $this->nextStatuses($booking->status), true)) {
+            throw new RuntimeException("A {$booking->status->value} booking cannot be marked {$target->value}.");
+        }
+
+        $booking->update(['status' => $target, ...$attributes]);
+
+        return true;
+    }
+
+    /**
+     * Forward only. An attended or withdrawn booking is history, and letting
+     * a stale request move it back would rewrite it — or quietly resurrect a
+     * commitment the guest withdrew. The one exit from NO_SHOW is REALISED: a
+     * guest who turned up late did attend.
+     *
+     * @return array<int, BookingStatus>
+     */
+    private function nextStatuses(BookingStatus $from): array
+    {
+        return match ($from) {
+            BookingStatus::PENDING => [BookingStatus::CONFIRMED, BookingStatus::REALISED, BookingStatus::NO_SHOW, BookingStatus::CANCELLED],
+            BookingStatus::CONFIRMED => [BookingStatus::REALISED, BookingStatus::NO_SHOW, BookingStatus::CANCELLED],
+            BookingStatus::NO_SHOW => [BookingStatus::REALISED],
+            BookingStatus::REALISED, BookingStatus::CANCELLED => [],
+        };
     }
 }

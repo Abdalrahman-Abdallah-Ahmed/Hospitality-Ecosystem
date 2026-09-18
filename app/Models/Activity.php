@@ -26,11 +26,19 @@ class Activity extends Model
         'price',
         'currency',
         'is_active',
+        'available_from',
+        'available_until',
+        'operating_hours',
+        'unavailable_periods',
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
         'is_active' => 'boolean',
+        'available_from' => 'date',
+        'available_until' => 'date',
+        'operating_hours' => 'array',
+        'unavailable_periods' => 'array',
     ];
 
     public function category(): BelongsTo

@@ -74,7 +74,9 @@ class RegisterUserController extends Controller
         event(new Registered($user));
 
         return apiResponse('User registered successfully.', 201, [
-            'user' => UserResource::make($user),
+            // staffRole makes the resource include `permissions`, the same as
+            // the login response.
+            'user' => UserResource::make($user->load('staffRole')),
             'hotel' => HotelResource::make($hotel),
         ]);
     }

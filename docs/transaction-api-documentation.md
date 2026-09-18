@@ -32,6 +32,8 @@ HTTP client set the `multipart/form-data` boundary.)
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `transactions.view` (index, show), `transactions.import`, `transactions.reverse`. No role can grant editing or deleting a transaction. Employees without a role have none of these.
+
 Gated by `App\Policies\TransactionPolicy` on top of the bearer-token check:
 
 | Action | Rule |

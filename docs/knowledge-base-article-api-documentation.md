@@ -39,6 +39,8 @@ Notes:
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `knowledge_base_articles.view` (index, show), `.create`, `.update`, `.delete`. Employees without a role have none of these.
+
 Every action is gated by `App\Policies\KnowledgeBaseArticlePolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
 
 | Action | Rule (non-super-admin) | Super admin |

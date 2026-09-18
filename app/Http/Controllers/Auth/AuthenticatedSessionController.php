@@ -46,7 +46,9 @@ class AuthenticatedSessionController extends Controller
         return apiResponse('Authenticated successfully.', 200, [
             'token' => $token,
             'token_type' => 'Bearer',
-            'user' => UserResource::make($user->load(['hotel', 'team'])),
+            // staffRole makes the resource include `permissions`, so the client
+            // can build its UI without a follow-up GET /api/user.
+            'user' => UserResource::make($user->load(['hotel', 'team', 'staffRole'])),
         ]);
     }
 

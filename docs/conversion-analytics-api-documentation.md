@@ -12,7 +12,9 @@ Both parameters optional — `from` defaults to the start of the current month,
 so a booking made in September still counts against an August offer.
 
 Headers: `X-API-KEY`, `Authorization: Bearer …`, `Accept: application/json`.
-Caller's `role` must be `admin` (super admin bypasses). Every figure is scoped
+Caller's `role` must be `admin` (super admin bypasses), or an employee whose
+[staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md)
+grants `recommendations.view`. Every figure is scoped
 to the caller's own hotel(s).
 
 ## Response

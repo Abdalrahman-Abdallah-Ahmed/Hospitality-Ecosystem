@@ -193,6 +193,7 @@ Creates a hotel activity for the authenticated user's hotel.
 - `price` is numeric and defaults to `0`.
 - `currency` is a 3-character string and defaults to `USD`.
 - `is_active` is boolean and defaults to `true`.
+- `available_from`, `available_until`, `operating_hours`, and `unavailable_periods` are optional and set when the activity can be done. See [Activity Timeframe](/D:/Hospitality%20Ecosystem/docs/activity-api-documentation.md#activity-timeframe) for their format.
 
 ### Frontend Recommendations
 
@@ -331,7 +332,7 @@ Creates a guest for the authenticated user's hotel.
     "bed_type": "king"
   },
   "loyalty_status": "gold",
-  "marketing_consent": true,
+  "is_vip": false,
   "external_id": "OTA-9981",
   "channel": "booking_com"
 }
@@ -343,7 +344,7 @@ Creates a guest for the authenticated user's hotel.
 - `first_name`, `last_name`, `email`, `phone_number`, `nationality`, `loyalty_status`, and `external_id` are optional strings.
 - `preferred_language` defaults to `en`.
 - `preferences` is a JSON object/array.
-- `marketing_consent` is boolean.
+- `is_vip` is boolean and defaults to `false`. It marks a guest the hotel treats as VIP. It is separate from `loyalty_status`, which usually comes from the PMS. If the guest is reused (see above), the submitted `is_vip` is not applied; set it with `PUT /api/guest/{id}` instead.
 - `channel` must be one of the allowed reservation-channel enum values.
 
 ### Allowed `channel` Values
@@ -364,7 +365,6 @@ You can also fetch these from:
 - Auto-fill and hide `hotel_id`.
 - Validate `email` format client-side.
 - Use a select for `channel`, ideally populated from `GET /api/available-channels`.
-- Use switches/checkboxes for `marketing_consent`.
 
 ## Suggested Create-Form Strategy
 

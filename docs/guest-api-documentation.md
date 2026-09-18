@@ -31,23 +31,26 @@ Content-Type: application/json
 
 Notes:
 
-- `X-API-KEY` is checked by the `api.key` middleware. If `API_KEY` is unset on the server, this header is not enforced; when it is set, a missing/wrong key returns HTTP `401`.
+- `X-API-KEY` is checked by the `api.key` middleware against the server's configured `API_KEY`; a missing/wrong key returns HTTP `401`. The check is skipped only when no key is configured **and** the server runs in a `local` or `testing` environment — anywhere else, an unset key rejects every request.
 - `Authorization: Bearer {login_token}` is required because every guest route is inside the `auth:sanctum` middleware group. Get this token from `POST /api/login` (see `docs/auth-api-documentation.md`).
 - Without a valid bearer token, the API returns HTTP `401 Unauthenticated.` before controller/policy logic runs.
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** the `employee` rules below are the defaults for an employee without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md). A role replaces them, always within the employee's own hotel: `guests.view` (index, show), `guests.create`, `guests.update`, `guests.delete`. A role without `guests.view` removes read access too.
+
 Every action is gated by `App\Policies\GuestPolicy`, on top of the bearer-token check above:
 
 | Action | Rule |
 | --- | --- |
-| `index` (list) | The logged-in user's `role` must be `admin`. |
+| `index` (list) | The logged-in user's `role` must be `admin` or `employee`. |
+| `show` | The user must be `admin` or `employee`, **and** the guest's `hotel_id` must equal the user's hotel. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
-| `show` / `update` / `destroy` | The user must be `admin`, **and** the guest's `hotel_id` must equal the hotel the user owns. |
+| `update` / `destroy` | The user must be `admin`, **and** the guest's `hotel_id` must equal the hotel the user owns. |
 
 Practical implications for the UI:
 
-- A non-admin user should never reach this screen; treat any `403` here as "this user should not be on this page," not an in-page recoverable state.
+- Employees can read guests (they need a guest picker to take bookings) but get `403` on create, update and delete. Hide those actions for them.
 - A `403` on `show`/`update`/`destroy` for a specific guest id most likely means the id belongs to a different hotel. Treat it the same as "not found or not yours."
 - `index` is additionally query-scoped to `where('hotel_id', <the user's hotel>)`, so the list only ever contains guests from the current admin's hotel.
 
@@ -88,7 +91,7 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, `co
     "high_floor": true
   },
   "loyalty_status": "gold",
-  "marketing_consent": true,
+  "is_vip": true,
   "external_id": "OTA-9981",
   "channel": "booking",
   "identity_hash": "phone:9f2c1a...",
@@ -134,7 +137,8 @@ Field notes for the UI:
 
 - `id` and `hotel_id` are UUID strings, not integers.
 - `preferences` is a JSON object/array field and comes back as parsed JSON, not a string.
-- `marketing_consent` is a boolean.
+- `marketing_consent` was removed on 2026-09-18: guests consent when they make the reservation. It is no longer returned, and if sent on create or update it is ignored.
+- `is_vip` is a boolean, `false` unless an admin flags the guest. Use it for a VIP badge. It is separate from `loyalty_status`, which is free text that usually comes from the PMS. For a VIP guest, the WhatsApp concierge is warmer and more attentive but never mentions the status, and every service request it creates is `high` priority.
 - `preferred_language` defaults to `"en"` at the database level when omitted on create.
 - `channel` is an enum-like field server-side. It must be one of the reservation channel values defined by the backend; do not send arbitrary strings.
 - `email` is currently only validated as a plain string by the generic validator, not with an email-format rule. The frontend should still validate email format client-side.
@@ -162,6 +166,8 @@ All optional:
 | `per_page` | integer, 1-100 | `per_page=25` | Page size. Defaults to 15. |
 
 `filter`/`sort` are validated against the guests table's real columns, so an unknown key returns a `422`.
+
+To list VIP guests, use `filter[is_vip]=true`; `filter[is_vip]=false` lists everyone else.
 
 ### Success Response
 
@@ -203,7 +209,7 @@ HTTP `422`:
     "bed_type": "king"
   },
   "loyalty_status": "gold",
-  "marketing_consent": true,
+  "is_vip": true,
   "external_id": "OTA-9981",
   "channel": "booking"
 }
@@ -222,7 +228,7 @@ HTTP `422`:
 | `nationality` | optional, string, max 255. |
 | `preferences` | optional, array/object. |
 | `loyalty_status` | optional, string, max 255. |
-| `marketing_consent` | optional, boolean. Defaults to `false` if omitted. |
+| `is_vip` | optional, boolean. Defaults to `false` if omitted. |
 | `external_id` | optional, string, max 255. |
 | `channel` | optional, must be one of the backend enum values. |
 
@@ -302,7 +308,6 @@ Send only the fields you want to change:
 ```json
 {
   "phone_number": "+201111111111",
-  "marketing_consent": false,
   "preferences": {
     "bed_type": "twin"
   }
@@ -392,3 +397,4 @@ The UI should distinguish this from custom business-rule errors like:
 - `email` should be validated client-side even though the backend currently treats it as a generic string.
 - `DELETE` is soft-delete, not hard-delete.
 - **New:** `POST /api/guest` no longer creates a duplicate row for a guest who already exists at this hotel with the same `email` or `phone_number`, even if `channel`/`external_id` differ — it reuses (and restores, if soft-deleted) the existing guest instead. Check `body.id` against a guest you already knew about if your UI needs to tell "reused" apart from "newly created."
+- **New:** `is_vip` flags a VIP guest. Set it on create or update, and list VIPs with `filter[is_vip]=true`. When create reuses an existing guest, the submitted `is_vip` is not applied, so flag an existing guest with `PUT`.

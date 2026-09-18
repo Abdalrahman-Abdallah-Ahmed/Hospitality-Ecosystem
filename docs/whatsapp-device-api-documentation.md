@@ -34,9 +34,9 @@ X-API-KEY: {your_api_key}
 
 Notes:
 
-- The backend checks the `API_KEY` environment variable.
-- If `API_KEY` is empty on the server, requests are allowed without this header.
-- If the key is configured and missing or wrong, the API returns HTTP `401`:
+- The backend checks the configured `API_KEY` (read through config, so it keeps working after `php artisan optimize`).
+- If no key is configured, requests are allowed without this header **only** in a `local` or `testing` environment. In any other environment an unset key rejects every request.
+- If the key is missing or wrong, the API returns HTTP `401`:
 
 ```json
 {
@@ -116,9 +116,11 @@ HTTP `200 OK`
 
 ### Frontend / Claude Note
 
-- This token is created from Laravel Sanctum.
-- It should be passed to the pairing endpoint as the `token` field.
-- This is different from the user's normal login token, even though both are Sanctum tokens.
+- This token is a **pairing code**, not a login token. It should be passed to the pairing endpoint as the `token` field, or sent as a WhatsApp message to the hotel number.
+- It **expires 15 minutes** after it is issued. Call `/api/connect` again for a fresh one.
+- It is **single use**: it is deleted as soon as a device is paired with it.
+- It is **not an API credential**. Sending it as `Authorization: Bearer …` returns `401` on every authenticated route.
+- Conversely, a normal login token is rejected by `/api/pair` (`Invalid token.`).
 
 ## 2. Pair WhatsApp Device
 
@@ -148,7 +150,7 @@ This endpoint does not require a bearer token in the header. Instead, it require
 
 ### Validation Rules
 
-- `phone_number`: required, string
+- `phone_number`: required. Send it in any common format — `+20 115 179 3758`, `20-115-179-3758` and `201151793758` are all accepted. The server strips everything but digits, and the result must be **7–15 digits including the country code**. It is stored digits-only, which is also the format Meta's webhook uses.
 - `token`: required, string
 - `wa_user_id`: required, string
 
@@ -163,7 +165,7 @@ HTTP `201 Created`
   "body": {
     "id": 1,
     "user_id": 12,
-    "phone_number": "+201000000000",
+    "phone_number": "201000000000",
     "hotel_id": "550e8400-e29b-41d4-a716-446655440000",
     "wa_user_id": "whatsapp-user-123",
     "status": "active",
@@ -183,12 +185,45 @@ Notes:
 
 The pairing endpoint applies these checks:
 
-1. The provided `token` must match an existing Sanctum token.
+1. The provided `token` must be an unexpired pairing code issued by `/api/connect` (a login token, an expired code, or an already-redeemed code counts as invalid).
 2. The token must belong to a valid user.
 3. That user must be associated with a hotel.
 4. That user must not already have a paired WhatsApp device.
 
-If any of these checks fail, the API returns an error instead of creating a device.
+If any of these checks fail, the API returns an error instead of creating a device. On success the pairing code is revoked.
+
+## 3. Check Pairing Status
+
+Reports whether a phone number has a paired WhatsApp device. The dashboard polls this after showing a pairing code.
+
+### Endpoint
+
+`GET /api/check-paired?phone_number={phone_number}`
+
+### Authentication
+
+Required (changed 2026-09-13 — this endpoint used to need only the API key):
+
+- `X-API-KEY: {your_api_key}`
+- `Authorization: Bearer {login_token}`
+
+### Phone Number Format
+
+Send the number however the person typed it — `+`, spaces, dashes and brackets are fine, so `+20 115 179 3758` works as-is (URL-encode it in the query string). The server keeps only the digits, which must be **7–15 digits including the country code**. A number typed without its country code (e.g. `01151793758`) is a different number and will not match. Anything else returns `422` on `phone_number`.
+
+### Scope
+
+Only devices and users belonging to the caller's own hotel(s) are considered. A phone number that belongs to another hotel reports as not paired, with `user_name` and `user_role` both `null`.
+
+### Responses
+
+| HTTP | `message` | `body` |
+| --- | --- | --- |
+| `200` | `User has a paired WhatsApp device.` | `{ paired: true, device }` |
+| `202` | `User has a paired WhatsApp device, but it is not active.` | `{ paired: true, device }` |
+| `201` | `User not paired.` | `{ paired: false, user_role, user_name }` — the user fields are `null` when no user in your hotel(s) has that number |
+| `401` | `Unauthenticated.` | Missing or invalid bearer token |
+| `422` | Validation error | `phone_number` missing, or not 7–15 digits once formatting is stripped |
 
 ## Error Cases
 
@@ -303,8 +338,9 @@ curl -X POST http://your-domain.com/api/pair \
 
 ## Summary for Claude
 
-- Call `POST /api/connect` as an authenticated user to generate a WhatsApp pairing token
+- Call `POST /api/connect` as an authenticated user to generate a WhatsApp pairing token — it expires in 15 minutes and works once
 - Call `POST /api/pair` with `phone_number`, `token`, and `wa_user_id`
+- Call `GET /api/check-paired` with a bearer token to poll pairing status
 - Always send `X-API-KEY` if the backend server uses `API_KEY`
 - Expect `401` for an invalid token and `400` for business-rule failures
 - On success, the device is created with `status = active`

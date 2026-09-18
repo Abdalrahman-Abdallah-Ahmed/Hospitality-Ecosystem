@@ -97,6 +97,11 @@ own hotel. Deliberately wider than every other write endpoint: the employees at
 the desk are the ones who hear "no", and a refusal-capture instrument only
 admins can use will not capture refusals.
 
+Since 2026-09-15 this is the `recommendations.record_outcome` permission, held
+by default by employees without a
+[staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
+A role that leaves it out removes it.
+
 ### Request
 
 ```json

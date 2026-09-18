@@ -20,7 +20,7 @@ class GetActivitiesTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Retrieve the activities offered by the current hotel, including each activity\'s category, name, description, and price.';
+        return 'Retrieve the activities offered by the current hotel, including each activity\'s category, name, description, price, and when it can be done: available_from/available_until bound the season, operating_hours lists the time slots per weekday in the hotel\'s local time (a missing weekday means closed that day), and unavailable_periods lists date ranges when it is closed. A null value means no restriction.';
     }
 
     /**
@@ -39,6 +39,10 @@ class GetActivitiesTool implements Tool
                 'description' => $activity->description,
                 'price' => $activity->price,
                 'currency' => $activity->currency,
+                'available_from' => $activity->available_from?->toDateString(),
+                'available_until' => $activity->available_until?->toDateString(),
+                'operating_hours' => $activity->operating_hours,
+                'unavailable_periods' => $activity->unavailable_periods,
             ])
             ->values();
 

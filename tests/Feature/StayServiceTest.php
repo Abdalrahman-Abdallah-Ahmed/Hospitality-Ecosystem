@@ -5,6 +5,7 @@ use App\Enums\StayStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\Room;
 use App\Models\Stay;
 use App\Models\User;
 use App\Services\StayService;
@@ -228,4 +229,47 @@ it('marks a stay cancelled when its reservation is cancelled', function () {
     ReservationCreator::syncStay($reservation);
 
     expect(Stay::where('reservation_id', $reservation->id)->first()->status)->toBe(StayStatus::CANCELLED);
+});
+
+it('carries reservation edits through to its stay without touching what actually happened', function () {
+    $hotel = stayTestHotel();
+    $guest = stayTestGuest($hotel);
+    $firstRoom = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $secondRoom = Room::create(['hotel_id' => $hotel->id, 'room_number' => '102']);
+
+    $reservation = ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'room_id' => $firstRoom->id,
+        'reservation_id' => 'RES-'.Str::random(8),
+        'arrival_date' => '2026-09-01',
+        'departure_date' => '2026-09-04',
+        'adults' => 1,
+        'reservation_value' => 300,
+        'status' => ReservationStatus::CHECKED_IN->value,
+    ]);
+
+    $checkedInAt = Stay::where('reservation_id', $reservation->id)->first()->checked_in_at;
+
+    $reservation->update([
+        'room_id' => $secondRoom->id,
+        'departure_date' => '2026-09-06',
+        'adults' => 2,
+        'reservation_value' => 500,
+    ]);
+    ReservationCreator::syncStay($reservation);
+
+    $stay = Stay::where('reservation_id', $reservation->id)->first();
+
+    // The planned side follows the booking...
+    expect($stay->room_id)->toBe($secondRoom->id)
+        ->and($stay->planned_departure_date->toDateString())->toBe('2026-09-06')
+        ->and($stay->adults)->toBe(2)
+        ->and((float) $stay->room_revenue)->toBe(500.0);
+
+    // ...while what already happened stays as it happened.
+    expect($stay->status)->toBe(StayStatus::IN_HOUSE)
+        ->and($stay->checked_in_at->equalTo($checkedInAt))->toBeTrue();
+
+    expect(Stay::where('reservation_id', $reservation->id)->count())->toBe(1);
 });

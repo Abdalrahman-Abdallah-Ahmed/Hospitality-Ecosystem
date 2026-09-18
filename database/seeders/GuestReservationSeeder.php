@@ -23,7 +23,7 @@ class GuestReservationSeeder extends Seeder
             'preferred_language' => 'en',
             'nationality' => 'EG',
             'loyalty_status' => 'silver',
-            'marketing_consent' => true,
+            'is_vip' => true,
         ]);
 
         // Via ReservationCreator, not Reservation::create(), so this seeded

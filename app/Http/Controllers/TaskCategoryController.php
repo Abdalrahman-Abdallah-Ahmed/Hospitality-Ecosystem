@@ -54,6 +54,16 @@ class TaskCategoryController extends Controller
     }
 
     /**
+     * Display the specified resource.
+     */
+    public function show(TaskCategory $taskCategory): JsonResponse
+    {
+        $this->authorize('view', $taskCategory);
+
+        return apiResponse('Task category fetched successfully.', 200, TaskCategoryResource::make($taskCategory->load(['hotel', 'team'])));
+    }
+
+    /**
      * Update the specified resource in storage.
      */
     public function update(GenericUpdateRequest $request, TaskCategory $taskCategory): JsonResponse

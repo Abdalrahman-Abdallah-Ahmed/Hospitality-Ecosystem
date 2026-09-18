@@ -95,7 +95,7 @@ If none of the tools have relevant information for a question, the advisor is in
 
 ### What the Advisor Can Create
 
-A chat turn can **write to the hotel's data**. Six create tools are available,
+A chat turn can **write to the hotel's data**. Five create tools are available,
 and a single message may produce real records:
 
 | Tool | Creates | Notes |
@@ -105,7 +105,6 @@ and a single message may produce real records:
 | `CreateActivityTool` | An activity | Immediately recommendable to guests |
 | `CreateTaskTool` | A staff task | Optionally assigned to a team/person and linked to a room |
 | `CreateGuestTool` | A guest | Matched by phone; an existing guest is returned **unchanged**, never duplicated |
-| `CreateHotelPolicyTool` | A hotel policy | Becomes guest-facing grounding data — see the warning below |
 
 #### The hotel is never taken from the model
 
@@ -121,20 +120,14 @@ another hotel's team would put a staff member's work list in front of the
 wrong property. An unassigned task is visible and fixable; a misrouted one is
 not. `tests/Feature/AdminCreateToolsTest.php` asserts this.
 
-#### Two consequences worth knowing before enabling this in a UI
+#### The advisor cannot write hotel policies
 
-**Policies are quoted to guests.** The guest concierge searches hotel policies
-when answering and is instructed to let what it finds override its own
-judgment. A policy written through this endpoint therefore becomes the hotel's
-own word to guests. The advisor is told to record only what the admin actually
-stated and to ask rather than fill in a plausible-sounding cancellation window
-— but that is a model instruction, not a guarantee. **Show the admin what was
-written and let them confirm it.**
-
-**Creating a policy costs money.** Saving an active policy dispatches
-`SyncKnowledgeChunksJob`, which embeds the content with the AI provider. That
-is a real charge, metered as `embeddings_generated` and attributed to the
-account (see [AI Cost Attribution](/D:/Hospitality%20Ecosystem/docs/ai-cost-attribution-api-documentation.md)).
+The guest concierge searches hotel policies when answering and lets what it
+finds override its own judgment, so a policy is quoted to guests as the hotel's
+own word. The advisor is therefore deliberately given no policy-writing tool,
+and is instructed to decline drafting or recommending policy wording. Policies
+are created by a person through the
+[Hotel Policy API](/D:/Hospitality%20Ecosystem/docs/hotel-policy-api-documentation.md).
 
 #### Nothing here replaces the REST endpoints
 

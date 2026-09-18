@@ -37,7 +37,7 @@ Content-Type: application/json
 
 Notes:
 
-- `X-API-KEY` is checked by the `api.key` middleware. If `API_KEY` is unset on the server, this header is not enforced; when it is set, a missing/wrong key returns HTTP `401`.
+- `X-API-KEY` is checked by the `api.key` middleware against the server's configured `API_KEY`; a missing/wrong key returns HTTP `401`. The check is skipped only when no key is configured **and** the server runs in a `local` or `testing` environment — anywhere else, an unset key rejects every request.
 - `Authorization: Bearer {login_token}` is required because every hotel route is inside the `auth:sanctum` middleware group. Get this token from `POST /api/login`.
 - Without a valid bearer token, the API returns HTTP `401 Unauthenticated.` before controller/policy logic ever runs.
 

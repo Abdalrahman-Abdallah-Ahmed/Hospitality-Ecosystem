@@ -6,7 +6,9 @@ use App\Enums\EvidenceLevel;
 use App\Enums\TransactionSource;
 use App\Models\Transaction;
 use App\Support\Audit\EventLogger;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
@@ -55,30 +57,39 @@ class TransactionService
             throw new RuntimeException('This transaction has already been reversed.');
         }
 
-        $reversal = Transaction::create([
-            'hotel_id' => $original->hotel_id,
-            'guest_id' => $original->guest_id,
-            'stay_id' => $original->stay_id,
-            'room_id' => $original->room_id,
-            'activity_id' => $original->activity_id,
-            'item_name' => 'Reversal: '.$original->item_name,
-            'revenue_center' => $original->revenue_center,
-            'department' => $original->department,
-            'quantity' => -$original->quantity,
-            'unit_price' => $original->unit_price,
-            'line_total' => -(float) $original->line_total,
-            'discount_amount' => -(float) $original->discount_amount,
-            'currency' => $original->currency,
-            'transacted_at' => Carbon::now(),
-            'business_date' => Carbon::now()->toDateString(),
-            'seller_reference' => $original->seller_reference,
-            'sold_by_user_id' => $original->sold_by_user_id,
-            'source_system' => TransactionSource::MANUAL->value,
-            'external_reference' => 'reversal:'.$original->id,
-            'evidence_level' => ($original->evidence_level ?? EvidenceLevel::L1)->value,
-            'reverses_transaction_id' => $original->id,
-            'raw_payload' => ['reason' => $reason, 'reverses' => $original->id],
-        ]);
+        try {
+            // Its own savepoint, so a rejected insert cannot leave an
+            // enclosing Postgres transaction aborted.
+            $reversal = DB::transaction(fn () => Transaction::create([
+                'hotel_id' => $original->hotel_id,
+                'guest_id' => $original->guest_id,
+                'stay_id' => $original->stay_id,
+                'room_id' => $original->room_id,
+                'activity_id' => $original->activity_id,
+                'item_name' => 'Reversal: '.$original->item_name,
+                'revenue_center' => $original->revenue_center,
+                'department' => $original->department,
+                'quantity' => -$original->quantity,
+                'unit_price' => $original->unit_price,
+                'line_total' => -(float) $original->line_total,
+                'discount_amount' => -(float) $original->discount_amount,
+                'currency' => $original->currency,
+                'transacted_at' => Carbon::now(),
+                'business_date' => Carbon::now()->toDateString(),
+                'seller_reference' => $original->seller_reference,
+                'sold_by_user_id' => $original->sold_by_user_id,
+                'source_system' => TransactionSource::MANUAL->value,
+                'external_reference' => 'reversal:'.$original->id,
+                'evidence_level' => ($original->evidence_level ?? EvidenceLevel::L1)->value,
+                'reverses_transaction_id' => $original->id,
+                'raw_payload' => ['reason' => $reason, 'reverses' => $original->id],
+            ]));
+        } catch (UniqueConstraintViolationException $e) {
+            // The checks above cannot see a reversal a concurrent request is
+            // writing at this same moment. Its unique external reference is
+            // what actually stops the second one, so report it the same way.
+            throw new RuntimeException('This transaction has already been reversed.', previous: $e);
+        }
 
         // The reversal row logs its own transaction.created; this records the
         // correction against the original so its history shows it was undone.

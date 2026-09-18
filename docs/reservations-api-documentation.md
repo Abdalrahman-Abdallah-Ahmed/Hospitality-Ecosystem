@@ -32,11 +32,13 @@ Content-Type: application/json
 
 Notes:
 
-- `X-API-KEY` is checked by the `api.key` middleware. If `API_KEY` is unset on the server, this header is not enforced; when it is set, a missing/wrong key returns HTTP `401`.
+- `X-API-KEY` is checked by the `api.key` middleware against the server's configured `API_KEY`; a missing/wrong key returns HTTP `401`. The check is skipped only when no key is configured **and** the server runs in a `local` or `testing` environment — anywhere else, an unset key rejects every request.
 - `Authorization: Bearer {login_token}` is required because every reservation route is inside the `auth:sanctum` middleware group. Get this token from `POST /api/login` (see `docs/auth-api-documentation.md`).
 - Without a valid bearer token, the API returns HTTP `401 Unauthenticated.` before your controller/policy logic ever runs.
 
 ## Who Can Call These Endpoints
+
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `reservations.view` (index, show), `reservations.create`, `reservations.update`, `reservations.delete`, and `reservations.import` (import has its own permission and no longer reuses `create`). Employees without a role have none of these.
 
 Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-token check above:
 
@@ -45,7 +47,7 @@ Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-
 | `index` (list) | The logged-in user's `role` must be `admin`. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user must be `admin`, **and** the reservation's `hotel_id` must equal the hotel the user owns. |
-| `import` (bulk upload) | Same `create` check as above — `role` must be `admin`. **Unlike every other write endpoint, a super admin cannot target an arbitrary hotel here** — see [§6](#6-import-reservations-bulk-upload). |
+| `import` (bulk upload) | `role` must be `admin` (or an employee with `reservations.import`). **Unlike every other write endpoint, a super admin cannot target an arbitrary hotel here** — see [§6](#6-import-reservations-bulk-upload). |
 
 Practical implications for the UI:
 
@@ -122,9 +124,12 @@ Any other string is rejected by the API with a `422` on `status`.
 
 **Side effect: room status now follows the guest's actual stay, not the reservation's `status` field.** On both create (`POST /api/reservation`, plus the WhatsApp ingestion endpoint) and update (`PUT /api/reservation/{id}`), if the reservation has a non-null `room_id`, the backend keeps that room's own `status` (`GET /api/room` will reflect this on the next fetch) in step with the underlying stay (Phase 1 WP-2):
 
-- Setting `status: checked_in` occupies the room (`room.status` becomes `occupied`) — merely `confirmed` does **not** occupy it. Booking a room ahead of arrival is different from a guest physically being in it, and only the latter counts as occupied.
-- Setting `status: checked_out` or `status: cancelled` **frees the room back to `available`**, automatically. This used to be a one-directional sync (nothing ever freed a room back up) — that gap is now closed. If your UI had a manual "release room" workaround for this, it's no longer necessary.
+- A room is `occupied` while **any** reservation in it is `checked_in`. Merely `confirmed` or `pending` does **not** occupy it — and, since 2026-09-13, booking a room for a future date no longer frees it while another guest is checked in.
+- Once no guest is checked into the room (`checked_out`, `cancelled`), an `occupied` room is **freed back to `available`** automatically.
+- A room in `maintenance` is left alone unless a guest actually checks into it.
+- Moving a reservation to a different `room_id` re-syncs **both** rooms: the old one is freed if nobody else is checked into it.
 - A reservation with no `room_id` has nothing to sync — unaffected.
+- Edits to a reservation's room, dates, party size, value, currency or source are carried through to its stay.
 
 ## 1. List Reservations
 
@@ -230,7 +235,7 @@ HTTP `422`:
 | `hotel_id` | **required**, string, must exist in `hotels.id` — see the hotel-scoping note below. |
 | `guest_id` | **required**, string, must exist in `guests.id`, and must belong to `hotel_id`. |
 | `room_id` | optional, string, must exist in `rooms.id`, and must belong to `hotel_id` if provided. |
-| `reservation_id` | **required**, string, max 255, must be unique across all reservations. The UI should generate/let the user type a human-readable code (e.g. `RES-XXXXXXXX`) — the API does not auto-generate one on this endpoint (it does on the WhatsApp ingestion endpoint, but not here). |
+| `reservation_id` | **required**, string, max 255, must be unique **within the hotel** (two hotels may use the same code). A duplicate returns `422` on `reservation_id` ("The reservation id has already been taken."); a code held by a soft-deleted reservation of the same hotel restores that reservation instead. The UI should generate/let the user type a human-readable code (e.g. `RES-XXXXXXXX`) — the API does not auto-generate one on this endpoint (it does on the WhatsApp ingestion endpoint, but not here). |
 | `arrival_date` | **required**, date. |
 | `departure_date` | **required**, date. **Not currently validated against `arrival_date`** — the API will accept a `departure_date` before `arrival_date`; the frontend should enforce `departure_date >= arrival_date` client-side until this is added server-side. |
 | `status` | optional, one of the [status values](#status-values). Defaults to `pending` if omitted. |
@@ -338,7 +343,7 @@ Send only the fields you want to change — every field is optional on update:
 Same field-level rules as [create](#validation-rules), except every field is optional (`sometimes` instead of `required`), and:
 
 - **`hotel_id` cannot be changed.** If present in the payload and different from the reservation's current `hotel_id`, the API rejects the whole request — a reservation can't be moved to a different hotel through this endpoint. Don't include `hotel_id` in your edit form's payload at all.
-- `reservation_id`'s uniqueness check correctly excludes the reservation being edited, so re-submitting the same `reservation_id` it already has is fine.
+- `reservation_id`'s uniqueness check (within the hotel) excludes the reservation being edited, so re-submitting the same `reservation_id` it already has is fine. Changing it to a code another reservation of the hotel holds — including a soft-deleted one — returns `422` on `reservation_id`.
 - If you include `guest_id`/`room_id`, they're checked against the reservation's *current* hotel (same rule as create).
 
 ### Success Response
@@ -575,5 +580,6 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - The API does **not** enforce `departure_date >= arrival_date` yet — validate that client-side.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Don't use this document for the WhatsApp reservation-creation flow — that's `POST /api/whatsapp-reservation`, unauthenticated (API-key only), and out of scope here.
-- Room status now follows the actual stay: `checked_in` occupies the room, `checked_out`/`cancelled` frees it back to `available` automatically — merely `confirmed` no longer occupies it. See [Status Values](#status-values).
+- Room status follows who is actually in the room: occupied while any reservation in it is `checked_in`, freed back to `available` once none is, and `maintenance` left alone. A future booking never frees an occupied room. See [Status Values](#status-values).
+- `reservation_id` is unique per hotel, not across the platform. A row in an import whose code the hotel already uses is skipped with `Reservation id … already exists.`
 - `POST /api/reservation/import` bulk-creates reservations from an uploaded `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB). It returns only `{ imported, skipped }` counts, not the created records — refresh the list separately. It skips bad rows instead of failing the whole file, and unlike every other write endpoint here, a super admin **cannot** target another hotel with it. See [§6](#6-import-reservations-bulk-upload).

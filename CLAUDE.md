@@ -43,6 +43,40 @@ middleware (`ResolveTenant`).
 - `tests/TestCase.php` resets `TenantContext` between tests because it is
   process-static. Keep it that way.
 
+### Access control — staff roles and permissions
+
+What a user may do is decided by `App\Enums\Permission`, not by their role name:
+
+- `admin` and `super_admin` hold every permission. An `employee` holds what their
+  staff role (`App\Models\StaffRole`, one per employee, per hotel) grants, or
+  `Permission::employeeDefaults()` when they have no role. See `User::permissions()`.
+- Policies check `$this->allows($user, Permission::X, $record)` from
+  `App\Policies\Concerns\ChecksPermissions`, which is the permission **plus** the
+  same-hotel check. Never write `isAdmin()` / `isEmployee()` in a policy for a
+  hotel resource.
+
+**Every new module or resource must add its permissions alongside the existing
+ones.** When adding one:
+
+1. Add cases to `App\Enums\Permission`, grouped with the others:
+   `<resource>.view`, `.create`, `.update`, `.delete`, plus one case per extra
+   action (like `bookings.update_status` or `transactions.reverse`). Only add
+   the cases the resource actually has endpoints for.
+2. Gate every policy ability, and any authorization check outside a policy, with
+   those cases through `allows()`. Abilities that must never happen (like editing a
+   ledger row) stay a hard `return false`.
+3. Decide whether employees without a role should get any of them. Normally they
+   don't: only add a case to `employeeDefaults()` on purpose, and explain why there.
+4. Leave a resource out of the enum only if it must stay admin-only whatever a
+   role grants (users, staff roles, hotel settings, AI advisor, usage). Anything
+   that could let an employee raise their own access belongs in that group.
+5. Add its endpoints to the permission reference in
+   `docs/staff-roles-api-documentation.md` and to the dataset in
+   `tests/Feature/PermissionAuthorizationTest.php`.
+
+`GET /api/permissions` reads the enum, so the frontend's role editor picks up new
+permissions without a separate change.
+
 ### Request flow
 
 ```
@@ -65,7 +99,7 @@ in that file, and do not wrap its routes in their own group.
 | `app/Http/Resources` | Every response body goes through a Resource |
 | `app/Services` | Business logic with more than one caller (bookings, transactions, stays, metering, AI cost) |
 | `app/Jobs` | Queued/scheduled work; schedule entries live in `routes/console.php` |
-| `app/Policies` | Per-model authorization, called via `$this->authorize(...)` |
+| `app/Policies` | Per-model authorization, called via `$this->authorize(...)`; checks `Permission` cases through `ChecksPermissions` |
 | `app/Support` | Framework-adjacent helpers (tenancy, audit, knowledge, request rules) |
 | `app/Enums` | Backed enums for every status/type/channel column — add one rather than a string literal |
 
@@ -100,10 +134,15 @@ in that file, and do not wrap its routes in their own group.
 - Only `UserFactory` exists; other models are built with `Model::create([...])`.
 - Any new tenant-scoped feature needs a test proving another hotel cannot see it —
   `tests/Feature/TenantIsolationTest.php` is the pattern.
+- Any new permission needs a test showing an employee is allowed with it and gets
+  `403` without it — add the endpoint to the dataset in
+  `tests/Feature/PermissionAuthorizationTest.php`.
 
 ## Documentation
 
 Every API change updates the matching `docs/<resource>-api-documentation.md`.
+A new or changed permission also updates the permission reference in
+`docs/staff-roles-api-documentation.md`.
 Breaking changes are additionally summarized in `docs/latest-changes-<date>.md`.
 Phase/work-package plans live in `docs/PGRIP_Ecosystem_Phase2_Implementation_Plan_v1_0.md`.
 

@@ -28,9 +28,9 @@ X-API-KEY: {your_api_key}
 
 Notes:
 
-- The backend checks the `API_KEY` environment variable.
-- If `API_KEY` is empty on the server, requests are allowed without this header.
-- If the key is configured and missing or wrong, the API returns:
+- The backend checks the configured `API_KEY` (read through config, so it keeps working after `php artisan optimize`).
+- If no key is configured, requests are allowed without this header **only** in a `local` or `testing` environment. In any other environment an unset key rejects every request.
+- If the key is missing or wrong, the API returns:
 
 ```json
 {
@@ -39,6 +39,8 @@ Notes:
 ```
 
 with HTTP status `401`.
+
+**The API key is not a secret.** A browser frontend ships it in its bundle, so anyone can read it. It identifies the client app; it is not access control. Every protected route is guarded by the bearer token and the per-role policies, and `register` / `login` are rate limited (see [Rate Limiting](#rate-limiting)).
 
 ### 2. JSON Content Type
 
@@ -111,13 +113,21 @@ HTTP `201 Created`
   "code": 201,
   "body": {
     "user": {
-      "id": 1,
+      "id": "019facde-1111-7000-9000-abcdef123456",
       "name": "John Doe",
-      "email": "john@example.com"
-    }
+      "email": "john@example.com",
+      "role": "admin",
+      "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+      "staff_role_id": null,
+      "staff_role": null,
+      "permissions": ["activities.view", "activities.create", "...every permission"]
+    },
+    "hotel": { "...": "HotelResource" }
   }
 }
 ```
+
+The registering user is always the new hotel's `admin`, so `permissions` lists every permission and `staff_role` is `null`. See [Staff Roles API](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
 
 ### Important Frontend Note
 
@@ -164,13 +174,27 @@ HTTP `200 OK`
     "token": "1|exampleSanctumTokenHere",
     "token_type": "Bearer",
     "user": {
-      "id": 1,
+      "id": "019facde-1111-7000-9000-abcdef123456",
       "name": "John Doe",
-      "email": "john@example.com"
+      "email": "john@example.com",
+      "role": "employee",
+      "staff_role_id": "019fb2a0-1111-7000-9000-abcdef123456",
+      "staff_role": {
+        "id": "019fb2a0-1111-7000-9000-abcdef123456",
+        "name": "Housekeeping",
+        "permissions": ["rooms.view", "tasks.view", "tasks.update"]
+      },
+      "permissions": ["rooms.view", "tasks.view", "tasks.update"],
+      "hotel": { "...": "HotelResource" },
+      "team": null
     }
   }
 }
 ```
+
+`body.user` is the full user object (see [User Management API § The User Object](/D:/Hospitality%20Ecosystem/docs/user-management-api-documentation.md#the-user-object)), with `hotel`, `team` and `staff_role` loaded. `staff_role` above is shortened.
+
+`permissions` is the user's effective permission list: every permission for an admin, and the role's list or the defaults for an employee. See [Staff Roles API](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
 
 ### Frontend Handling
 
@@ -183,6 +207,8 @@ After a successful login:
 ```http
 Authorization: Bearer {token}
 ```
+
+4. Use `body.user.permissions` to build navigation and actions right away. There's no need to call `GET /api/user` first.
 
 ### Invalid Credentials Response
 
@@ -232,6 +258,27 @@ HTTP `200 OK`
 
 - Logout removes the **current** access token only.
 - If the same user is logged in on multiple devices or sessions, other tokens remain active.
+
+## Rate Limiting
+
+| Endpoint | Limit |
+| --- | --- |
+| `POST /api/login` | 5 attempts per minute per email + IP, and 20 per minute per IP across all emails. |
+| `POST /api/register` | 5 attempts per minute per IP. |
+
+Every attempt counts, successful or not. Over the limit the API returns HTTP `429` with a `Retry-After` header (seconds):
+
+```json
+{
+  "message": "Too Many Attempts."
+}
+```
+
+On `429`, show "Too many attempts, try again in N seconds" using `Retry-After`, and disable the submit button until then. The header is listed in `Access-Control-Expose-Headers`, so a browser frontend on an allowed origin can read it.
+
+## Browser Origins (CORS)
+
+Only the origins in the server's `CORS_ALLOWED_ORIGINS` (comma-separated; defaults to `http://localhost:3000`) may call the API from a browser. A frontend served from any other origin fails the CORS preflight. Add each deployed frontend URL to that variable.
 
 ## Validation Error Format
 

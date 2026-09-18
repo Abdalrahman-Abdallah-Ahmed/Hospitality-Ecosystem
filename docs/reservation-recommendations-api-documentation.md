@@ -34,13 +34,15 @@ Content-Type: application/json
 
 ## Who Can Call These Endpoints
 
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `recommendations.view` (index, show), `recommendations.update`, `recommendations.delete`, `recommendations.generate`, `recommendations.record_outcome`. Employees without a role hold only `recommendations.record_outcome`.
+
 Gated by `App\Policies\RecommendationPolicy`, which has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
 
 | Action | Rule (non-super-admin) |
 | --- | --- |
 | `index` | The user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user's `role` must be `admin`, **and** the recommendation's `hotel_id` must equal the hotel the user owns. |
-| `generate` | Gated by `App\Policies\ReservationPolicy::view` instead (same rule as `GET /api/reservation/{id}`): `role` must be `admin`, and the *reservation's* `hotel_id` must equal the caller's own hotel. |
+| `generate` | Gated by `RecommendationPolicy::create` with the reservation: `role` must be `admin` (or an employee with `recommendations.generate`), and the *reservation's* `hotel_id` must equal the caller's own hotel. |
 | `recordOutcome` | **`admin` or `employee`**, and the recommendation must be in the caller's own hotel. Deliberately wider than every other write ability here — the employees at the desk are the people who hear a refusal. |
 
 Practical implications for the UI:

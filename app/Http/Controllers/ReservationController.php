@@ -16,6 +16,7 @@ use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ReservationController extends Controller
@@ -54,6 +55,10 @@ class ReservationController extends Controller
             return $error;
         }
 
+        if (ReservationCreator::isReservationIdInUse($hotel->id, $validated['reservation_id'])) {
+            throw $this->reservationIdTaken();
+        }
+
         $reservation = ReservationCreator::create([...$validated, 'hotel_id' => $hotel->id]);
 
         ReservationCreator::syncRoomOccupancy($reservation);
@@ -86,6 +91,10 @@ class ReservationController extends Controller
             return $error;
         }
 
+        if (isset($validated['reservation_id']) && $this->usedByAnotherReservation($reservation, $validated['reservation_id'])) {
+            throw $this->reservationIdTaken();
+        }
+
         $reservation->update($validated);
 
         // Order matters: syncRoomOccupancy() reads the stay's current
@@ -115,7 +124,7 @@ class ReservationController extends Controller
      */
     public function import(ImportReservationsRequest $request): JsonResponse
     {
-        $this->authorize('create', Reservation::class);
+        $this->authorize('import', Reservation::class);
 
         $hotel = $request->user()->hotel;
         if (! $hotel) {
@@ -172,5 +181,29 @@ class ReservationController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * On update a soft-deleted reservation still holds its code in the unique
+     * index, so it counts as taken — unlike on create, where it is restored.
+     */
+    private function usedByAnotherReservation(Reservation $reservation, string $reservationId): bool
+    {
+        return Reservation::withTrashed()
+            ->where('hotel_id', $reservation->hotel_id)
+            ->where('reservation_id', $reservationId)
+            ->whereKeyNot($reservation->getKey())
+            ->exists();
+    }
+
+    /**
+     * Same shape and wording the column's old single-column unique rule
+     * produced, so clients reading `errors.reservation_id` see no change.
+     */
+    private function reservationIdTaken(): ValidationException
+    {
+        return ValidationException::withMessages([
+            'reservation_id' => 'The reservation id has already been taken.',
+        ]);
     }
 }

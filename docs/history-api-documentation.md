@@ -22,7 +22,8 @@ Accept: application/json
 ## Who Can Call This
 
 `App\Policies\EventLogPolicy`: the caller's `role` must be `admin` (super admin
-bypasses). The events returned are automatically scoped to the caller's own
+bypasses), or an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md)
+grants `history.view`. The events returned are automatically scoped to the caller's own
 hotel(s) — asking for a record that belongs to another hotel returns `404`, the
 same as an id that doesn't exist. A soft-deleted record still has a readable
 history (that is the point of the log).

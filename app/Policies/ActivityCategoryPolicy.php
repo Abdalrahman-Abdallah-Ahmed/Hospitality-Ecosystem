@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\ActivityCategory;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class ActivityCategoryPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class ActivityCategoryPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::ACTIVITY_CATEGORIES_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class ActivityCategoryPolicy
      */
     public function view(User $user, ActivityCategory $activityCategory): bool
     {
-        return $user->isAdmin() && $activityCategory->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ACTIVITY_CATEGORIES_VIEW, $activityCategory);
     }
 
     /**
@@ -36,7 +40,7 @@ class ActivityCategoryPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::ACTIVITY_CATEGORIES_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class ActivityCategoryPolicy
      */
     public function update(User $user, ActivityCategory $activityCategory): bool
     {
-        return $user->isAdmin() && $activityCategory->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ACTIVITY_CATEGORIES_UPDATE, $activityCategory);
     }
 
     /**
@@ -52,7 +56,7 @@ class ActivityCategoryPolicy
      */
     public function delete(User $user, ActivityCategory $activityCategory): bool
     {
-        return $user->isAdmin() && $activityCategory->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::ACTIVITY_CATEGORIES_DELETE, $activityCategory);
     }
 
     /**

@@ -39,7 +39,7 @@ Gated by `App\Policies\AiInsightsPolicy`. The policy has a `before()` hook: **a 
 | `index` (list) | The user's `role` must be `admin`. |
 | `store` (generate) | The user's `role` must be `admin`. |
 
-Anyone who is not `admin` or `super_admin` (i.e. `employee`) gets HTTP `403` on both routes — treat as "shouldn't be on this page."
+An `employee` gets HTTP `403` on both routes unless their [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants `ai_insights.view` (index) or `ai_insights.generate` (store). Employees without a role have neither.
 
 `index` additionally scopes the query to `where('hotel_id', <caller's own hotel>)` — a regular admin only ever sees their own hotel's insights. **Caveat:** unlike some other list endpoints in this app, this uses `$request->user()->hotel?->id`, which resolves to `null` for a super admin (who typically has no owned hotel) or for an admin with no hotel — in that case the query becomes `where('hotel_id', null)` and returns an **empty list**, not "everything" or an error. Don't assume a `200` with an empty array means "no insights exist" for a super admin.
 

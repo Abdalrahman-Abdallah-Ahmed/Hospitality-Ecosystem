@@ -56,13 +56,35 @@ class ReservationCreator
     }
 
     /**
+     * Whether a live reservation at this hotel already uses this code.
+     * Codes are unique per hotel — two properties may both issue "RES-1001" —
+     * and that composite index is beyond what the schema-derived validation
+     * rules can check. A soft-deleted match is not counted: create() restores
+     * it instead.
+     */
+    public static function isReservationIdInUse(string $hotelId, string $reservationId): bool
+    {
+        return Reservation::withoutGlobalScope('hotel')
+            ->where('hotel_id', $hotelId)
+            ->where('reservation_id', $reservationId)
+            ->exists();
+    }
+
+    /**
      * A trashed reservation is not visible through normal queries, but its
-     * unique reservation_id row still exists, so blindly creating would
+     * (hotel_id, reservation_id) row still exists, so blindly creating would
      * throw a duplicate-key error. Restore and update it instead.
+     *
+     * The lookup names the hotel explicitly. Queued callers run with no
+     * tenant scope, and matching on the code alone would restore — and
+     * overwrite — another hotel's reservation that happens to share it.
      */
     public static function create(array $attributes): Reservation
     {
-        $trashed = Reservation::onlyTrashed()->where('reservation_id', $attributes['reservation_id'])->first();
+        $trashed = Reservation::onlyTrashed()
+            ->where('hotel_id', $attributes['hotel_id'])
+            ->where('reservation_id', $attributes['reservation_id'])
+            ->first();
 
         if ($trashed) {
             $trashed->restore();
@@ -80,16 +102,17 @@ class ReservationCreator
 
     /**
      * Ensures a stay exists for this reservation (idempotent — safe to call
-     * on every create/update) and keeps its status in step with the
-     * reservation's own status. The one place both WP-2 acceptance
-     * criteria ("every reservation automatically produces one stay") and
-     * the expected/check-in/check-out/cancel transitions are driven from.
-     * No-show is deliberately not one of them — see the match below.
+     * on every create/update) and keeps it in step with the reservation: its
+     * planned side via StayService, and its status via the match below. The
+     * one place both WP-2 acceptance criteria ("every reservation
+     * automatically produces one stay") and the expected/check-in/check-out/
+     * cancel transitions are driven from. No-show is deliberately not one of
+     * them — see the match below.
      */
     public static function syncStay(Reservation $reservation): void
     {
         $stayService = app(StayService::class);
-        $stay = $stayService->createFromReservation($reservation);
+        $stay = $stayService->syncFromReservation($reservation);
 
         match ($reservation->status) {
             ReservationStatus::CHECKED_IN => $stayService->checkIn($stay),
@@ -107,34 +130,46 @@ class ReservationCreator
     }
 
     /**
-     * The room's status reflects whether its stay is actually IN_HOUSE —
-     * a real, physical fact — not whether the reservation is merely
-     * confirmed. This also closes a known gap: previously, nothing ever
-     * freed a room back to "available" on cancel/checkout/no-show; now
-     * DEPARTED/NO_SHOW/CANCELLED do so automatically. A stay still
-     * EXPECTED (booked, not yet arrived) intentionally leaves the room's
-     * current status untouched — a future booking shouldn't block the
-     * room from showing available in the meantime.
+     * Keeps the status of this reservation's room — and of the room it just
+     * moved out of, if the last save changed room_id — in step with who is
+     * physically there. Call after syncStay(), which it reads.
      */
     public static function syncRoomOccupancy(Reservation $reservation): void
     {
-        if (! $reservation->room_id) {
+        $previousRoomId = $reservation->wasChanged('room_id')
+            ? ($reservation->getPrevious()['room_id'] ?? null)
+            : null;
+
+        foreach (array_unique(array_filter([$reservation->room_id, $previousRoomId])) as $roomId) {
+            self::syncRoomStatus($roomId);
+        }
+    }
+
+    /**
+     * A room is occupied while any stay in it is IN_HOUSE, and released back
+     * to available once none is. Derived from every stay in the room rather
+     * than from one reservation, so booking a room for next week cannot
+     * release it while tonight's guest is still in it.
+     *
+     * Only an occupied room is ever released: a room under maintenance stays
+     * under maintenance until a guest actually checks into it.
+     */
+    private static function syncRoomStatus(string $roomId): void
+    {
+        $someoneInHouse = Stay::withoutGlobalScope('hotel')
+            ->where('room_id', $roomId)
+            ->where('status', StayStatus::IN_HOUSE)
+            ->exists();
+
+        $room = Room::withoutGlobalScope('hotel')->whereKey($roomId);
+
+        if ($someoneInHouse) {
+            $room->update(['status' => RoomStatusesEnum::OCCUPIED->value]);
+
             return;
         }
 
-        $stay = Stay::withoutGlobalScope('hotel')
-            ->where('reservation_id', $reservation->id)
-            ->first();
-
-        $roomStatus = match ($stay?->status) {
-            StayStatus::IN_HOUSE => RoomStatusesEnum::OCCUPIED,
-            StayStatus::EXPECTED => RoomStatusesEnum::AVAILABLE,
-            StayStatus::DEPARTED, StayStatus::NO_SHOW, StayStatus::CANCELLED => RoomStatusesEnum::AVAILABLE,
-            default => null,
-        };
-
-        if ($roomStatus) {
-            Room::whereKey($reservation->room_id)->update(['status' => $roomStatus->value]);
-        }
+        $room->where('status', RoomStatusesEnum::OCCUPIED->value)
+            ->update(['status' => RoomStatusesEnum::AVAILABLE->value]);
     }
 }

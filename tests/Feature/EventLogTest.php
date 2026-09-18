@@ -100,6 +100,20 @@ it('only records allow-listed attributes in changes', function () {
         ->and($event->changes)->not->toHaveKey('identity_hash');
 });
 
+it('logs who flagged a guest as VIP', function () {
+    [$admin, $hotel] = elAdminWithHotel();
+    $guest = elGuest($hotel);
+
+    $this->actingAs($admin);
+    $guest->update(['is_vip' => true]);
+
+    $event = lastEvent('guest.updated');
+
+    expect($event->actor_id)->toBe($admin->id)
+        ->and((bool) $event->changes['is_vip']['from'])->toBeFalse()
+        ->and((bool) $event->changes['is_vip']['to'])->toBeTrue();
+});
+
 it('records actor_kind = ai_agent for an AI-created insight', function () {
     [, $hotel] = elAdminWithHotel();
 

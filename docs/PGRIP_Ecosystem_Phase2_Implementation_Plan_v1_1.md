@@ -3,11 +3,12 @@
 ## The SaaS Layer: Plans, Subscriptions, Metering, and Cost Control
 
 **Document ID:** PGRIP-ECO-P2-001
-**Version:** 1.0
-**Date:** 24 August 2026
+**Version:** 1.1
+**Date:** 07 September 2026
+**Supersedes:** v1.0 (aligned to Phase 1 v1.2 — see §10 Revision Record)
 **Prepared for:** Backend developer (junior level)
 **Prepared by:** PGRIP Intelligence Partner
-**Depends on:** PGRIP-ECO-P1-001 v1.0 (Phase 1) — **must be complete and merged**
+**Depends on:** PGRIP-ECO-P1-001 v1.2 + P1-002 addendum — **must be complete and merged**
 **Stack:** PHP 8.3 · Laravel 13 · PostgreSQL · Pest 4 · Sanctum · Laravel Cashier (added in this phase)
 
 ---
@@ -116,6 +117,14 @@ Terminology used throughout: **Account = hotel group.**
 
 The schema below supports all three. Build for the hybrid — it is the superset, and switching later costs nothing.
 
+### Open: what do you bill *for*? *(new in v1.1)*
+
+Phase 1 v1.2 redefined success as the **booking**, not the AI message. Phase 2 as originally written bills by volume — messages sent, recommendations generated. Those now measure different things: the product is scored on outcomes and priced on inputs. A hotel whose agent converts well pays the same as one whose agent generates noise nobody acts on.
+
+**Recommendation: stay on volume for now, and meter bookings for reporting only.** Volume tracks your actual cost driver (tokens), and you do not yet have conversion data to price against. `bookings_generated` is added to the catalogue in §6.1 as a metered-but-not-billed feature so the data accumulates from day one. Revisit once you have two or three months of real booking rates.
+
+Pricing on a metric you have not measured is how you end up repricing in month four.
+
 ---
 
 ## 4. Vocabulary
@@ -199,6 +208,8 @@ Starting catalogue:
 | `ai_messages` | quota | messages/month |
 | `whatsapp_channel` | boolean | — |
 | `guest_recommendations` | quota | recommendations/month |
+| `bookings` | boolean | — |
+| `bookings_generated` | quota | bookings/month *(metered for reporting, not billed — see §3 Decision 2)* |
 | `transaction_import` | boolean | — |
 | `analytics_conversion` | boolean | — |
 | `api_access` | boolean | — |
@@ -264,6 +275,7 @@ Write `PlanSeeder` with three plans so the rest of the phase has something to wo
 | Properties | 1 | 10 | unlimited |
 | Users | 5 | 50 | unlimited |
 | AI messages/mo | 500 | 10,000 | 100,000 |
+| Bookings module | ✓ | ✓ | ✓ |
 | AI advisor | ✗ | ✓ | ✓ |
 | WhatsApp | ✓ | ✓ | ✓ |
 | Conversion analytics | ✗ | ✓ | ✓ |
@@ -554,6 +566,7 @@ Call it from:
 | `AiAdvisorController@chat` | `ai_messages` |
 | `CreateAiInsightsJob` | `ai_insights_generated` |
 | `GenerateActivityRecommendationsJob` | `guest_recommendations` |
+| `BookingService::create()` | `bookings_generated` *(reporting only — do not gate on it)* |
 | `TransactionsImport` | `transaction_rows_imported` |
 | Hotel created | `properties` (seat, recount not increment) |
 | User created | `users` (seat, recount not increment) |
@@ -624,7 +637,13 @@ Understand the environment you are building for. A hotel front desk runs 24 hour
 | 4 — Suspended | Grace expired | Read-only for everything except check-in, check-out, and data export |
 | 5 — Expired | Retention elapsed | Access ends; data exported and archived per retention policy |
 
-**Never blocked at any level:** authentication, check-in, check-out, viewing existing reservations, data export.
+**Never blocked at any level:** authentication, check-in, check-out, viewing existing reservations, **creating and updating bookings**, data export.
+
+**On bookings specifically.** Bookings arrive through AI paths — `CreateBookingTool` in the concierge agent, the recommendation flow — so a developer reading the code will reasonably classify them as an AI feature and gate them. That is wrong. A booking is not AI output; it is an operational commitment: a table held, a guest expected, staff scheduled. Gate the *suggestion*, never the *commitment*.
+
+The failure this prevents: a card expires on Friday, the account suspends, booking creation is gated. Guests keep booking dinner over WhatsApp and the records do not save. Saturday evening the outlet has no covers list and thirty guests arrive expecting tables. Nobody connects it to billing, because nothing in the restaurant's world mentions billing.
+
+Suspending recommendation *generation* already reduces bookings naturally — fewer offers, fewer commitments. That is legitimate commercial pressure. Blocking the booking record itself breaks the guest's evening, not the hotel's billing.
 
 Data export stays available at every level on purpose. Holding a customer's own data hostage over an unpaid invoice is unlawful in several jurisdictions and indefensible in all of them.
 
@@ -703,6 +722,7 @@ A daily job checks each active subscription and notifies admins at 80% and 100% 
 it('returns 402 with an upgrade payload when a boolean feature is missing', ...);
 it('blocks the request that would cross the quota, not the one after it', ...);
 it('still allows check-in and check-out while suspended', ...);
+it('still accepts booking creation and status updates while suspended', ...);
 it('still allows data export while suspended', ...);
 it('does not deactivate existing hotels when a downgrade breaches the seat limit', ...);
 it('reflects an upgrade immediately, without waiting for cache expiry', ...);
@@ -717,6 +737,7 @@ The third and fourth tests are the ones that protect the business relationship. 
 - [ ] 402 responses carry limit, usage, reset time, and upgrade flag
 - [ ] Usage headers on authenticated responses
 - [ ] Degradation ladder implemented; operational endpoints never blocked
+- [ ] Booking creation and status updates are in the protected set, with a test
 - [ ] Export available at every level including suspended
 - [ ] Entitlement cache invalidated on change
 - [ ] 80% and 100% warnings sent once each per period
@@ -1056,7 +1077,17 @@ POST   /api/admin/accounts/{id}/resume
 GET    /api/admin/accounts/{id}/usage
 GET    /api/admin/accounts/{id}/ai-cost
 GET    /api/admin/metrics
+GET    /api/admin/classification-audit          ← new in v1.1
+POST   /api/admin/classification-audit/{id}     ← record agreement or correction
 ```
+
+### 12.4 Classification audit *(new in v1.1)*
+
+Phase 1 addendum P1-002 requires monthly sampling of the agent's self-classified conversational outcomes. That obligation needs somewhere to live, or it evaporates.
+
+`GET /api/admin/classification-audit` returns a random sample of `CONVERSATIONAL` outcomes with the stored `evidence_quote`, the classification, and the confidence. A reviewer marks each agreed or corrected. Corrections write a new outcome with `attribution_method = STAFF` (which outranks `CONVERSATIONAL`, so the correction wins) and log to `event_log`.
+
+Report agreement rate per month. A falling rate is the signal that the classifier is drifting — and an agent that scores its own work with nobody checking drifts upward, not randomly.
 
 `/api/admin/metrics` returns MRR, active accounts, trials, trial→paid conversion, churn, portfolio gross margin, and accounts below target margin.
 
@@ -1177,9 +1208,27 @@ These are commercial, not technical. Do not resolve them yourself.
 5. **Tax jurisdictions** — which countries will be invoiced in year one? Determines Stripe Tax configuration and needs accountant sign-off.
 6. **Data retention on expiry** — how long is data kept after an account expires, and who authorises final deletion?
 7. **Target gross margin** — sets the alert threshold in WP-10. Without a number, the alert cannot be configured.
+8. **Billing basis** *(new in v1.1)* — bill by AI volume, or by bookings produced? See §3. Recommendation: volume for now; `bookings_generated` accumulates the data for a later decision.
 
 **Confidence:** High for WP-6 through WP-10 — these are standard patterns and depend only on Phase 1, which is verified. Moderate for WP-11, because tax and dunning policy are commercial decisions that shape the implementation. WP-12 is straightforward once the preceding packages exist.
 
 ---
 
-*End of document — PGRIP-ECO-P2-001 v1.0.*
+## 10. Revision record
+
+| Rev | Date | Section | Change | Rationale |
+|---|---|---|---|---|
+| 1.0 | 24 Aug 2026 | — | Initial issue | — |
+| 1.1 | 07 Sep 2026 | §6.1 | Added `bookings` (boolean) and `bookings_generated` (quota, reporting only) to the feature catalogue | Phase 1 v1.2 introduced the booking entity. `analytics_conversion` was gating an endpoint whose underlying entity had no entitlement. |
+| 1.1 | 07 Sep 2026 | **§WP-9** | Booking creation and status updates added to the never-blocked set, with rationale and a test | Bookings arrive via AI code paths and would otherwise be gated as an AI feature. A booking is an operational commitment, not AI output. |
+| 1.1 | 07 Sep 2026 | §WP-8 | `bookings_generated` metered at `BookingService::create()`, explicitly not gated | Accumulates outcome data for a future pricing decision without changing billing now. |
+| 1.1 | 07 Sep 2026 | §3 | Added open decision: bill by volume or by bookings | Phase 1 now measures success by booking; Phase 2 bills by volume. Named rather than silently resolved. |
+| 1.1 | 07 Sep 2026 | §WP-12 | Added classification-audit endpoints and §12.4 | P1-002 requires monthly sampling of agent self-classification; it had no home in the product. |
+
+### Open decision for the owner
+
+**Billing basis.** Volume (current) or bookings produced (new value metric)? Recommendation: remain on volume until two to three months of booking-rate data exist. Logged as decision 8 in §9.
+
+---
+
+*End of document — PGRIP-ECO-P2-001 v1.1.*

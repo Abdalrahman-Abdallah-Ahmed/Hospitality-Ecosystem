@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Guest;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class GuestPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class GuestPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::GUESTS_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class GuestPolicy
      */
     public function view(User $user, Guest $guest): bool
     {
-        return $user->isAdmin() && $guest->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::GUESTS_VIEW, $guest);
     }
 
     /**
@@ -36,7 +40,7 @@ class GuestPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::GUESTS_CREATE);
     }
 
     /**
@@ -44,7 +48,7 @@ class GuestPolicy
      */
     public function update(User $user, Guest $guest): bool
     {
-        return $user->isAdmin() && $guest->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::GUESTS_UPDATE, $guest);
     }
 
     /**
@@ -52,7 +56,7 @@ class GuestPolicy
      */
     public function delete(User $user, Guest $guest): bool
     {
-        return $user->isAdmin() && $guest->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::GUESTS_DELETE, $guest);
     }
 
     /**

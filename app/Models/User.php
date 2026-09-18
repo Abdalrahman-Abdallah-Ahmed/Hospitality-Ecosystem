@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
@@ -15,7 +16,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id', 'hotel_id', 'hotel_group_id', 'group_role'])]
+#[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id', 'hotel_id', 'hotel_group_id', 'group_role', 'staff_role_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -168,6 +169,48 @@ class User extends Authenticatable
     public function team()
     {
         return $this->belongsTo(Team::class);
+    }
+
+    public function staffRole()
+    {
+        return $this->belongsTo(StaffRole::class);
+    }
+
+    /**
+     * Whether this user may do this kind of thing at all. Policies still
+     * check that the record belongs to the user's hotel.
+     */
+    public function hasPermission(Permission $permission): bool
+    {
+        return in_array($permission, $this->permissions(), true);
+    }
+
+    /**
+     * Every permission this user holds.
+     *
+     * Admins and super admins hold all of them. An employee holds what their
+     * staff role grants, or the defaults when no role is assigned. An
+     * assigned role that can no longer be read (deleted, or outside the
+     * current tenant scope) grants nothing rather than falling back to the
+     * defaults, which could be wider than the role was.
+     *
+     * @return list<Permission>
+     */
+    public function permissions(): array
+    {
+        if ($this->isSuperAdmin() || $this->isAdmin()) {
+            return Permission::cases();
+        }
+
+        if (! $this->isEmployee()) {
+            return [];
+        }
+
+        if ($this->staff_role_id === null) {
+            return Permission::employeeDefaults();
+        }
+
+        return $this->staffRole?->grantedPermissions() ?? [];
     }
 
     /**

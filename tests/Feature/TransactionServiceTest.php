@@ -1,11 +1,14 @@
 <?php
 
 use App\Enums\EvidenceLevel;
+use App\Enums\TransactionSource;
 use App\Models\Hotel;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\TransactionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -76,6 +79,36 @@ it('refuses to reverse a reversal', function () {
 
     expect(fn () => app(TransactionService::class)->reverse($reversal, 'undo the undo'))
         ->toThrow(RuntimeException::class);
+});
+
+it('reports a reversal that loses a race as already reversed, not a database error', function () {
+    $hotel = ledgerHotel();
+    $original = recordTransaction($hotel);
+
+    // Stand in for a concurrent request whose reversal lands after this
+    // request's "already reversed?" check but before its own insert.
+    Transaction::creating(function () use ($original) {
+        DB::table('transactions')->insert([
+            'id' => (string) Str::uuid(),
+            'hotel_id' => $original->hotel_id,
+            'item_name' => 'Reversal: '.$original->item_name,
+            'currency' => $original->currency,
+            'transacted_at' => now(),
+            'business_date' => now()->toDateString(),
+            'source_system' => TransactionSource::MANUAL->value,
+            'external_reference' => 'reversal:'.$original->id,
+            'reverses_transaction_id' => $original->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    expect(fn () => app(TransactionService::class)->reverse($original, 'second click'))
+        ->toThrow(RuntimeException::class, 'This transaction has already been reversed.');
+
+    // The rejected insert was rolled back to its savepoint, so the connection
+    // is still usable and nothing was written.
+    expect(Transaction::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->count())->toBe(1);
 });
 
 it('blocks updates to a persisted transaction', function () {

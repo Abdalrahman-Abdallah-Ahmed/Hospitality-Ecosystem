@@ -22,6 +22,14 @@ class Guest extends Model
 
     public $incrementing = false;
 
+    /**
+     * Mirrors the column default so a freshly created guest reports
+     * `is_vip: false` instead of null before it is reloaded.
+     */
+    protected $attributes = [
+        'is_vip' => false,
+    ];
+
     protected $fillable = [
         'hotel_id',
         'first_name',
@@ -32,14 +40,14 @@ class Guest extends Model
         'nationality',
         'preferences',
         'loyalty_status',
-        'marketing_consent',
+        'is_vip',
         'external_id',
         'channel',
     ];
 
     protected $casts = [
         'preferences' => 'array',
-        'marketing_consent' => 'boolean',
+        'is_vip' => 'boolean',
         'identity_resolved_at' => 'datetime',
     ];
 
@@ -66,8 +74,8 @@ class Guest extends Model
     {
         return [
             'first_name', 'last_name', 'email', 'phone_number',
-            'preferred_language', 'nationality', 'preferences', 'loyalty_status',
-            'marketing_consent', 'external_id', 'channel', 'master_guest_id',
+            'preferred_language', 'nationality', 'preferences', 'loyalty_status', 'is_vip',
+            'external_id', 'channel', 'master_guest_id',
         ];
     }
 

@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Generic\GenericIndexRequest;
-use App\Http\Requests\Generic\GenericStoreRequest;
-use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Requests\StoreActivityRequest;
+use App\Http\Requests\UpdateActivityRequest;
 use App\Http\Resources\ActivityResource;
 use App\Models\Activity;
 use App\Support\RequestRules\GenericQuery;
@@ -28,7 +28,7 @@ class ActivityController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(GenericStoreRequest $request)
+    public function store(StoreActivityRequest $request)
     {
         $this->authorize('create', Activity::class);
 
@@ -65,7 +65,7 @@ class ActivityController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(GenericUpdateRequest $request, Activity $activity)
+    public function update(UpdateActivityRequest $request, Activity $activity)
     {
         $this->authorize('update', $activity);
 

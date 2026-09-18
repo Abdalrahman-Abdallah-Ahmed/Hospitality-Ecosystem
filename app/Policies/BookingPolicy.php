@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Booking;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class BookingPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -17,34 +21,30 @@ class BookingPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin() || $user->isEmployee();
+        return $this->allows($user, Permission::BOOKINGS_VIEW);
     }
 
     public function view(User $user, Booking $booking): bool
     {
-        return $this->worksHere($user, $booking);
+        return $this->allows($user, Permission::BOOKINGS_VIEW, $booking);
     }
 
-    /**
-     * Employees can take bookings as well as admins: the person at the desk
-     * when a guest asks for the sunset cruise is the one who should record it.
-     */
     public function create(User $user): bool
     {
-        return $user->isAdmin() || $user->isEmployee();
+        return $this->allows($user, Permission::BOOKINGS_CREATE);
     }
 
     /**
      * Moving a booking through its lifecycle — confirmed, realised, no-show,
-     * cancelled. Only the outlet knows whether the guest actually turned up,
-     * so this has to reach the same people who serve them.
+     * cancelled.
      */
     public function updateStatus(User $user, Booking $booking): bool
     {
-        return $this->worksHere($user, $booking);
+        return $this->allows($user, Permission::BOOKINGS_UPDATE_STATUS, $booking);
     }
 
-    // A booking is cancelled, never edited in place or deleted.
+    // A booking is cancelled, never edited in place or deleted — whatever
+    // permissions a role grants.
     public function update(User $user, Booking $booking): bool
     {
         return false;
@@ -63,11 +63,5 @@ class BookingPolicy
     public function forceDelete(User $user, Booking $booking): bool
     {
         return false;
-    }
-
-    private function worksHere(User $user, Booking $booking): bool
-    {
-        return ($user->isAdmin() || $user->isEmployee())
-            && $booking->hotel_id === $user->hotel?->id;
     }
 }

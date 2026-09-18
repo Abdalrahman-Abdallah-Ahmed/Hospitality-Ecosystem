@@ -31,11 +31,13 @@ Content-Type: application/json
 
 Notes:
 
-- `X-API-KEY` is checked by the `api.key` middleware. If `API_KEY` is unset on the server, this header is not enforced; when it is set, a missing/wrong key returns HTTP `401`.
+- `X-API-KEY` is checked by the `api.key` middleware against the server's configured `API_KEY`; a missing/wrong key returns HTTP `401`. The check is skipped only when no key is configured **and** the server runs in a `local` or `testing` environment — anywhere else, an unset key rejects every request.
 - `Authorization: Bearer {login_token}` is required because every room route is inside the `auth:sanctum` middleware group. Get this token from `POST /api/login` (see `docs/auth-api-documentation.md`).
 - Without a valid bearer token, the API returns HTTP `401 Unauthenticated.` before your controller/policy logic ever runs.
 
 ## Who Can Call These Endpoints
+
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `rooms.view` (index, show), `rooms.create`, `rooms.update`, `rooms.delete`. Employees without a role have none of these.
 
 Every action is gated by `App\Policies\RoomPolicy`, on top of the bearer-token check above:
 

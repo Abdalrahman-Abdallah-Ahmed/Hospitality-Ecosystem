@@ -33,7 +33,7 @@ Content-Type: application/json
 
 Notes:
 
-- `X-API-KEY` is checked by the `api.key` middleware. If `API_KEY` is unset on the server, this header is not enforced; when it is set, a missing/wrong key returns HTTP `401`.
+- `X-API-KEY` is checked by the `api.key` middleware against the server's configured `API_KEY`; a missing/wrong key returns HTTP `401`. The check is skipped only when no key is configured **and** the server runs in a `local` or `testing` environment — anywhere else, an unset key rejects every request.
 - `Authorization: Bearer {login_token}` is required because every `/api/users` route is inside the `auth:sanctum` middleware group. Get this token from `POST /api/login`.
 - Without a valid bearer token, the API returns HTTP `401 Unauthenticated.` before controller/policy logic ever runs.
 
@@ -44,11 +44,11 @@ Every action is gated by `App\Policies\UserPolicy`. The policy has a `before()` 
 | Action | Rule (non-super-admin) | Super admin |
 | --- | --- | --- |
 | `index` (list) | The user's `role` must be `admin`. Results are scoped to their own hotel (see below). | Allowed. Sees **every** user in the system, unscoped by hotel. |
-| `show` (view one) | The user must be `admin`, **and** the target's `hotel_id` must equal the caller's own hotel. | Allowed for any user. |
-| `store` (create) | The user's `role` must be `admin`, **and** they must have an associated hotel (see [Create](#2-create-a-user)). | Allowed, but must explicitly supply `hotel_id` — see [Create](#2-create-a-user). |
-| `update` / `destroy` | The user must be `admin`, **and** the target's `hotel_id` must equal the caller's own hotel. | Allowed for any user. |
+| `show` (view one) | The user must be `admin` with a hotel, the target's `hotel_id` must equal that hotel, **and** the target must not be a `super_admin`. | Allowed for any user. |
+| `store` (create) | The user's `role` must be `admin`, **and** they must have an associated hotel (see [Create](#2-create-a-user)). Cannot create a `super_admin`. | Allowed, but must explicitly supply `hotel_id` — see [Create](#2-create-a-user). |
+| `update` / `destroy` | The user must be `admin` with a hotel, the target's `hotel_id` must equal that hotel, **and** the target must not be a `super_admin`. Cannot grant the `super_admin` role. | Allowed for any user. |
 
-Anyone who is not `admin` or `super_admin` (i.e. `employee`) gets HTTP `403` on **every** route in this document, including `index`.
+Anyone who is not `admin` or `super_admin` (i.e. `employee`) gets HTTP `403` on **every** route in this document, including `index`. A [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) cannot change this: user management is never grantable to employees.
 
 Practical implications for the UI:
 
@@ -79,30 +79,70 @@ Successful custom API responses use this structure:
 ```json
 {
   "id": "019facde-1111-7000-9000-abcdef123456",
-  "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
-  "team_id": "019fabcd-1234-7000-9000-123456789abc",
   "name": "Youssef Kamal",
   "email": "youssef@example.com",
-  "phone_number": "+201234567890",
   "role": "employee",
+  "phone_number": "+201234567890",
+  "team_id": "019fabcd-1234-7000-9000-123456789abc",
+  "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+  "hotel_group_id": null,
+  "group_role": null,
+  "staff_role_id": "019fb2a0-1111-7000-9000-abcdef123456",
   "email_verified_at": null,
-  "created_at": "2026-08-01T10:00:00.000000Z",
-  "updated_at": "2026-08-01T10:00:00.000000Z",
+  "staff_role": {
+    "id": "019fb2a0-1111-7000-9000-abcdef123456",
+    "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+    "name": "Housekeeping",
+    "description": "Rooms and tasks",
+    "permissions": ["rooms.view", "rooms.update", "tasks.view", "tasks.update"],
+    "created_at": "2026-09-15T09:00:00.000000Z",
+    "updated_at": "2026-09-15T09:00:00.000000Z"
+  },
+  "permissions": ["rooms.view", "rooms.update", "tasks.view", "tasks.update"],
+  "team": {
+    "id": "019fabcd-1234-7000-9000-123456789abc",
+    "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+    "name": "Housekeeping",
+    "description": "Room cleaning and turndown",
+    "is_active": true,
+    "created_at": "2026-07-15T09:00:00.000000Z",
+    "updated_at": "2026-07-15T09:00:00.000000Z"
+  },
   "hotel": {
     "id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
+    "owner_id": "019f9b37-0000-7000-9000-000000000001",
+    "hotel_group_id": null,
     "name": "Grand Harbor Hotel",
-    "slug": "grand-harbor-hotel"
-  }
+    "slug": "grand-harbor-hotel",
+    "timezone": "Africa/Cairo",
+    "currency": "EGP",
+    "country_code": "EG",
+    "city": "Alexandria",
+    "address": "1 Corniche Road",
+    "whatsapp_number": "201000000000",
+    "email": "info@grandharbor.example",
+    "phone": "+2031234567",
+    "branding": null,
+    "ai_preferences": null,
+    "is_active": true,
+    "created_at": "2026-07-01T08:00:00.000000Z",
+    "updated_at": "2026-07-01T08:00:00.000000Z"
+  },
+  "created_at": "2026-08-01T10:00:00.000000Z",
+  "updated_at": "2026-08-01T10:00:00.000000Z"
 }
 ```
 
 Field notes for the UI:
 
-- `id`, `hotel_id`, and `team_id` are UUID strings, not integers. `hotel_id` and `team_id` can both be `null`.
-- `password` and `remember_token` are **never** included in the response — they're hidden at the model level.
+- `id`, `hotel_id`, `team_id`, and `hotel_group_id` are UUID strings, not integers. All three foreign keys can be `null`.
+- `password` and `remember_token` are **never** included in the response — the body is built by `UserResource`, which doesn't output them.
 - `role` is one of `admin`, `employee`, `super_admin`. Defaults to `employee` at the database level if omitted on create.
-- `hotel` is eager-loaded and included on every response from this controller (`show`, `store`, `update`, and each row in `index`). It can be `null` if the user has no `hotel_id`.
-- There is **no `team` relation** eager-loaded here — you only get `team_id`. Resolve the team name from your own team list/cache if you need to display it.
+- `hotel_group_id` and `group_role` describe account (hotel group) membership; both are `null` for a user who isn't a group member. Only a super admin can write them — see [Create](#2-create-a-user).
+- `hotel`, `team` and `staff_role` are eager-loaded on every response from this controller (`show`, `store`, `update`, and each row in `index`), and on `GET /api/user`. Any of them can be `null` if the matching id is unset.
+- `staff_role_id` / `staff_role` are the employee's [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md), `null` when none is assigned. Always `null` for admins.
+- `permissions` is the user's **effective** permission list: every permission for an admin or super admin, the role's list for an employee with a role, and the defaults for an employee without one. Use it to show or hide UI.
+- `hotel` is the full hotel object (`HotelResource`), not a trimmed summary. Its own nested `owner` and `hotel_group` are not loaded, so those keys are absent. `team` is `TeamResource` without its `hotel`, `members`, or `task_categories`.
 - Users are **not** soft-deleted — `DELETE` permanently removes the row (see [Delete a User](#5-delete-a-user)).
 
 ## 1. List Users
@@ -129,7 +169,41 @@ All optional:
 
 ### Success Response
 
-HTTP `200 OK`. `body` is a Laravel paginator object; `body.data` contains [user objects](#the-user-object).
+HTTP `200 OK`. `body` is a Laravel **API Resource collection** (`UserResource::collection($paginator)`), not a flat paginator. `body.data` holds [user objects](#the-user-object), and pagination lives under `body.meta` and `body.links`, not at the top level of `body`:
+
+```json
+{
+  "message": "Users fetched successfully.",
+  "code": 200,
+  "body": {
+    "data": [
+      { "...": "one or more user objects, see The User Object above" }
+    ],
+    "links": {
+      "first": "http://your-domain.com/api/users?page=1",
+      "last": "http://your-domain.com/api/users?page=1",
+      "prev": null,
+      "next": null
+    },
+    "meta": {
+      "current_page": 1,
+      "from": 1,
+      "last_page": 1,
+      "links": [
+        { "url": null, "label": "&laquo; Previous", "page": null, "active": false },
+        { "url": "http://your-domain.com/api/users?page=1", "label": "1", "page": 1, "active": true },
+        { "url": null, "label": "Next &raquo;", "page": null, "active": false }
+      ],
+      "path": "http://your-domain.com/api/users",
+      "per_page": 15,
+      "to": 4,
+      "total": 4
+    }
+  }
+}
+```
+
+For pagination UI, read `body.meta.current_page`, `body.meta.last_page`, `body.meta.total`, and `body.meta.per_page`, not `body.current_page` and so on.
 
 ### Error: Unknown Filter/Sort Column
 
@@ -172,8 +246,10 @@ HTTP `422`:
 | `email` | required, string, max 255, must be unique across all users. |
 | `password` | required, string, max 255. Hashed automatically — **do not** pre-hash it client-side. Unlike `POST /api/register`, there is **no `password_confirmation` field** on this endpoint. |
 | `phone_number` | optional, string, must be unique across all users if sent. |
-| `role` | optional, must be one of `admin`, `employee`, `super_admin`. Defaults to `employee` if omitted. |
+| `role` | optional, must be one of `admin`, `employee`, `super_admin`. Defaults to `employee` if omitted. Only a super admin may send `super_admin` — see below. |
+| `hotel_group_id`, `group_role` | **Super admin only.** Ignored when sent by a regular admin — see below. |
 | `team_id` | optional, must reference an existing team, and that team must belong to the resolved hotel (see below) — otherwise `403`. |
+| `staff_role_id` | optional, nullable. Must reference a staff role of the resolved hotel — otherwise `403`. Only for employees — see [Staff Roles](#staff-roles). |
 
 **Important — `hotel_id` behaves differently depending on who's calling:**
 
@@ -184,7 +260,19 @@ HTTP `422`:
 
 **Important — `team_id` must belong to the same hotel:** if you send `team_id`, the backend checks it against the hotel the user is being created under (the admin's own hotel, or the `hotel_id` a super admin supplied). A team from a different hotel — or any `team_id` at all when there's no hotel context (e.g. a super admin who omitted `hotel_id`) — returns `403`.
 
-**Important — `role` is not restricted by the caller's own role:** a regular `admin` can create another `admin` or even a `super_admin` through this endpoint; the backend does not prevent privilege escalation here. **Enforce your intended role options client-side** (e.g. only expose "Employee" in a normal admin's create-user form) — don't rely on this endpoint to gate it.
+**Important — only a super admin can assign the `super_admin` role:** a regular `admin` may create or set `admin` and `employee`, but sending `role: "super_admin"` (on create or update) returns `403` with the message `Only a super admin can assign the super admin role.` and nothing is written. Don't offer "Super admin" in a regular admin's role picker.
+
+**Important — account membership is super-admin only:** `hotel_group_id` and `group_role` decide which hotels a user can reach. When a regular admin sends them (on create or update) they are silently dropped, the same way `hotel_id` is; the rest of the request still succeeds.
+
+### Staff Roles
+
+`staff_role_id` decides what an employee may do (see [Staff Roles API](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md)). It is accepted on create and update:
+
+- **Employees only.** Sending a non-null `staff_role_id` for a user whose role is (or is being set to) `admin` or `super_admin` returns `422` `{ "message": "Only employees can be given a staff role.", "code": 422, "body": null }`.
+- **Same hotel.** A role from another hotel, or any role when there is no hotel context, returns `403` `{ "message": "The selected staff role does not belong to you.", "code": 403, "body": null }`.
+- **`null` means the defaults.** An employee with no role gets the default employee permissions.
+- **Promotion clears it.** Updating an employee's `role` to `admin` sets `staff_role_id` to `null` automatically.
+- **Audited.** Every change is written to the event log as `user.staff_role_assigned`.
 
 ### Success Response
 
@@ -266,7 +354,7 @@ HTTP `403` for a regular admin whose own hotel doesn't match the target user's h
 
 Treat this the same as a `404` in the UI. Super admins bypass this entirely.
 
-**Known gap:** unlike `index` (see [Who Can Call These Endpoints](#who-can-call-these-endpoints)), this comparison is a direct `hotel_id === hotel_id` check with no fallback for an admin whose own `hotel_id` column happens to be unset. In the (currently rare) case where an admin's `hotel_id` isn't backfilled, they could get an unexpected `403` viewing/editing/deleting their own record. If you see this happen for a "should definitely be allowed" admin, it's a backend data/logic issue, not a real permissions denial — flag it rather than assuming the user genuinely lacks access.
+**Admins without a hotel:** an admin whose own `hotel_id` is unset manages nobody through `show`/`update`/`destroy` — not even their own record — and gets `403`. (Before 2026-09-13 two hotel-less users "matched" each other, which let such an admin edit super admins.) Use `GET /api/user` for the caller's own profile. A super admin target always returns `403` to a regular admin, even one attached to the same hotel.
 
 ## 4. Update a User
 
@@ -401,13 +489,16 @@ curl -X DELETE http://your-domain.com/api/users/019facde-1111-7000-9000-abcdef12
 - `/api/users` (plural, this document) is the admin/super-admin user-management CRUD. `/api/user` (singular) is an unrelated "who am I" endpoint open to any authenticated user — don't conflate the two in routing/permissions logic.
 - Employees (any non-admin, non-super-admin) get `403` on every route here — treat as "not your page," don't render this UI for them at all.
 - `index` scoping differs by role: an admin sees only their own hotel's users (plus themselves, always); a super admin sees every user in the system.
+- `index`'s pagination metadata is nested under `body.meta` (`current_page`, `last_page`, `total`, `per_page`), not flat on `body`.
+- Every user object carries both the `hotel_id`/`team_id` scalars and the nested `hotel`/`team` objects (either can be `null`).
 - Never send `hotel_id` on **update** — it's always forced server-side and any value you send is silently ignored.
 - On **create**, only a super admin's `hotel_id` is actually used; a regular admin's is always overwritten with their own hotel. A super admin who omits `hotel_id` creates a hotel-less user — make sure your super-admin create form always sends one for regular staff.
 - `team_id` (create and update) must belong to the same hotel the user is/will be in, or you get a `403` with a dedicated message — surface it as a form-level error near the team picker.
-- `role` is **not** gated server-side by the caller's own role — a plain admin can create/promote someone to `admin` or `super_admin`. Restrict the role options you expose in the UI to whatever your product actually wants a given caller to grant.
+- Only a super admin can grant `super_admin`; a regular admin sending it gets `403`. `hotel_group_id` / `group_role` are silently ignored unless a super admin sends them.
 - There is no `password_confirmation` field on this endpoint (unlike `/api/register`) — if your form has a "confirm password" field, only send `password` to the API.
 - `DELETE` is a **hard delete** here — no `deleted_at`, no undo. Confirm destructively in the UI.
-- A `403` on `show`/`update`/`destroy` for a specific id should be treated like a `404` (wrong hotel), except see the [known gap](#error-belongs-to-a-different-hotel) note if it happens to an admin acting on their own record.
+- Show a staff role picker only for employees (`staff_role_id`, same hotel, `null` = defaults). Drive the rest of the app's UI from each user's `permissions` array rather than from `role`.
+- A `403` on `show`/`update`/`destroy` for a specific id should be treated like a `404` (wrong hotel, a super admin, or a caller with no hotel — see [the note](#error-belongs-to-a-different-hotel)).
 
 ## Related Docs
 

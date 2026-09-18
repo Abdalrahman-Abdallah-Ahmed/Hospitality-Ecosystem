@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\HotelPolicy;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class HotelPolicyPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -20,7 +24,7 @@ class HotelPolicyPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::HOTEL_POLICIES_VIEW);
     }
 
     /**
@@ -28,7 +32,7 @@ class HotelPolicyPolicy
      */
     public function create(User $user): bool
     {
-        return $user->isAdmin();
+        return $this->allows($user, Permission::HOTEL_POLICIES_CREATE);
     }
 
     /**
@@ -36,7 +40,7 @@ class HotelPolicyPolicy
      */
     public function update(User $user, HotelPolicy $hotelPolicy): bool
     {
-        return $user->isAdmin() && $hotelPolicy->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::HOTEL_POLICIES_UPDATE, $hotelPolicy);
     }
 
     /**
@@ -44,7 +48,7 @@ class HotelPolicyPolicy
      */
     public function delete(User $user, HotelPolicy $hotelPolicy): bool
     {
-        return $user->isAdmin() && $hotelPolicy->hotel_id === $user->hotel?->id;
+        return $this->allows($user, Permission::HOTEL_POLICIES_DELETE, $hotelPolicy);
     }
 
     /**

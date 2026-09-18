@@ -61,6 +61,19 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             return;
         }
 
+        $reservationId = trim((string) ($row['reservation_id'] ?? '')) ?: 'RES-'.strtoupper(Str::random(8));
+
+        // Checked before anything is written, so a skipped row leaves no
+        // stray guest or room behind.
+        if (ReservationCreator::isReservationIdInUse($this->hotel->id, $reservationId)) {
+            $this->skipped[] = [
+                'row' => $rowNumber,
+                'reason' => "Reservation id {$reservationId} already exists.",
+            ];
+
+            return;
+        }
+
         $room = null;
         $roomNumber = trim((string) ($row['room_number'] ?? ''));
 
@@ -80,8 +93,6 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             'last_name' => trim((string) ($row['guest_last_name'] ?? '')) ?: null,
             'email' => trim((string) ($row['guest_email'] ?? '')) ?: null,
         ]);
-
-        $reservationId = trim((string) ($row['reservation_id'] ?? '')) ?: 'RES-'.strtoupper(Str::random(8));
 
         $reservation = ReservationCreator::create([
             'hotel_id' => $this->hotel->id,

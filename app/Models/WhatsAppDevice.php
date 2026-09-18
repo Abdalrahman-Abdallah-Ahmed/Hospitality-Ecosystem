@@ -10,6 +10,13 @@ class WhatsAppDevice extends Model
 {
     use BelongsToHotel, Filterable;
 
+    /**
+     * The Sanctum token name pairing codes are issued under. A token with
+     * this name redeems a pairing and nothing else — AppServiceProvider
+     * refuses it as an API credential.
+     */
+    public const PAIRING_TOKEN_NAME = 'whatsapp_device_token';
+
     protected $fillable = [
         'user_id',
         'phone_number',

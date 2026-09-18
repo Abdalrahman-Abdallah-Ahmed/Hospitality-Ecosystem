@@ -44,7 +44,7 @@ class CreateGuestServiceRequestTool implements Tool
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
             'created_by' => CreatedBy::GUEST,
-            'priority' => $request->enum('priority', Priority::class, Priority::NORMAL),
+            'priority' => $this->priority($request),
         ]);
 
         return "Task created (task id: {$task->id}). Staff will follow up.";
@@ -65,6 +65,19 @@ class CreateGuestServiceRequestTool implements Tool
             'task_category_id' => $schema->string()
                 ->description('The id of the task category this request falls under, if one clearly fits. Leave unset if none does.'),
         ];
+    }
+
+    /**
+     * A VIP guest's request always reaches staff as high priority. This is
+     * enforced here rather than in the prompt, where the model could miss it.
+     */
+    private function priority(Request $request): Priority
+    {
+        if ($this->guest->is_vip) {
+            return Priority::HIGH;
+        }
+
+        return $request->enum('priority', Priority::class, Priority::NORMAL);
     }
 
     /**
