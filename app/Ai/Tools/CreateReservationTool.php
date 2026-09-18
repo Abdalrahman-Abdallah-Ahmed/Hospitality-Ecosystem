@@ -5,6 +5,7 @@ namespace App\Ai\Tools;
 use App\Enums\ReservationStatus;
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Services\CreationNotificationService;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Str;
@@ -67,6 +68,8 @@ class CreateReservationTool implements Tool
         ]);
 
         ReservationCreator::syncRoomOccupancy($reservation);
+
+        app(CreationNotificationService::class)->whatsAppReservationCreated($reservation);
 
         return json_encode($reservation->load(['guest', 'room'])->toArray());
     }

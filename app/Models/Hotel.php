@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -116,6 +118,25 @@ class Hotel extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    /**
+     * Admins who can reach this hotel, by the same three routes as
+     * User::accessibleHotelIds(): their own hotel_id, the hotel_user pivot,
+     * or group-wide access to this hotel's group.
+     *
+     * @return Builder<User>
+     */
+    public function admins(): Builder
+    {
+        return User::query()
+            ->where('role', UserRole::ADMIN)
+            ->where(fn (Builder $query) => $query
+                ->where('hotel_id', $this->id)
+                ->orWhereHas('hotels', fn (Builder $hotels) => $hotels->whereKey($this->id))
+                ->orWhere(fn (Builder $group) => $group
+                    ->where('hotel_group_id', $this->hotel_group_id)
+                    ->whereNotNull('group_role')));
     }
 
     public function hotelGroup(): BelongsTo

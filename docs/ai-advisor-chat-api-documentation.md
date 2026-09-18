@@ -106,6 +106,19 @@ and a single message may produce real records:
 | `CreateTaskTool` | A staff task | Optionally assigned to a team/person and linked to a room |
 | `CreateGuestTool` | A guest | Matched by phone; an existing guest is returned **unchanged**, never duplicated |
 
+#### Emails sent by these tools
+
+- `CreateReservationTool` stamps the reservation `source: "whatsapp"` and emails
+  every admin of the hotel about it — from the web chat as well as from WhatsApp.
+- `CreateTaskTool` emails every admin of the hotel that the AI created a task,
+  and emails the assigned staff member, if there is one.
+
+The guest concierge's tools do the same for tasks: escalating to a human or
+filing a guest service request emails the hotel's admins. "Admins" means users
+with the `admin` role who can reach the hotel through their own `hotel_id`, the
+`hotel_user` pivot, or group-wide access. Emails are queued and sent by the
+queue worker.
+
 #### The hotel is never taken from the model
 
 Every tool is constructed with `$this->user->hotel` — the authenticated admin's

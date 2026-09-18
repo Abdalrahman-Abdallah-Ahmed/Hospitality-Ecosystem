@@ -9,6 +9,7 @@ use App\Http\Resources\HotelResource;
 use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
+use App\Notifications\WelcomeNotification;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -72,6 +73,8 @@ class RegisterUserController extends Controller
         });
 
         event(new Registered($user));
+
+        $user->notify(new WelcomeNotification($hotel->name));
 
         return apiResponse('User registered successfully.', 201, [
             // staffRole makes the resource include `permissions`, the same as

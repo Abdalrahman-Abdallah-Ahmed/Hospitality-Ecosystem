@@ -11,6 +11,7 @@ use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\CreationNotificationService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Ai\Contracts\Tool;
@@ -63,6 +64,8 @@ class CreateTaskTool implements Tool
             'priority' => $request->enum('priority', Priority::class, Priority::NORMAL),
             'due_date' => $request->filled('due_date') ? $request->string('due_date')->toString() : null,
         ]);
+
+        app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
 
         return "Task \"{$task->title}\" created (task id: {$task->id}), priority {$task->priority->value}.";
     }

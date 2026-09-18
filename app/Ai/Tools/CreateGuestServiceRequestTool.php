@@ -9,6 +9,7 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
 use App\Models\TaskCategory;
+use App\Services\CreationNotificationService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -46,6 +47,10 @@ class CreateGuestServiceRequestTool implements Tool
             'created_by' => CreatedBy::GUEST,
             'priority' => $this->priority($request),
         ]);
+
+        // Attributed to the guest, but written by the concierge agent, so
+        // admins hear about it the same as any other AI-created task.
+        app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
 
         return "Task created (task id: {$task->id}). Staff will follow up.";
     }

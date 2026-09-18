@@ -361,6 +361,8 @@ The word plugged in is one of: `rooms`, `guests`, `reservations`, `teams`, `user
 
 Success: `201`, `body` is the created [task object](#the-task-object).
 
+**Email:** when `assigned_to_user_id` is set, that staff member is emailed about the new task. The email is queued, so it goes out shortly after the `201`. Tasks created by the AI agents also email the hotel's admins (see [AI Advisor Chat API](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md)); tasks created through this endpoint do not.
+
 ### 3.3 Get a Task — `GET /api/task/{id}`
 
 Success: `200`, `body` is the [task object](#the-task-object). `404` if the id doesn't exist; `403` (treat as not-found) if it belongs to a different hotel.

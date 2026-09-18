@@ -10,6 +10,7 @@ use App\Http\Resources\TaskResource;
 use App\Models\Reservation;
 use App\Models\Task;
 use App\Models\TaskCategory;
+use App\Services\CreationNotificationService;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 
@@ -36,7 +37,7 @@ class TaskController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(GenericStoreRequest $request): JsonResponse
+    public function store(GenericStoreRequest $request, CreationNotificationService $notifications): JsonResponse
     {
         $this->authorize('create', Task::class);
 
@@ -74,6 +75,8 @@ class TaskController extends Controller
             'hotel_id' => $hotel->id,
             'guest_id' => $this->guestIdForReservation($validated['reservation_id'] ?? null),
         ]);
+
+        $notifications->taskCreated($task, createdByAi: false);
 
         return apiResponse('Task created successfully.', 201, TaskResource::make($task->load(['hotel', 'guest', 'room'])));
     }

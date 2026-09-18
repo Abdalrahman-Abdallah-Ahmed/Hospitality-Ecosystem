@@ -5,7 +5,9 @@ use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\StaffRole;
 use App\Models\User;
+use App\Notifications\WelcomeNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
 
@@ -139,4 +141,45 @@ it('registers a user through the api endpoint', function () {
         ));
 
     expect(User::where('email', 'api@example.com')->exists())->toBeTrue();
+});
+
+it('emails a welcome notification to the user who registers', function () {
+    Notification::fake();
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/register', [
+            'name' => 'Welcome User',
+            'email' => 'welcome@example.com',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+            'hotel' => [
+                'name' => 'Welcome Hotel',
+                'city' => 'Cairo',
+            ],
+        ])
+        ->assertStatus(201);
+
+    $user = User::where('email', 'welcome@example.com')->firstOrFail();
+
+    Notification::assertSentTo(
+        $user,
+        WelcomeNotification::class,
+        fn (WelcomeNotification $notification, array $channels) => $notification->hotelName === 'Welcome Hotel'
+            && $channels === ['mail'],
+    );
+    Notification::assertCount(1);
+});
+
+it('does not send a welcome notification when registration fails validation', function () {
+    Notification::fake();
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+
+    $this->withHeader('X-API-KEY', 'test-api-key')
+        ->postJson('/api/register', ['email' => 'not-an-email'])
+        ->assertStatus(422);
+
+    Notification::assertNothingSent();
 });

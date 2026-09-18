@@ -129,6 +129,10 @@ HTTP `201 Created`
 
 The registering user is always the new hotel's `admin`, so `permissions` lists every permission and `staff_role` is `null`. See [Staff Roles API](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
 
+### Welcome Email
+
+After a successful registration the new user is sent a welcome email naming their hotel. It is queued, so it is delivered by the queue worker shortly after the `201` response, and a mail failure never fails the registration. Nothing is sent when validation fails.
+
 ### Important Frontend Note
 
 This endpoint does **not** return an auth token and does **not** log the API user in.

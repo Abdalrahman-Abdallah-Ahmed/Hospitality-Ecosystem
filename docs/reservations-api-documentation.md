@@ -252,6 +252,8 @@ HTTP `422`:
 
 HTTP `201 Created`. `body` is a [reservation object](#the-reservation-object).
 
+No email is sent for reservations created through this endpoint. Only reservations the AI creates through WhatsApp (`source: "whatsapp"`) email the hotel's admins — see [AI Advisor Chat API](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md).
+
 ### Error: Missing Required Fields
 
 HTTP `422`:

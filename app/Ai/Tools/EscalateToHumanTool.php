@@ -7,6 +7,7 @@ use App\Enums\Priority;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Task;
+use App\Services\CreationNotificationService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -34,7 +35,7 @@ class EscalateToHumanTool implements Tool
     {
         $reason = $request->string('reason')->toString();
 
-        Task::create([
+        $task = Task::create([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
             'title' => 'Guest needs human assistance',
@@ -42,6 +43,8 @@ class EscalateToHumanTool implements Tool
             'created_by' => CreatedBy::AI,
             'priority' => Priority::HIGH,
         ]);
+
+        app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
 
         return 'A staff member has been notified and will follow up with the guest directly.';
     }
