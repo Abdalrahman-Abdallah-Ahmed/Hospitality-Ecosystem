@@ -5,7 +5,11 @@ on:
     branches: [main]
 
 jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
   deploy:
+    needs: tests
     runs-on: ubuntu-latest
 
     steps:
@@ -24,9 +28,12 @@ jobs:
 
             chmod -R ug+rwX storage bootstrap/cache
 
-            composer install --optimize-autoloader --no-interaction
+            # --no-dev: test and debugging tooling has no place on the server.
+            composer install --no-dev --optimize-autoloader --no-interaction
 
-            php artisan migrate
+            # --force: in production, migrate asks for confirmation and, with
+            # no terminal to answer it, cancels instead of migrating.
+            php artisan migrate --force
 
             php artisan optimize
 

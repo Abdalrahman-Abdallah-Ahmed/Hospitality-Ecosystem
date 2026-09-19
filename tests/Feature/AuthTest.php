@@ -183,3 +183,19 @@ it('does not send a welcome notification when registration fails validation', fu
 
     Notification::assertNothingSent();
 });
+
+it('refuses a login token once it has expired', function () {
+    putenv('API_KEY=test-api-key');
+    config(['app.api_key' => 'test-api-key']);
+
+    $user = User::factory()->create();
+    $token = $user->createToken('api')->plainTextToken;
+    $headers = ['X-API-KEY' => 'test-api-key', 'Authorization' => 'Bearer '.$token];
+
+    $this->getJson('/api/user', $headers)->assertOk();
+
+    $this->travel(config('sanctum.expiration') + 1)->minutes();
+    $this->app['auth']->forgetGuards();
+
+    $this->getJson('/api/user', $headers)->assertUnauthorized();
+});

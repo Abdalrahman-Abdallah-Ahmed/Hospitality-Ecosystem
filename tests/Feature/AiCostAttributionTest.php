@@ -4,6 +4,7 @@ use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
 use App\Enums\AiOperation;
 use App\Enums\AiTriggerKind;
+use App\Enums\InboundMessageStatus;
 use App\Enums\KnowledgeBaseCategory;
 use App\Enums\SenderType;
 use App\Enums\UserRole;
@@ -17,6 +18,7 @@ use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\User;
+use App\Models\WhatsAppInboundMessage;
 use App\Services\AiCost\AiCostRecorder;
 use App\Services\Metering\MeteringService;
 use App\Services\WhatsAppMessageService;
@@ -109,6 +111,10 @@ it('logs cost for every agent call including failures and retries', function () 
     });
 
     (new ProcessInboundWhatsAppMessageJob(
+        inbound: WhatsAppInboundMessage::create([
+            'phone_number' => '+201000000001',
+            'status' => InboundMessageStatus::RECEIVED,
+        ]),
         phoneNumber: '+201000000001',
         messageText: 'What time is breakfast?',
         senderType: SenderType::GUEST,
@@ -426,6 +432,30 @@ it('stops an account that has passed its hard daily ceiling', function () {
     ))->toBe('ran fine');
 });
 
+it('stops guest-driven spend at its share of the ceiling while staff work continues', function () {
+    $hotel = costHotel();
+
+    config([
+        'ai_cost.daily_ceiling_usd' => 10.00,
+        'ai_cost.guest_share_of_daily_ceiling' => 0.60,
+    ]);
+
+    // $6 of guest traffic: under the $10 account ceiling, at the $6 guest share.
+    logCall($hotel, AiTriggerKind::GUEST_MESSAGE, ['inputTokens' => 6_000_000]);
+
+    expect(fn () => AiCostContext::for(
+        kind: AiTriggerKind::GUEST_MESSAGE,
+        hotel: $hotel,
+        callback: fn () => 'should not run',
+    ))->toThrow(AiSpendCeilingExceededException::class);
+
+    expect(AiCostContext::for(
+        kind: AiTriggerKind::STAFF_REQUEST,
+        hotel: $hotel,
+        callback: fn () => 'staff still served',
+    ))->toBe('staff still served');
+});
+
 it('alerts on a thin margin without throttling anything', function () {
     $hotel = costHotel();
 
@@ -541,7 +571,7 @@ it('keeps the split-out admin routes behind the full middleware stack', function
     // but no longer checks who is asking.
     // The aliases as declared, in order. Their resolution to real classes is
     // covered by the 403 tests either side of this one.
-    $expected = ['api', 'api.key', 'auth:sanctum', 'tenant', 'super_admin'];
+    $expected = ['api', 'api.key', 'auth:sanctum', 'throttle:api', 'tenant', 'super_admin'];
 
     foreach (['api/admin/usage', 'api/admin/ai-cost'] as $uri) {
         $route = collect(Route::getRoutes()->getRoutes())

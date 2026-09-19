@@ -30,6 +30,7 @@ Notes:
 
 - The backend checks the configured `API_KEY` (read through config, so it keeps working after `php artisan optimize`).
 - If no key is configured, requests are allowed without this header **only** in a `local` or `testing` environment. In any other environment an unset key rejects every request.
+- The key is read from the `X-API-KEY` header **only**. An `?api_key=` query parameter is ignored and the request gets `401`, because keys in URLs end up in access logs and browser history.
 - If the key is missing or wrong, the API returns:
 
 ```json
@@ -263,12 +264,18 @@ HTTP `200 OK`
 - Logout removes the **current** access token only.
 - If the same user is logged in on multiple devices or sessions, other tokens remain active.
 
+## Token Lifetime
+
+Login and register tokens **expire 7 days after they are issued** (server setting `SANCTUM_TOKEN_EXPIRATION`, in minutes). An expired token gets HTTP `401` on any protected route, the same as a missing one. There is no refresh endpoint: on `401`, clear the stored token and send the user to the login page.
+
 ## Rate Limiting
 
 | Endpoint | Limit |
 | --- | --- |
 | `POST /api/login` | 5 attempts per minute per email + IP, and 20 per minute per IP across all emails. |
 | `POST /api/register` | 5 attempts per minute per IP. |
+| `POST /api/pair` | 10 requests per minute per IP. |
+| Every authenticated route (`auth:sanctum`), including `/api/admin/*` | 240 requests per minute per user. |
 
 Every attempt counts, successful or not. Over the limit the API returns HTTP `429` with a `Retry-After` header (seconds):
 

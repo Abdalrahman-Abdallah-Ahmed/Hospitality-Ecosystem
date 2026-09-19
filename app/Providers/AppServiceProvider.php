@@ -75,6 +75,15 @@ class AppServiceProvider extends ServiceProvider
         ]);
 
         RateLimiter::for('register', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+
+        // Pairing codes are long random tokens, so this is not what stops a
+        // guess; it just stops the endpoint being hammered for free.
+        RateLimiter::for('pair', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
+
+        // Every authenticated route. Generous enough for a dashboard polling
+        // several widgets, tight enough that one token cannot flood the API.
+        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(240)
+            ->by($request->user()?->getAuthIdentifier() ?: $request->ip()));
     }
 
     /**

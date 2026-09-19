@@ -68,7 +68,7 @@ class AiCostContext
         // Nested contexts are part of a call already admitted — re-checking
         // would stop an in-flight conversation halfway through.
         if (self::$stack === []) {
-            app(AiSpendCeiling::class)->assertNotExceeded($account);
+            app(AiSpendCeiling::class)->assertNotExceeded($account, $kind);
         }
 
         self::$stack[] = [

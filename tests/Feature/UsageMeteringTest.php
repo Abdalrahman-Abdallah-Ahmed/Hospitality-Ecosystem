@@ -2,6 +2,7 @@
 
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
+use App\Enums\InboundMessageStatus;
 use App\Enums\MeterFeature;
 use App\Enums\SenderType;
 use App\Enums\UserRole;
@@ -12,6 +13,7 @@ use App\Models\HotelGroup;
 use App\Models\MeterEvent;
 use App\Models\UsageCounter;
 use App\Models\User;
+use App\Models\WhatsAppInboundMessage;
 use App\Services\Metering\MeteringService;
 use App\Services\Metering\UsageReport;
 use App\Services\WhatsAppMessageService;
@@ -146,6 +148,10 @@ it('still answers the guest when metering throws', function () {
     GuestConciergeAgent::fake(['Of course, I can help with that.']);
 
     (new ProcessInboundWhatsAppMessageJob(
+        inbound: WhatsAppInboundMessage::create([
+            'phone_number' => '+201000000000',
+            'status' => InboundMessageStatus::RECEIVED,
+        ]),
         phoneNumber: '+201000000000',
         messageText: 'Can I book a table?',
         senderType: SenderType::GUEST,

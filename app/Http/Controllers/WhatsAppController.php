@@ -2,18 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\InboundMessageStatus;
 use App\Http\Requests\CheckPairedRequest;
 use App\Http\Requests\WhatsAppDevicePairRequest;
 use App\Http\Resources\WhatsAppDeviceResource;
 use App\Jobs\ProcessInboundWhatsAppMessageJob;
+use App\Jobs\SendWhatsAppMessageJob;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
+use App\Models\WhatsAppInboundMessage;
 use App\Services\SenderRecognitionService;
-use App\Services\WhatsAppMessageService;
+use App\Support\PhoneNumber;
 use App\Support\RecognizedSender;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class WhatsAppController extends Controller
@@ -26,7 +30,6 @@ class WhatsAppController extends Controller
 
     public function __construct(
         private readonly SenderRecognitionService $senderRecognitionService,
-        private readonly WhatsAppMessageService $whatsAppMessageService,
     ) {}
 
     public function connect(Request $request)
@@ -141,7 +144,7 @@ class WhatsAppController extends Controller
         // $phoneNumber arrives as digits (see PhoneNumber); users.phone_number
         // holds whatever was typed, so it is compared by its digits too.
         $hotelIds = TenantContext::hotelIds();
-        $user = User::whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [$phoneNumber])
+        $user = User::whereRaw(PhoneNumber::DIGITS_SQL.' = ?', [$phoneNumber])
             ->when($hotelIds !== null, fn ($query) => $query->whereIn('hotel_id', $hotelIds))
             ->first();
 
@@ -217,23 +220,53 @@ class WhatsAppController extends Controller
 
     /**
      * Inbound WhatsApp message webhook. Kept thin and fast on purpose (Meta
-     * expects a quick ack): sender recognition and the admin pairing check
-     * happen here synchronously (cheap DB reads via identify()/checkPaired()),
-     * then the slow part — invoking the agent and sending the reply — is
-     * handed off to a queued job.
+     * expects a quick ack, and redelivers when it doesn't get one): sender
+     * recognition and the admin pairing check happen here synchronously
+     * (cheap, indexed DB reads), then everything slow — the agent and every
+     * outbound send — is handed off to queued jobs.
+     *
+     * One delivery can batch several messages across entries and changes;
+     * each is handled on its own. Payloads with no messages (delivery/read
+     * status updates) fall through to the ack.
      */
     public function whatsappWebhook(Request $request)
     {
-        $value = data_get($request->input('entry'), '0.changes.0.value');
-        $message = data_get($value, 'messages.0');
+        foreach ((array) $request->input('entry', []) as $entry) {
+            foreach ((array) data_get($entry, 'changes', []) as $change) {
+                $value = data_get($change, 'value', []);
 
-        if (! $message) {
-            // Not an inbound text message (e.g. a delivery/read status update) — nothing to do.
-            return response('', 200);
+                foreach ((array) data_get($value, 'messages', []) as $message) {
+                    if (is_array($message) && isset($message['from'])) {
+                        $this->handleInboundMessage($message, $value);
+                    }
+                }
+            }
         }
 
-        $phoneNumber = $message['from'];
+        return response('', 200);
+    }
+
+    /**
+     * Record the message once (a redelivery of the same wamid stops here),
+     * apply the per-sender rate limit, then either redeem a pairing code or
+     * queue the conversation turn.
+     */
+    private function handleInboundMessage(array $message, array $value): void
+    {
+        $phoneNumber = (string) $message['from'];
         $type = $message['type'] ?? 'text';
+
+        $inbound = $this->recordInbound($message, $phoneNumber, $type);
+
+        if (! $inbound) {
+            return;
+        }
+
+        if ($this->throttled($phoneNumber)) {
+            $inbound->update(['status' => InboundMessageStatus::THROTTLED]);
+
+            return;
+        }
 
         // An image message has no `text.body` — whatever the sender typed
         // alongside the photo (if anything) comes through as `image.caption`
@@ -252,25 +285,76 @@ class WhatsAppController extends Controller
             $waUserId = data_get($value, 'contacts.0.wa_id', $phoneNumber);
             $result = $this->pairDevice($text, $phoneNumber, $waUserId);
 
-            $this->whatsAppMessageService->send($phoneNumber, $this->pairingReplyFor($result['status']));
+            $inbound->update(['status' => InboundMessageStatus::PAIRING]);
+            SendWhatsAppMessageJob::dispatch($phoneNumber, $this->pairingReplyFor($result['status']));
 
-            return response('', 200);
+            return;
         }
 
         $recognition = $this->identify($phoneNumber);
         $pairing = $this->pairingStatus($phoneNumber);
+        $hotel = $recognition->hotelId ? Hotel::find($recognition->hotelId) : null;
+
+        $inbound->update(['hotel_id' => $hotel?->id]);
 
         ProcessInboundWhatsAppMessageJob::dispatch(
+            inbound: $inbound,
             phoneNumber: $phoneNumber,
             messageText: $text,
             senderType: $recognition->type,
             sender: $recognition->sender,
-            hotel: $recognition->hotelId ? Hotel::find($recognition->hotelId) : null,
+            hotel: $hotel,
             reservation: $recognition->reservation,
             devicePaired: $pairing['paired'] && $pairing['active'],
             imageMediaId: $imageMediaId,
         );
+    }
 
-        return response('', 200);
+    /**
+     * Store the message, or return null when this wamid was already stored —
+     * a redelivery Meta sent because an earlier ack was slow or lost. The
+     * unique index decides, so two concurrent deliveries cannot both win.
+     */
+    private function recordInbound(array $message, string $phoneNumber, string $type): ?WhatsAppInboundMessage
+    {
+        $attributes = [
+            'phone_number' => $phoneNumber,
+            'message_type' => $type,
+            'status' => InboundMessageStatus::RECEIVED,
+        ];
+
+        $wamid = $message['id'] ?? null;
+
+        if (! $wamid) {
+            return WhatsAppInboundMessage::create($attributes);
+        }
+
+        $inbound = WhatsAppInboundMessage::createOrFirst(['wamid' => $wamid], $attributes);
+
+        return $inbound->wasRecentlyCreated ? $inbound : null;
+    }
+
+    /**
+     * Per-sender burst limit. The first message over the limit gets one
+     * notice so the sender knows why they are not being answered; the rest
+     * of the window is dropped silently.
+     */
+    private function throttled(string $phoneNumber): bool
+    {
+        $limit = max(1, (int) config('services.whatsapp.inbound_per_minute'));
+        $attempts = RateLimiter::hit('whatsapp-inbound:'.$phoneNumber, 60);
+
+        if ($attempts <= $limit) {
+            return false;
+        }
+
+        if ($attempts === $limit + 1) {
+            SendWhatsAppMessageJob::dispatch(
+                $phoneNumber,
+                "You're sending messages faster than we can answer. Please wait a minute and try again."
+            );
+        }
+
+        return true;
     }
 }

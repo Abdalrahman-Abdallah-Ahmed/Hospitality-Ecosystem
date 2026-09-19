@@ -80,7 +80,7 @@ permissions without a separate change.
 ### Request flow
 
 ```
-api.key  →  auth:sanctum  →  tenant  →  (policy authorize)  →  controller
+api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  (policy authorize)  →  controller
 ```
 
 Middleware aliases are registered in `bootstrap/app.php`. Cross-account

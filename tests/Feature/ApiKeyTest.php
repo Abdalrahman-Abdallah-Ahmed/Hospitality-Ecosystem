@@ -70,3 +70,8 @@ it('refuses every request when no key is configured in production', function () 
         ->assertStatus(401)
         ->assertJson(['message' => 'Invalid API key.']);
 });
+
+it('does not accept the api key from the query string', function () {
+    $this->postJson('/api/register?api_key=test-api-key', apiKeyRegistrationPayload())
+        ->assertStatus(401);
+});

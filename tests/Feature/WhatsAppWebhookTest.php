@@ -2,13 +2,22 @@
 
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
+use App\Enums\InboundMessageStatus;
+use App\Enums\SenderType;
 use App\Enums\UserRole;
+use App\Jobs\ProcessInboundWhatsAppMessageJob;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\Reservation;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
+use App\Models\WhatsAppInboundMessage;
+use App\Services\Metering\MeteringService;
+use App\Services\WhatsAppMessageService;
+use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Laravel\Ai\Models\Conversation;
 
 uses(RefreshDatabase::class);
@@ -265,4 +274,204 @@ it('does not treat an ordinary chat message as a pairing attempt', function () {
 
     expect(WhatsAppDevice::count())->toBe(0);
     Http::assertSent(fn ($request) => $request['text']['body'] === 'Hi there!');
+});
+
+// delivery guarantees
+
+function webhookGuestAt(string $hotelName, string $phone): Guest
+{
+    $hotel = Hotel::create([
+        'owner_id' => User::factory()->create()->id,
+        'name' => $hotelName,
+        'slug' => Str::slug($hotelName).'-'.Str::lower(Str::random(6)),
+        'currency' => 'USD',
+    ]);
+
+    return Guest::create(['hotel_id' => $hotel->id, 'phone_number' => $phone]);
+}
+
+function whatsappMessage(string $from, string $text, string $wamid): array
+{
+    return ['id' => $wamid, 'from' => $from, 'text' => ['body' => $text]];
+}
+
+function whatsappPayloadOf(array ...$messages): array
+{
+    return ['entry' => [['changes' => [['value' => ['messages' => $messages]]]]]];
+}
+
+function inboundJobFor(Guest $guest): ProcessInboundWhatsAppMessageJob
+{
+    return new ProcessInboundWhatsAppMessageJob(
+        inbound: WhatsAppInboundMessage::create([
+            'phone_number' => $guest->phone_number,
+            'status' => InboundMessageStatus::RECEIVED,
+        ]),
+        phoneNumber: $guest->phone_number,
+        messageText: 'Hello',
+        senderType: SenderType::GUEST,
+        sender: $guest,
+        hotel: $guest->hotel,
+        reservation: null,
+        devicePaired: false,
+    );
+}
+
+function runInboundJob(ProcessInboundWhatsAppMessageJob $job): void
+{
+    $job->handle(app(WhatsAppMessageService::class), app(MeteringService::class));
+}
+
+it('answers a message Meta redelivers only once', function () {
+    webhookGuestAt('Seaside Hotel', '201151793758');
+    GuestConciergeAgent::fake(['Checkout is at noon.', 'a second answer that must not be sent']);
+
+    $payload = whatsappPayloadOf(whatsappMessage('201151793758', 'What time is checkout?', 'wamid.ONE'));
+
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+
+    Http::assertSentCount(1);
+    expect(WhatsAppInboundMessage::where('wamid', 'wamid.ONE')->count())->toBe(1)
+        ->and(WhatsAppInboundMessage::first()->status)->toBe(InboundMessageStatus::REPLIED);
+});
+
+it('answers every message in a batched delivery', function () {
+    webhookGuestAt('Seaside Hotel', '201151793758');
+    webhookGuestAt('Harbor Hotel', '201000000002');
+    GuestConciergeAgent::fake(['First answer', 'Second answer']);
+
+    $payload = whatsappPayloadOf(
+        whatsappMessage('201151793758', 'Is the pool open?', 'wamid.A'),
+        whatsappMessage('201000000002', 'Is breakfast included?', 'wamid.B'),
+    );
+
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+
+    Http::assertSent(fn ($request) => $request['to'] === '201151793758');
+    Http::assertSent(fn ($request) => $request['to'] === '201000000002');
+});
+
+it('stops answering a sender past the per-minute limit and tells them once', function () {
+    config(['services.whatsapp.inbound_per_minute' => 2]);
+    webhookGuestAt('Seaside Hotel', '201151793758');
+    $prompts = [];
+    GuestConciergeAgent::fake(function (string $prompt) use (&$prompts) {
+        $prompts[] = $prompt;
+
+        return 'ok';
+    });
+
+    foreach (range(1, 4) as $i) {
+        $payload = whatsappPayloadOf(whatsappMessage('201151793758', "Message {$i}", "wamid.{$i}"));
+        $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+    }
+
+    // The first message is seen twice: once for the reply and once to title
+    // the new conversation.
+    expect(array_values(array_unique($prompts)))->toBe(['Message 1', 'Message 2'])
+        ->and(WhatsAppInboundMessage::where('status', InboundMessageStatus::THROTTLED)->count())->toBe(2);
+    // Two answers plus exactly one notice.
+    Http::assertSentCount(3);
+    Http::assertSent(fn ($request) => str_contains($request['text']['body'], 'faster than we can answer'));
+});
+
+it('retries a failed send without asking the model again', function () {
+    $guest = webhookGuestAt('Seaside Hotel', '201151793758');
+    $generated = 0;
+    GuestConciergeAgent::fake(function () use (&$generated) {
+        $generated++;
+
+        return 'Here is your answer.';
+    });
+    $sent = [];
+    $this->mock(WhatsAppMessageService::class, function ($mock) use (&$sent) {
+        $mock->shouldReceive('send')->andReturnUsing(function (string $to, string $text) use (&$sent) {
+            if ($sent === []) {
+                $sent[] = 'failed';
+
+                throw new RuntimeException('Graph API unavailable');
+            }
+
+            $sent[] = $text;
+        });
+    });
+
+    $job = inboundJobFor($guest);
+
+    expect(fn () => runInboundJob($job))->toThrow(RuntimeException::class);
+
+    $modelCallsBeforeRetry = $generated;
+
+    runInboundJob($job);
+
+    expect($modelCallsBeforeRetry)->toBeGreaterThan(0)
+        ->and($generated)->toBe($modelCallsBeforeRetry)
+        ->and($sent)->toBe(['failed', 'Here is your answer.'])
+        ->and($job->inbound->fresh()->replied_at)->not->toBeNull();
+});
+
+it('apologises instead of re-running a turn an earlier attempt already started', function () {
+    $guest = webhookGuestAt('Seaside Hotel', '201151793758');
+    GuestConciergeAgent::fake(['should not be generated']);
+
+    $job = inboundJobFor($guest);
+    $job->inbound->update(['generation_started_at' => now()->subMinute()]);
+
+    runInboundJob($job);
+
+    GuestConciergeAgent::assertNeverPrompted();
+    Http::assertSent(fn ($request) => $request['text']['body'] === ProcessInboundWhatsAppMessageJob::FAILED_REPLY);
+});
+
+it('apologises when the agent turn fails', function () {
+    $guest = webhookGuestAt('Seaside Hotel', '201151793758');
+    GuestConciergeAgent::fake(fn () => throw new RuntimeException('provider down'));
+
+    runInboundJob(inboundJobFor($guest));
+
+    Http::assertSent(fn ($request) => $request['text']['body'] === ProcessInboundWhatsAppMessageJob::FAILED_REPLY);
+});
+
+it('runs the agent turn scoped to the sender hotel', function () {
+    $guest = webhookGuestAt('Seaside Hotel', '201151793758');
+    $scopeDuringTurn = 'not captured';
+
+    GuestConciergeAgent::fake(function () use (&$scopeDuringTurn) {
+        $scopeDuringTurn = TenantContext::hotelIds();
+
+        return 'ok';
+    });
+
+    runInboundJob(inboundJobFor($guest));
+
+    expect($scopeDuringTurn)->toBe([$guest->hotel_id])
+        ->and(TenantContext::hotelIds())->toBeNull();
+});
+
+it('routes a guest known at two hotels to the one they are staying at', function () {
+    $pastGuest = webhookGuestAt('Former Hotel', '201151793758');
+    $currentGuest = webhookGuestAt('Current Hotel', '+20 115 179 3758');
+
+    Reservation::create([
+        'hotel_id' => $pastGuest->hotel_id,
+        'guest_id' => $pastGuest->id,
+        'reservation_id' => 'OLD-1',
+        'arrival_date' => now()->subMonths(2),
+        'departure_date' => now()->subMonths(2)->addDays(3),
+    ]);
+    Reservation::create([
+        'hotel_id' => $currentGuest->hotel_id,
+        'guest_id' => $currentGuest->id,
+        'reservation_id' => 'NOW-1',
+        'arrival_date' => now()->subDay(),
+        'departure_date' => now()->addDay(),
+    ]);
+
+    GuestConciergeAgent::fake(['Welcome back!']);
+
+    $payload = whatsappPayloadOf(whatsappMessage('201151793758', 'Hi', 'wamid.X'));
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+
+    expect(WhatsAppInboundMessage::first()->hotel_id)->toBe($currentGuest->hotel_id);
 });

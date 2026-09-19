@@ -19,6 +19,14 @@ class PhoneNumber
     /** E.164's ceiling for a full number, country code included. */
     public const MAX_DIGITS = 15;
 
+    /**
+     * The SQL form of digits(), for comparing a `phone_number` column that
+     * holds whatever was typed. Must stay byte-for-byte identical to the
+     * expression indexes in the add_phone_digit_indexes migration, or
+     * Postgres will not use them.
+     */
+    public const DIGITS_SQL = "regexp_replace(phone_number, '[^0-9]', '', 'g')";
+
     public static function digits(?string $phone): ?string
     {
         $digits = preg_replace('/\D+/', '', (string) $phone);

@@ -5,8 +5,10 @@ use App\Ai\Tools\CreateActivityTool;
 use App\Ai\Tools\CreateGuestTool;
 use App\Ai\Tools\CreateRoomTool;
 use App\Ai\Tools\CreateTaskTool;
+use App\Ai\Tools\GetGuestsTool;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
+use App\Enums\ReservationStatus;
 use App\Enums\RoomTypes;
 use App\Enums\TaskStatus;
 use App\Enums\UserRole;
@@ -14,6 +16,7 @@ use App\Models\Activity;
 use App\Models\ActivityCategory;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\Task;
 use App\Models\TaskCategory;
@@ -220,4 +223,31 @@ it('gives the admin advisor its create tools, each bound to the admin\'s own hot
     // Policies are quoted to guests as the hotel's own word, so the advisor
     // is deliberately not given a way to write one.
     expect($tools)->not->toContain('CreateHotelPolicyTool');
+});
+
+it('sends the model only the guest fields the advisor needs', function () {
+    $hotel = toolHotel();
+    $guest = Guest::create([
+        'hotel_id' => $hotel->id,
+        'first_name' => 'Ada',
+        'last_name' => 'Lovelace',
+        'email' => 'ada@example.com',
+        'phone_number' => '201151793758',
+    ]);
+    Reservation::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-PII',
+        'status' => ReservationStatus::CONFIRMED,
+        'arrival_date' => now(),
+        'departure_date' => now()->addDays(2),
+    ]);
+
+    $result = callTool(new GetGuestsTool($hotel), []);
+
+    expect($result)->toContain('Ada Lovelace')
+        ->toContain('RES-PII')
+        ->not->toContain('ada@example.com')
+        ->not->toContain('201151793758')
+        ->not->toContain('identity_hash');
 });

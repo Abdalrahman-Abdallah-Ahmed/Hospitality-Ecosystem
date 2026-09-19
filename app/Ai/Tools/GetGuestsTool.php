@@ -5,6 +5,7 @@ namespace App\Ai\Tools;
 use App\Enums\ReservationStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\Reservation;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -32,10 +33,29 @@ class GetGuestsTool implements Tool
                 ->whereDate('departure_date', '>=', now()->toDateString());
         };
 
+        // Only what the advisor needs to talk about a guest. Serialising the
+        // whole model would also send email, phone number, identity
+        // fingerprint and free-text preferences to the model provider.
         $guests = Guest::where('hotel_id', $this->hotel->id)
             ->whereHas('reservations', $currentConfirmed)
             ->with(['reservations' => $currentConfirmed])
-            ->get();
+            ->get()
+            ->map(fn (Guest $guest) => [
+                'id' => $guest->id,
+                'name' => trim($guest->first_name.' '.$guest->last_name),
+                'is_vip' => (bool) $guest->is_vip,
+                'loyalty_status' => $guest->loyalty_status,
+                'preferred_language' => $guest->preferred_language,
+                'reservations' => $guest->reservations->map(fn (Reservation $reservation) => [
+                    'id' => $reservation->id,
+                    'reservation_id' => $reservation->reservation_id,
+                    'arrival_date' => $reservation->arrival_date?->toDateString(),
+                    'departure_date' => $reservation->departure_date?->toDateString(),
+                    'adults' => $reservation->adults,
+                    'children' => $reservation->children,
+                ])->values(),
+            ])
+            ->values();
 
         return json_encode($guests);
     }

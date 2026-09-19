@@ -62,7 +62,7 @@ This package teaches the AI concierge to do the same, **carefully**: at most onc
 | Question | Answered by |
 |---|---|
 | Did this guest ever talk to us, on this stay? | WP-13 |
-| Can the rules tell whether an activity suits this party and fits their remaining nights? | WP-14 |
+| Can the rules tell whether an activity suits this party and fits in the days they have left? | WP-14 |
 | Did a recommendation actually reach the guest, or was it only generated? | WP-15 |
 | Is this guest allowed to be pitched right now, and if not, why not? | WP-16 |
 | Which activity should be pitched, and why that one? | WP-17 |
@@ -82,7 +82,7 @@ The brief was written from an earlier reading of the repo. These are the points 
 | # | The brief says | The repo says | What this plan does |
 |---|---|---|---|
 | C-1 | Prior purchases come from `transactions` via `master_guest_id`. | **No `master_guest_id` column exists.** (`Guest::eventLoggedAttributes()` lists it, but that is a dangling name.) Guests are per hotel; `GuestIdentityService::findExistingGuest()` reuses a guest row **within one hotel only**, deliberately. | Prior-stay history = `transactions` for the same `guest_id` on *other* stays at the same hotel. History across a hotel group is not available and is a privacy and tenancy decision (§15, D-9). |
-| C-2 | Gates: "remaining nights insufficient for the activity", "no capacity on any date". | `activities` has `name, description, price, currency, is_active, category_id`. **No capacity, duration, minimum-nights or audience data exists.** | WP-14 adds three optional columns. `null` means *unknown*, and an unknown value never fires a gate. The unknown is recorded in provenance. |
+| C-2 | Gates: "remaining nights insufficient for the activity", "no capacity on any date". | Since 18 Sep 2026 (`9886d45`) activities carry a **timeframe**: season (`available_from`/`available_until`), weekday `operating_hours` in hotel time, and `unavailable_periods`. Null = no restriction. There is still **no capacity, duration (in days) or audience data**, and bookings do not check the timeframe. | WP-16 uses the timeframe to work out which remaining days an activity is open. WP-14 adds the three missing optional columns. For those, `null` means *unknown* and never fires a gate; the unknown is recorded in provenance. |
 | C-3 | Put `first_contacted_at` / `last_contacted_at` on `guests`. | Guest rows are reused across stays at the same hotel. A guest-level timestamp cannot say whether a guest who messaged in March *also* messaged during their September stay, once they message again in October. | Stamp both `guests` **and** `stays`. Segments are computed per stay (WP-13). |
 | C-4 | Store provenance in the outcome's `context` JSON. | `recommendation_outcomes` holds **one row per recommendation, upserted** (`unique('recommendation_id')`). `RecommendationOutcomeService::record()` writes `'context' => $attributes['context'] ?? null`, `'evidence_quote' => … ?? null` and `'confidence' => … ?? null` on every update. `BookingService::creditRecommendation()` passes none of them. **So at the moment of conversion, the pitch's context and the guest's quoted "yes" are overwritten with null.** | Provenance goes in a new append-only `pitch_decisions` table (WP-16). WP-15 also fixes the overwrite, so earlier L1 evidence is preserved when a stronger outcome supersedes it. |
 | C-5 | Attribution is `CONVERSATIONAL`, L1. | A booking carrying `recommendation_id` is credited `AttributionMethod::DIRECT` by `BookingService`, and DIRECT **outranks** CONVERSATIONAL (precedence 4 > 3). | No change needed: both are L1 and the precedence chain is correct. But say it plainly in the docs. **Converted pitches appear under `attribution.direct`**, while CONVERSATIONAL holds accepted, declined and delivered outcomes that did not become bookings. |
@@ -127,7 +127,8 @@ The classifier is still an LLM. That is stated here rather than hidden. It is al
 - A scoring or ML model for ranking
 - Payment, deposit or pricing logic
 - Frontend work (the APIs below are consumed by a frontend built separately)
-- A slot/timetable model for activities (WP-14 adds a daily capacity only)
+- A slot or per-time capacity model for activities (WP-14 adds a daily capacity only)
+- Making bookings respect the activity timeframe (a separate change; see WP-17 Trap 6)
 - Meta delivery and read receipts
 
 ---
@@ -172,7 +173,7 @@ The guest-level columns stay because they are cheap and useful (e.g. "never cont
 ### 13.1 Migration
 
 ```php
-// database/migrations/2026_09_18_000000_add_contact_timestamps_to_guests_and_stays.php
+// database/migrations/2026_09_19_000000_add_contact_timestamps_to_guests_and_stays.php
 Schema::table('guests', function (Blueprint $table) {
     // When this person first and last messaged the hotel, on any stay.
     // Written only by GuestContactService — never by the API.
@@ -309,9 +310,11 @@ it('does not stamp another hotel\'s guest during backfill', ...);
 
 Three of the brief's rules need facts the activity catalogue does not hold:
 
-- *"Remaining nights insufficient"* — a 3-day diving course cannot be pitched to someone leaving tomorrow. Nothing records that it takes 3 days.
+- *"Remaining nights insufficient"* — a 3-day diving course cannot be pitched to someone leaving tomorrow. Nothing records that it takes 3 days. The timeframe says *which* days it runs, not *how many* it takes.
 - *"No capacity"* — nothing records how many people an activity can take.
 - *"Party composition"* — ranking a kids' class above a couples' massage for a family requires knowing which is which. Today that lives only in free-text descriptions. Reading descriptions to decide would mean the model, not rules, is ranking.
+
+*When* an activity runs is already covered: the timeframe columns added on 18 Sep 2026 (season, weekday hours, closures) are used by WP-16 as they are. This package adds only what is still missing.
 
 The honest options are to add the data or to drop the rules. Adding three nullable columns is cheap. **A null means "unknown", and an unknown never blocks anything.** Hotels that fill them in get sharper gates; hotels that don't get today's behaviour, and the provenance says `unknown` rather than pretending.
 
@@ -320,10 +323,10 @@ The honest options are to add the data or to drop the rules. Adding three nullab
 ### 14.1 Migration
 
 ```php
-// database/migrations/2026_09_18_000001_add_pitching_attributes_to_activities_table.php
+// database/migrations/2026_09_19_000001_add_pitching_attributes_to_activities_table.php
 Schema::table('activities', function (Blueprint $table) {
     $table->string('audience')->nullable();                       // App\Enums\ActivityAudience; null = not stated
-    $table->unsignedSmallInteger('min_nights_remaining')->nullable(); // null = config default
+    $table->unsignedSmallInteger('duration_days')->nullable();     // consecutive days it takes; null = a single day
     $table->unsignedInteger('daily_capacity')->nullable();        // people per day; null = unknown, never gated
 });
 ```
@@ -342,20 +345,20 @@ Add the three to `Activity::$fillable` and `$casts` (`audience` → `ActivityAud
 
 ### 14.2 Validation
 
-`ActivityController` uses `GenericStoreRequest` / `GenericUpdateRequest`, whose rules come from `ModelColumnRules`. Check that it emits:
+`ActivityController` validates with `StoreActivityRequest` / `UpdateActivityRequest`. These extend the generic requests (rules derived from `$fillable` by `ModelColumnRules`) and add the timeframe rules through the `ValidatesActivityTimeframe` concern. Follow the same pattern: a `ValidatesActivityPitchingAttributes` concern, used by both requests, that adds:
 
-- an enum rule for a column cast to a backed enum
-- `integer|min:0` for unsigned integers
-- `nullable` for nullable columns
+- `audience`: `nullable`, `Rule::enum(ActivityAudience::class)`
+- `duration_days`: `nullable|integer|min:1|max:30`
+- `daily_capacity`: `nullable|integer|min:1`
 
-If any of these is missing, add it in `ModelColumnRules` and cover it in `GenericCrudTest`. Do not write a bespoke activity request just for this.
+`daily_capacity` starts at 1 on purpose. See Trap 1.
 
 ### 14.3 Meaning of each field
 
 | Field | Rule it feeds | Used as |
 |---|---|---|
-| `min_nights_remaining` | Gate: nights left ≥ this, else excluded. `null` → `config('pitching.default_min_nights_remaining')` (default 1). | Per-candidate exclusion |
-| `daily_capacity` | Gate: a date is full when the sum of `pax` on non-cancelled bookings for this activity that day ≥ capacity. Excluded only when **every** remaining date is full. | Per-candidate exclusion |
+| `duration_days` | How many **consecutive** days the activity takes (a 3-day diving course = 3). A start date is valid only if that many consecutive remaining dates, starting on it, are all open (16.3). `null` is treated as 1, i.e. a single-day activity, so only the open-dates check applies. | Per-candidate exclusion |
+| `daily_capacity` | Gate: a date is full when the sum of `pax` on non-cancelled bookings for this activity that day ≥ capacity. Excluded only when **every** remaining open date (16.3) is full. | Per-candidate exclusion |
 | `audience` | Ranking only. `FAMILY` ranks up for parties with children; `ADULTS_ONLY` ranks down for them. Never an exclusion: parents may want the couples' spa while the kids are at kids' club. | Ranking key |
 
 `daily_capacity` is deliberately crude. A real timetable (slots, times, resources) is its own module and out of scope. The booking lifecycle already covers the gap: a booking is created `PENDING` ("slot not yet confirmed") and staff confirm it.
@@ -366,7 +369,8 @@ Update `docs/activity-api-documentation.md`. No new permission: `activities.upda
 
 ```php
 // tests/Feature/ActivityControllerTest.php (extend)
-it('accepts and returns audience, min_nights_remaining and daily_capacity', ...);
+it('accepts and returns audience, duration_days and daily_capacity', ...);
+it('rejects a duration_days of zero', ...);
 it('rejects an unknown audience value', ...);
 it('rejects a negative daily_capacity', ...);
 it('leaves all three null when not supplied', ...);
@@ -407,7 +411,7 @@ This package also fixes the overwrite described in §2 C-4, because pitching mak
 ### 15.1 Migration
 
 ```php
-// database/migrations/2026_09_18_000002_add_delivery_to_recommendations_table.php
+// database/migrations/2026_09_19_000002_add_delivery_to_recommendations_table.php
 Schema::table('recommendations', function (Blueprint $table) {
     // When the guest was actually offered it. Null = never delivered (or
     // delivered before tracking began — see pitching.delivery_tracking_since).
@@ -621,7 +625,6 @@ return [
     'max_unsolicited_per_stay' => (int) env('PITCHING_MAX_PER_STAY', 1),
 
     'shortlist_size' => 3,
-    'default_min_nights_remaining' => 1,
 
     // Pitch guests whose stay is EXPECTED (not yet arrived) — §15 D-5.
     'allow_pre_arrival' => false,
@@ -725,14 +728,26 @@ Per-activity exclusions (applied when building candidates, recorded per activity
 enum CandidateExclusion: string
 {
     case ALREADY_BOOKED = 'already_booked';             // non-cancelled booking for this activity, this stay
-    case NIGHTS_INSUFFICIENT = 'nights_insufficient';   // remaining nights < min_nights_remaining
-    case NO_CAPACITY = 'no_capacity';                   // full on every remaining date (known capacity only)
-    case CLASHES_ON_ALL_DATES = 'clashes_on_all_dates'; // see below
+    case NOT_ENOUGH_DAYS = 'not_enough_days';           // no run of duration_days consecutive open dates before departure
+    case CLOSED_ON_ALL_DATES = 'closed_on_all_dates';   // timeframe: no remaining date is open — see below
+    case NO_CAPACITY = 'no_capacity';                   // full on every remaining open date (known capacity only)
+    case CLASHES_ON_ALL_DATES = 'clashes_on_all_dates'; // clashes on every remaining open date — see below
     case OUTSIDE_INTEREST = 'outside_interest';         // guest asked about a different category
 }
 ```
 
-**Clash, without durations.** Activities have no start time or length, so a true clash cannot be computed. Default rule, pending the owner (§15, D-7): a remaining date *clashes* for an activity when the guest already holds a non-cancelled booking **in the same activity category** on that date. A booking with a null `scheduled_for` clashes with nothing and is counted in provenance as `unscheduled_bookings`. An activity is excluded only when every remaining date clashes.
+**Open dates, from the activity timeframe.** The *remaining dates* are today through the day before `planned_departure_date`, in the hotel's timezone. A remaining date is **open** for an activity when all of these hold:
+
+1. it is inside the season: on or after `available_from`, and on or before `available_until` (a null bound is no limit);
+2. it is not inside any `unavailable_periods` range (both ends inclusive);
+3. `operating_hours` is null, or that weekday has at least one slot;
+4. for **today** only: `operating_hours` is null, or at least one of today's slots ends after the current local time.
+
+An activity with no open date is excluded as `CLOSED_ON_ALL_DATES`. The capacity and clash checks then look only at the open dates.
+
+**Multi-day activities.** When `duration_days` is greater than 1, a date counts as a possible **start date** only if it and the following `duration_days − 1` dates are all remaining dates and all open, with capacity, and without a clash. No start date → `NOT_ENOUGH_DAYS`. For single-day activities every surviving open date is a start date. The candidate's `open_dates` is the list of start dates. Put the calculation in one pure method, `ActivityTimeframe::openDates(Activity $activity, CarbonInterface $from, CarbonInterface $until, CarbonInterface $now): array`, in `app/Support/Pitching/`, with no queries, so it can be tested case by case.
+
+**Clash, without durations.** Activities now have weekday hours but still no length, and a booking's `scheduled_for` has a start and no end, so a true time clash still cannot be computed. Default rule, pending the owner (§15, D-7): a remaining date *clashes* for an activity when the guest already holds a non-cancelled booking **in the same activity category** on that date. A booking with a null `scheduled_for` clashes with nothing and is counted in provenance as `unscheduled_bookings`. An activity is excluded only when every remaining date clashes.
 
 ### 16.4 Complaint detection — the proposal
 
@@ -743,7 +758,7 @@ This is the hardest gate, so it has three layers. Each catches what the one befo
 Add a column that says *why* a guest-related task exists:
 
 ```php
-// database/migrations/2026_09_18_000003_add_guest_signal_to_tasks_table.php
+// database/migrations/2026_09_19_000003_add_guest_signal_to_tasks_table.php
 Schema::table('tasks', function (Blueprint $table) {
     $table->string('guest_signal')->nullable();   // App\Enums\GuestSignal
     $table->index(['guest_id', 'guest_signal', 'created_at']);
@@ -816,7 +831,7 @@ Why not a keyword list? Guests write in Arabic, German, Russian, Italian, Englis
 ### 16.5 Decision provenance — `pitch_decisions`
 
 ```php
-// database/migrations/2026_09_18_000004_create_pitch_decisions_table.php
+// database/migrations/2026_09_19_000004_create_pitch_decisions_table.php
 Schema::create('pitch_decisions', function (Blueprint $table) {
     $table->uuid('id')->primary();
     $table->foreignUuid('hotel_id')->constrained()->cascadeOnDelete();
@@ -888,7 +903,7 @@ enum PitchResult: string
     }
   ],
   "excluded": [
-    { "activity_id": "4ab2…", "name": "PADI Open Water", "reason": "nights_insufficient", "detail": "needs 3, has 2" }
+    { "activity_id": "4ab2…", "name": "PADI Open Water", "reason": "not_enough_days", "detail": "needs 3 consecutive open days, longest run is 2" }
   ]
 }
 ```
@@ -935,8 +950,12 @@ it('does not run the classifier when a cheap gate fails', ...);
 it('fails closed when the classifier throws', ...);
 it('treats a classifier quote not found in the message as a failure', ...);
 it('ignores an interest category id from another hotel', ...);
-it('excludes an activity needing more nights than remain', ...);
-it('excludes an activity full on every remaining date but not one with unknown capacity', ...);
+it('excludes a multi-day activity with too few consecutive open days before departure', ...);
+it('treats a null duration as a single day', ...);
+it('excludes an activity closed on every remaining date by season, closure or weekday hours', ...);
+it('does not count today as open once today's last slot has ended', ...);
+it('treats a null timeframe as open every day', ...);
+it('excludes an activity full on every remaining open date but not one with unknown capacity', ...);
 it('excludes an activity already booked this stay', ...);
 it('records every gate result, not just the first failure', ...);
 it('writes a decision row for an ineligible turn', ...);
@@ -1118,7 +1137,7 @@ $coordinator->complete($turn, $response->text);
 
     When eligible:
     > First, fully answer what the guest asked. Then, only if it fits naturally, suggest **one** activity from this list by calling the pitch tool with its id and the guest's own words that invited it. Mention only that activity, once, briefly. If the guest seems unhappy about anything, do not suggest anything.
-    > 1. {name} — {reason in words}
+    > 1. {name} — {reason in words}. Open on: {open_dates, as weekday and date}. Only propose one of these days.
     > 2. …
 
     When not eligible:
@@ -1177,6 +1196,7 @@ it('still answers the guest when the whole pitching layer throws', ...);
 3. **`predicted_confidence` is 0 on rule-created recommendations.** The column is non-null with default 0. Exclude `pitch_decision_id IS NOT NULL` rows from any analysis of predicted confidence, and say so in the recommendation docs.
 4. **Do not let the ranker read the database.** Once it does, tests need full fixtures, and "why was this ranked first" needs a debugger.
 5. **The agent's `maxConversationMessages()` is 10.** The shortlist belongs in the instructions, which are rebuilt every turn, not in message history, where it would go stale.
+6. **Bookings do not check the activity timeframe yet.** `CreateBookingTool` will record a booking for a closed day if the agent offers one. The shortlist carries `open_dates` and the prompt restricts the agent to them, but that is prompt-level. Making `BookingService::create()` reject a time outside the timeframe is a separate change, and it needs thought first, because staff override closures in real life. Until it ships, pitched bookings stay `PENDING` and staff confirm the slot.
 
 ---
 
@@ -1405,7 +1425,7 @@ These are product, commercial or legal decisions. **Do not resolve them in code.
 | D-4 | ~~Marketing consent~~ — **resolved by the owner (18 Sep 2026).** Guests give consent when they make the reservation, so there is no consent gate. The `guests.marketing_consent` column has been dropped. | — | — |
 | D-5 | **Pre-arrival guests.** Pitch guests whose stay has not started? | No | No for v1: capacity and clash checks are about dates they are not yet present for. |
 | D-6 | **Segment signals.** Use nationality or market segment for ranking? | Recorded, not used | Keep out. `market_segment` is never populated, and ranking on nationality without evidence is an L3 guess that is also a profiling risk. |
-| D-7 | **Clash rule** without activity times or durations | Same category, same date | Accept for v1; add `duration_minutes` and times only when a hotel supplies them. |
+| D-7 | **Clash rule.** Activities have weekday hours but no duration, so a real time clash can't be computed | Same category, same date | Accept for v1. A `duration_minutes` column would allow a real time clash check later. |
 | D-8 | **Who sees what.** Reception list for employees without a role? Per-hotel on/off switch, or global? | Not in defaults until confirmed; global switch | Add the reception list to defaults. Add a per-hotel switch before a second hotel goes live. |
 | D-9 | **Group-level guest history.** Should prior purchases at a sister property count? | No (not possible today) | No, until a group-level identity and consent model exists. |
 | D-10 | **Capacity depth.** Is people-per-day enough, or are slots needed? | People per day, optional | Enough for a pilot; slots are a separate module. |

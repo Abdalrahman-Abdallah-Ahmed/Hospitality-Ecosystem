@@ -37,9 +37,9 @@ Route::post('/whatsapp', [WhatsAppController::class, 'whatsappWebhook'])
 Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore'])->middleware('throttle:register');
     Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->middleware('throttle:login')->name('login');
-    Route::post('/pair', [WhatsAppController::class, 'pair']);
+    Route::post('/pair', [WhatsAppController::class, 'pair'])->middleware('throttle:pair');
 
-    Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant'])->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
         Route::get('/user', function (Request $request) {
             return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->load(['hotel', 'team', 'staffRole'])));

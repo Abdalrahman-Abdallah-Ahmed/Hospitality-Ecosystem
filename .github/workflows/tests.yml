@@ -1,0 +1,61 @@
+name: Tests
+
+on:
+  pull_request:
+  # Called by deploy.yml, so nothing reaches the server without passing.
+  workflow_call:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    # The suite needs real Postgres with pgvector, never SQLite.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hospitality_testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Throwaway CI credentials. Real environment variables take precedence
+    # over the <env> entries in phpunit.xml, so these point the suite at the
+    # service container above.
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: hospitality_testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_URL: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_pgsql, pgsql, zip, gd
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Code style
+        run: ./vendor/bin/pint --test
+
+      - name: Test suite
+        run: php artisan test

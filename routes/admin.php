@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
 |
 | The whole file is registered in bootstrap/app.php under:
 |
-|     api  →  api.key  →  auth:sanctum  →  tenant  →  super_admin
+|     api  →  api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  super_admin
 |
 | and the URL prefix `api/admin`. Deliberately applied there rather than in a
 | Route::group() here, so that EVERY route in this file is guarded by

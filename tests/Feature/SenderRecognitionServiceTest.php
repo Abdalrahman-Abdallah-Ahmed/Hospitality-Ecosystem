@@ -155,3 +155,65 @@ it('recognizes an unrecognized phone number as unknown', function () {
     expect($recognition->reservation)->toBeNull();
     expect($recognition->devicePaired)->toBeFalse();
 });
+
+function recognitionHotel(string $name): Hotel
+{
+    return Hotel::create([
+        'owner_id' => User::factory()->create()->id,
+        'name' => $name,
+        'slug' => str($name)->slug().'-'.uniqid(),
+        'currency' => 'USD',
+    ]);
+}
+
+it('recognizes an admin whose number was saved with formatting from the digits Meta sends', function () {
+    $hotel = recognitionHotel('Grand Harbor Hotel');
+    $user = User::factory()->role(UserRole::ADMIN)->create([
+        'phone_number' => '+20 115 179 3758',
+        'hotel_id' => $hotel->id,
+    ]);
+
+    $recognition = senderRecognitionService()->resolve('201151793758');
+
+    expect($recognition->type->value)->toBe('admin')
+        ->and($recognition->sender->id)->toBe($user->id);
+});
+
+it('prefers an upcoming stay over a past one when a number is a guest at two hotels', function () {
+    $pastHotel = recognitionHotel('Past Hotel');
+    $nextHotel = recognitionHotel('Next Hotel');
+    $pastGuest = Guest::create(['hotel_id' => $pastHotel->id, 'phone_number' => '201151793758']);
+    $nextGuest = Guest::create(['hotel_id' => $nextHotel->id, 'phone_number' => '201151793758']);
+
+    Reservation::create([
+        'hotel_id' => $pastHotel->id,
+        'guest_id' => $pastGuest->id,
+        'reservation_id' => 'PAST-1',
+        'arrival_date' => now()->subWeeks(3),
+        'departure_date' => now()->subWeeks(3)->addDays(2),
+    ]);
+    $upcoming = Reservation::create([
+        'hotel_id' => $nextHotel->id,
+        'guest_id' => $nextGuest->id,
+        'reservation_id' => 'NEXT-1',
+        'arrival_date' => now()->addWeek(),
+        'departure_date' => now()->addWeek()->addDays(2),
+    ]);
+
+    $recognition = senderRecognitionService()->resolve('201151793758');
+
+    expect($recognition->sender->id)->toBe($nextGuest->id)
+        ->and($recognition->hotelId)->toBe($nextHotel->id)
+        ->and($recognition->reservation->id)->toBe($upcoming->id);
+});
+
+it('picks the most recently created guest when none of a number\'s guests has a reservation', function () {
+    $older = Guest::create(['hotel_id' => recognitionHotel('Older Hotel')->id, 'phone_number' => '201151793758']);
+    $this->travel(1)->minutes();
+    $newer = Guest::create(['hotel_id' => recognitionHotel('Newer Hotel')->id, 'phone_number' => '201151793758']);
+
+    $recognition = senderRecognitionService()->resolve('201151793758');
+
+    expect($recognition->sender->id)->toBe($newer->id)
+        ->and($recognition->sender->id)->not->toBe($older->id);
+});

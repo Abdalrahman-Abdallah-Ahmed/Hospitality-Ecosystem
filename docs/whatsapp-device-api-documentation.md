@@ -192,6 +192,21 @@ The pairing endpoint applies these checks:
 
 If any of these checks fail, the API returns an error instead of creating a device. On success the pairing code is revoked.
 
+`POST /api/pair` is rate limited to 10 requests per minute per IP. Over the limit it returns HTTP `429` with a `Retry-After` header.
+
+## Inbound Messages (Meta Webhook)
+
+`POST /api/whatsapp` receives Meta's webhook. Clients never call it, but its behaviour affects what users see in WhatsApp:
+
+- **Every message in a delivery is answered.** Meta can batch several messages (across entries and changes) into one call. Each one is handled separately.
+- **Redeliveries are ignored.** Each message is stored by Meta's message id (`wamid`) in `whatsapp_inbound_messages`. When Meta resends a message it has already delivered, the resend is acknowledged and dropped, so the agent never runs twice for one message.
+- **Per-sender rate limit.** One phone number may send `WHATSAPP_INBOUND_PER_MINUTE` messages per minute (default 10). The first message over the limit gets one "please wait a minute" reply. The rest of that minute is dropped unanswered and stored with status `throttled`.
+- **Sender recognition compares digits.** A user or guest phone number saved as `+20 115 179 3758` matches Meta's `201151793758`. Admin recognition and pairing now agree on this.
+- **A number that is a guest at several hotels** is routed to the stay the guest is most likely writing about: the hotel where they are in-house now, then their next arrival, then their most recent past stay. A number with no reservations goes to the most recently created guest.
+- **One message per sender at a time.** A second message from the same number waits until the first has been answered, so replies arrive in order and the conversation history stays consistent.
+- **Replies are generated once.** If sending the reply fails, the stored reply is resent with backoff instead of asking the model again. If the agent itself fails, the sender gets an apology instead of silence. The turn is not retried, because its tools may already have created bookings or tasks.
+- **Spend ceiling.** Guest-driven AI spend stops at `AI_COST_GUEST_CEILING_SHARE` (default 60%) of the account's daily ceiling, and the guest is told the concierge is unavailable. Staff advisor and scheduled insights continue up to the full ceiling.
+
 ## 3. Check Pairing Status
 
 Reports whether a phone number has a paired WhatsApp device. The dashboard polls this after showing a pairing code.

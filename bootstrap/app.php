@@ -28,7 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // to nest it — the stack below is deliberately identical to the one
         // wrapping the tenant routes in routes/api.php, plus super_admin.
         then: function () {
-            Route::middleware(['api', 'api.key', 'auth:sanctum', 'tenant', 'super_admin'])
+            Route::middleware(['api', 'api.key', 'auth:sanctum', 'throttle:api', 'tenant', 'super_admin'])
                 ->prefix('api/admin')
                 ->group(base_path('routes/admin.php'));
         },

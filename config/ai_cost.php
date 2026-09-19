@@ -60,4 +60,19 @@ return [
 
     'daily_ceiling_usd' => env('AI_COST_DAILY_CEILING_USD', 50.00),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Guest-Driven Share of the Ceiling
+    |--------------------------------------------------------------------------
+    |
+    | Guest-message spend is stopped once it reaches this share of the daily
+    | ceiling, so one abusive sender cannot use up the account's whole day
+    | and lock the hotel's staff advisor and scheduled insights out with it.
+    | 0.60 keeps at least 40% of the ceiling for the hotel's own work. Set to
+    | null to let guest traffic use the full ceiling.
+    |
+    */
+
+    'guest_share_of_daily_ceiling' => env('AI_COST_GUEST_CEILING_SHARE', 0.60),
+
 ];

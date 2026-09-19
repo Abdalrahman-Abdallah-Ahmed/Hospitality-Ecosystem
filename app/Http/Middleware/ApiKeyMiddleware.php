@@ -23,7 +23,9 @@ class ApiKeyMiddleware
                 : $this->invalidKey();
         }
 
-        $providedKey = (string) ($request->header('X-API-KEY') ?? $request->query('api_key'));
+        // Header only. A key in the query string ends up in access logs,
+        // proxy logs and browser history.
+        $providedKey = (string) $request->header('X-API-KEY');
 
         if (! hash_equals($expectedKey, $providedKey)) {
             return $this->invalidKey();

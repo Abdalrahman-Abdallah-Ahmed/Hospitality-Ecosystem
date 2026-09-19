@@ -50,7 +50,10 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Seven days by default. A token that never expires stays valid on a
+    // lost laptop or a leaked log line for as long as the account exists.
+    // Set SANCTUM_TOKEN_EXPIRATION to an empty value to turn expiry off.
+    'expiration' => (int) env('SANCTUM_TOKEN_EXPIRATION', 60 * 24 * 7) ?: null,
 
     /*
     |--------------------------------------------------------------------------

@@ -42,6 +42,12 @@ return [
         'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
         'access_token' => env('WHATSAPP_ACCESS_TOKEN'),
         'graph_api_version' => env('WHATSAPP_GRAPH_API_VERSION', 'v21.0'),
+
+        // Inbound messages one phone number may send per minute before the
+        // rest are dropped unanswered. Anyone who can message the shared
+        // number can cause AI spend; this bounds a burst, and the guest
+        // ceiling in config/ai_cost.php bounds the day.
+        'inbound_per_minute' => (int) env('WHATSAPP_INBOUND_PER_MINUTE', 10),
     ],
 
 ];
