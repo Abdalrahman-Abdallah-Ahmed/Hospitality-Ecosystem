@@ -5,12 +5,17 @@ use App\Models\Hotel;
 use App\Models\HotelPolicy;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Ai\Embeddings;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
+
+    // Saving an active policy syncs its knowledge chunks, which embeds the
+    // text through the AI provider.
+    Embeddings::fake();
 });
 
 function hotelPolicyApiHeaders(): array
