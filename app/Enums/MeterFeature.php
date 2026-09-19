@@ -158,22 +158,21 @@ enum MeterFeature: string
      * endpoint can return an explicit gap instead of a silent zero — a
      * missing meter and a meter reading zero are different facts.
      *
-     *  - RECOMMENDATIONS_DELIVERED is inferred today, not measured:
-     *    /api/analytics/conversion treats a recommendation as delivered
-     *    unless an outcome explicitly records not_delivered, and says so in
-     *    its notes. That assumption is fine in a report that labels it; it is
-     *    not fine in a usage table, where an estimated number becomes a
-     *    disputed invoice later. Needs the measured delivery timestamp from
-     *    P1-002 A-1.
      *  - CONVERSATIONS_HANDLED needs a definition of when a conversation
      *    ends. agent_conversations has no status column and the
      *    ConversationStatus enum is unused, so there is no such moment yet.
+     *
+     * RECOMMENDATIONS_DELIVERED used to be listed here, because delivery was
+     * assumed rather than measured. It is now recorded once per
+     * recommendation by RecommendationDeliveryService, when the stamp on
+     * recommendations.delivered_at is first written — a measurement, never
+     * an assumption.
      *
      * @return array<int, self>
      */
     public static function awaitingSource(): array
     {
-        return [self::RECOMMENDATIONS_DELIVERED, self::CONVERSATIONS_HANDLED];
+        return [self::CONVERSATIONS_HANDLED];
     }
 
     public function isAwaitingSource(): bool

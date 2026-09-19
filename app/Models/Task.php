@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
 use App\Enums\CreatedBy;
+use App\Enums\GuestSignal;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
 use App\Models\Concerns\Filterable;
@@ -38,6 +39,9 @@ class Task extends Model
         'status' => TaskStatus::class,
         'priority' => Priority::class,
         'due_date' => 'datetime',
+        // Set only by the concierge tools; deliberately not fillable, so the
+        // API cannot relabel a complaint and reopen pitching to the guest.
+        'guest_signal' => GuestSignal::class,
     ];
 
     /**
@@ -48,7 +52,7 @@ class Task extends Model
         return [
             'room_id', 'reservation_id', 'guest_id', 'assigned_to_team_id',
             'assigned_to_user_id', 'task_category_id', 'title', 'description',
-            'created_by', 'status', 'priority', 'due_date',
+            'created_by', 'guest_signal', 'status', 'priority', 'due_date',
         ];
     }
 

@@ -511,6 +511,8 @@ Recommendations from before the cutover keep today's behaviour (EXPIRED). The cu
 
 When it is null, nothing changes. That makes the deploy safe.
 
+> **Implemented without the cutover (19 Sep 2026, owner decision).** The system is still an MVP with no production guests or recommendations, so there is no old data for a cutover to protect. Delivery is always measured: the nightly job writes NOT_DELIVERED whenever `delivered_at` is null, conversion analytics counts only stamped deliveries, and there is no `delivery_basis` field, `PITCHING_DELIVERY_TRACKING_SINCE` variable or `config/pitching.php` from this package (WP-16 creates the config file). Trap 4 and the "mixed" basis in 15.5 no longer apply. If this code is ever deployed onto a database that already holds recommendations, reintroduce the cutover first.
+
 ### 15.5 Conversion analytics
 
 `AnalyticsController::conversion()` gains one field and changes one number:
@@ -932,6 +934,15 @@ class PitchEligibilityService
 Value objects live in `app/Support/Pitching/`: `GateReport`, `GateResult`, `TurnSignal`, `CandidateList`, `Candidate`, `PitchTurn`. They are plain readonly classes with a `toArray()` for the JSON columns.
 
 **Evaluate every cheap gate even after one fails.** Recording that five of six passed is information: it tells you which rule is doing the blocking. Stop only before the classifier, which costs money.
+
+> **As implemented (19 Sep 2026).** Where the code differs from the text above:
+> - Migrations are `2026_09_19_000005` (guest signal) and `000006` (pitch decisions); `000000`–`000004` were already taken.
+> - `candidates()` takes no `Guest` yet; WP-17 adds it when ranking needs prior purchases. Until then the shortlist is the first N candidates by name.
+> - `PitchCoordinator` exists from WP-16 with `begin()` and `complete()`. The job calls `begin()` inside the cost context before the concierge runs, and `complete()` right after the reply is generated, recording `ineligible` or `no_pitch`. WP-17 moves completion of pitched turns to after the send and adds `abandon()`.
+> - Gates that need a stay are not recorded when there is none: the row shows `feature_disabled` and a failed `no_stay` only.
+> - The `PitchTurn` is set on the concierge after its conversation is resumed, so the escalation and service-request tools can mark it (Layer 3). `PitchTurn` is the one mutable value object, for that flag.
+> - The pitch cap counts pitches whose turn is still running or ended `pitched`; a `reply_failed` pitch never reached the guest and does not count.
+> - `tasks.guest_signal` is not fillable, so the tasks API cannot relabel a complaint.
 
 ## How to verify
 

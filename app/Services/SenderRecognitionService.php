@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Support\PhoneNumber;
 use App\Support\RecognizedSender;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 class SenderRecognitionService
@@ -82,10 +83,9 @@ class SenderRecognitionService
      */
     private function mostRelevant(Collection $guests): array
     {
-        $reservation = Reservation::whereIn('guest_id', $guests->modelKeys())
-            ->get()
-            ->sort(fn (Reservation $a, Reservation $b) => $this->rank($a) <=> $this->rank($b))
-            ->first();
+        $reservation = $this->relevantReservation(
+            Reservation::whereIn('guest_id', $guests->modelKeys())->get(),
+        );
 
         if ($reservation) {
             return [$guests->firstWhere('id', $reservation->guest_id), $reservation];
@@ -99,13 +99,29 @@ class SenderRecognitionService
     }
 
     /**
+     * The reservation a message sent at $at is most plausibly about: in-house
+     * on that date, then the next arrival, then the most recent past stay.
+     * Shared with the contact backfill, which replays old messages through
+     * the same rule live recognition applies, so the two cannot disagree.
+     *
+     * @param  iterable<int, Reservation>  $reservations
+     */
+    public function relevantReservation(iterable $reservations, ?CarbonInterface $at = null): ?Reservation
+    {
+        $date = ($at ?? now())->toDateString();
+
+        return collect($reservations)
+            ->sort(fn (Reservation $a, Reservation $b) => $this->rank($a, $date) <=> $this->rank($b, $date))
+            ->first();
+    }
+
+    /**
      * Sort key: lower sorts first.
      *
      * @return array{int, int, string}
      */
-    private function rank(Reservation $reservation): array
+    private function rank(Reservation $reservation, string $today): array
     {
-        $today = now()->toDateString();
         $arrival = $reservation->arrival_date->toDateString();
         $departure = $reservation->departure_date->toDateString();
         $arrivalTimestamp = strtotime($arrival);

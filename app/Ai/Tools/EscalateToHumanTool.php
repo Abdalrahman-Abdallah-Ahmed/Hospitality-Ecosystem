@@ -3,11 +3,14 @@
 namespace App\Ai\Tools;
 
 use App\Enums\CreatedBy;
+use App\Enums\GuestSignal;
 use App\Enums\Priority;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\Reservation;
 use App\Models\Task;
 use App\Services\CreationNotificationService;
+use App\Support\Pitching\PitchTurn;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -18,6 +21,8 @@ class EscalateToHumanTool implements Tool
     public function __construct(
         private readonly Guest $guest,
         private readonly Hotel $hotel,
+        private readonly ?Reservation $reservation = null,
+        private readonly ?PitchTurn $pitchTurn = null,
     ) {}
 
     /**
@@ -35,14 +40,21 @@ class EscalateToHumanTool implements Tool
     {
         $reason = $request->string('reason')->toString();
 
-        $task = Task::create([
+        $task = Task::make([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
+            'reservation_id' => $this->reservation?->id,
             'title' => 'Guest needs human assistance',
             'description' => $reason,
             'created_by' => CreatedBy::AI,
             'priority' => Priority::HIGH,
         ]);
+        // Why the task exists; pitching stays quiet for the rest of the stay.
+        $task->guest_signal = GuestSignal::ESCALATION;
+        $task->save();
+
+        // Nothing may be pitched in the reply to a guest who needed a human.
+        $this->pitchTurn?->markBlockingRequest();
 
         app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
 

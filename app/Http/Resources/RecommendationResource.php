@@ -25,6 +25,9 @@ class RecommendationResource extends JsonResource
             'priority' => $this->priority,
             'status' => $this->status,
             'recommended_at' => $this->recommended_at,
+            // Read-only: when (and how) the guest was actually offered it.
+            'delivered_at' => $this->delivered_at,
+            'delivery_channel' => $this->delivery_channel,
             'accepted_at' => $this->accepted_at,
             'rejected_at' => $this->rejected_at,
             'dismissed_at' => $this->dismissed_at,

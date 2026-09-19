@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Enums\AttributionMethod;
 use App\Enums\BookingStatus;
 use App\Enums\ChargeModel;
+use App\Enums\DeliveryChannel;
 use App\Enums\MeterFeature;
 use App\Enums\OutcomeType;
 use App\Models\Booking;
 use App\Models\Transaction;
 use App\Services\Metering\MeteringService;
+use App\Support\Audit\EventLogger;
 use App\Support\Bookings\BookingReference;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -63,11 +65,6 @@ class BookingService
     }
 
     /**
-     * A booking carrying a recommendation_id *is* the conversion, observed
-     * directly — the strongest link in the system, needing no inference at
-     * all. Recorded here so it happens whatever created the booking.
-     */
-    /**
      * Metering is resolved out of the container here rather than injected, so
      * that the many places already constructing a BookingService by hand do
      * not all have to change. It goes through safely(), so a metering failure
@@ -92,6 +89,16 @@ class BookingService
         });
     }
 
+    /**
+     * A booking carrying a recommendation_id *is* the conversion, observed
+     * directly — the strongest link in the system, needing no inference at
+     * all. Recorded here so it happens whatever created the booking.
+     *
+     * It is also proof the guest was offered it, so delivery is stamped —
+     * after the outcome, so the booking is not measured as instant. Through
+     * rescue(): the booking is already saved and outranks the record of how
+     * the offer reached the guest.
+     */
     private function creditRecommendation(Booking $booking): void
     {
         $recommendation = $booking->recommendation()->withoutGlobalScope('hotel')->first();
@@ -107,6 +114,13 @@ class BookingService
             $booking,
             ['channel' => $booking->channel, 'occurred_at' => $booking->created_at],
         );
+
+        rescue(fn () => app(RecommendationDeliveryService::class)->markDelivered(
+            $recommendation,
+            DeliveryChannel::fromRecorded($booking->channel),
+            $booking->created_at ?? Carbon::now(),
+            EventLogger::currentActorKind(),
+        ));
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
+use App\Enums\DeliveryChannel;
 use App\Enums\EvidenceLevel;
 use App\Enums\RecommendationStatus;
 use App\Models\Concerns\Filterable;
@@ -49,6 +50,10 @@ class Recommendation extends Model
         'dismissed_at' => 'datetime',
         'evidence_level' => EvidenceLevel::class,
         'evidence_sources' => 'array',
+        // Written only by RecommendationDeliveryService; deliberately not
+        // fillable, so no client can claim a delivery that did not happen.
+        'delivered_at' => 'datetime',
+        'delivery_channel' => DeliveryChannel::class,
     ];
 
     /**
@@ -59,6 +64,7 @@ class Recommendation extends Model
         return [
             'reservation_id', 'activity_id', 'reason', 'predicted_confidence',
             'guest_confidence', 'priority', 'status', 'recommended_at',
+            'delivered_at', 'delivery_channel',
             'accepted_at', 'rejected_at', 'dismissed_at', 'evidence_level',
         ];
     }

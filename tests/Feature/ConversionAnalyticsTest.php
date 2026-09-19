@@ -1,11 +1,15 @@
 <?php
 
+use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
 use App\Enums\ChargeModel;
+use App\Enums\DeliveryChannel;
 use App\Enums\OutcomeType;
 use App\Enums\UserRole;
+use App\Models\Recommendation;
 use App\Models\User;
 use App\Services\BookingService;
+use App\Services\RecommendationDeliveryService;
 use App\Services\RecommendationOutcomeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -37,6 +41,17 @@ function bookedRecommendation($hotel, array $bookingOverrides = []): array
     ], $bookingOverrides));
 
     return [$recommendation, $booking];
+}
+
+/** As the concierge or staff would: the guest was actually offered it. */
+function markRecommendationDelivered(Recommendation $recommendation): void
+{
+    app(RecommendationDeliveryService::class)->markDelivered(
+        $recommendation,
+        DeliveryChannel::WHATSAPP,
+        now(),
+        ActorKind::AI_AGENT,
+    );
 }
 
 it('counts a booking as the conversion even when no payment ever occurs', function () {
@@ -78,6 +93,7 @@ it('reports acceptance and booking as separate rates', function () {
     bookedRecommendation($hotel);
 
     [$accepted] = wp5Recommendation($hotel);
+    markRecommendationDelivered($accepted);
     app(RecommendationOutcomeService::class)->record(
         $accepted, OutcomeType::ACCEPTED, AttributionMethod::CONVERSATIONAL, attributes: ['confidence' => 0.9]
     );
@@ -210,7 +226,8 @@ it('does not sum settled value across currencies', function () {
 it('treats a not_delivered recommendation as undelivered, not as a refusal', function () {
     [$admin, $hotel] = wp5AdminWithHotel();
     [$recommendation] = wp5Recommendation($hotel);
-    wp5Recommendation($hotel);
+    [$offered] = wp5Recommendation($hotel);
+    markRecommendationDelivered($offered);
 
     app(RecommendationOutcomeService::class)->record(
         $recommendation, OutcomeType::NOT_DELIVERED, AttributionMethod::STAFF
@@ -223,6 +240,20 @@ it('treats a not_delivered recommendation as undelivered, not as a refusal', fun
         ->assertJsonPath('body.not_delivered', 1)
         ->assertJsonPath('body.delivered', 1)
         ->assertJsonPath('body.declined', 0);
+});
+
+it('counts only recommendations that reached the guest as delivered', function () {
+    [$admin, $hotel] = wp5AdminWithHotel();
+    [$offered] = wp5Recommendation($hotel);
+    wp5Recommendation($hotel);   // generated, never offered, nothing recorded
+    markRecommendationDelivered($offered);
+
+    $response = conversionReport($admin)->assertOk()
+        ->assertJsonPath('body.recommendations_made', 2)
+        ->assertJsonPath('body.delivered', 1);
+
+    expect($response->json())->not->toHaveKey('body.delivery_basis')
+        ->and($response->json('body.notes'))->toContain('counts as delivered only once it reached the guest');
 });
 
 it('scopes the conversion report to the caller hotel', function () {

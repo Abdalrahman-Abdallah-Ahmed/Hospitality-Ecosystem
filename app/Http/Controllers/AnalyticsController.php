@@ -64,9 +64,11 @@ class AnalyticsController extends Controller
         // difference meaningful.
         $accepted = $outcomes->filter(fn (RecommendationOutcome $o) => $o->outcome->reachedAcceptance())->count();
 
-        // Delivery is assumed unless something explicitly said otherwise —
-        // stated in the notes, because it is an assumption, not a measurement.
-        $delivered = max(0, $recommendationsMade - $notDelivered);
+        // Measured, not assumed: only a recommendation that actually reached
+        // the guest is in the denominator of every rate below.
+        $delivered = Recommendation::whereBetween('recommended_at', [$from, $to])
+            ->whereNotNull('delivered_at')
+            ->count();
 
         $bookings = $outcomes->pluck('booking')->filter();
         $realised = $bookings->where('status', BookingStatus::REALISED)->count();
@@ -246,7 +248,7 @@ class AnalyticsController extends Controller
         }
 
         $notes[] = "Attribution window: {$window}h.";
-        $notes[] = 'Delivery is assumed unless a recommendation was explicitly recorded as not_delivered.';
+        $notes[] = 'A recommendation counts as delivered only once it reached the guest (sent in a WhatsApp reply, recorded by staff, or carried by a booking).';
 
         if ($currencyCount > 1) {
             $notes[] = 'Multiple currencies in this period — see the per-currency breakdowns; values are not converted.';

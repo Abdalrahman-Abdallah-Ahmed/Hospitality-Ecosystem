@@ -287,11 +287,11 @@ it('reports usage per account per feature, and names what it cannot measure', fu
         // Published as `hotels`; the stored code stays `properties`.
         ->and($account['seats']['hotels']['code'])->toBe('properties')
         ->and($account['recommendations']['generated'])->toBe(4)
-        // An honest gap, not a zero: nothing measures delivery yet.
-        ->and($account['recommendations']['delivered'])->toBeNull()
-        ->and($account['recommendations']['delivered_basis'])->toBe('not measured')
-        ->and($response->json('body.not_measured'))
-        ->toHaveKeys(['recommendations_delivered', 'conversations_handled']);
+        // Delivery is measured now: nothing was delivered, so a real zero.
+        ->and($account['recommendations']['delivered'])->toBe(0)
+        ->and($account['recommendations']['delivered_basis'])->toBe('measured')
+        ->and($response->json('body.not_measured'))->toHaveKey('conversations_handled')
+        ->and($response->json('body.not_measured'))->not->toHaveKey('recommendations_delivered');
 });
 
 it('does not gate any request in this phase', function () {
@@ -340,7 +340,7 @@ it('returns the calling account its own consumption', function () {
         ->and($response->json('body.seats.hotels.label'))->toBe('Hotels')
         // The same explicit gaps the super-admin report names, so a hotel is
         // never shown a zero that actually means "not measured".
-        ->and($response->json('body.not_measured.recommendations_delivered'))->toContain('not measured');
+        ->and($response->json('body.not_measured.conversations_handled'))->toContain('conversation ends');
 });
 
 it('never shows one account another account\'s consumption', function () {
@@ -439,9 +439,8 @@ it('lists every AI resource, including the ones with no activity', function () {
 
     // Except where nothing is counting: null with measured=false, because
     // zero would be a claim we cannot support.
-    expect($features['recommendations_delivered']['used'])->toBeNull()
-        ->and($features['recommendations_delivered']['measured'])->toBeFalse()
-        ->and($features['conversations_handled']['used'])->toBeNull()
+    expect($features['conversations_handled']['used'])->toBeNull()
+        ->and($features['conversations_handled']['measured'])->toBeFalse()
         ->and($features['ai_messages']['measured'])->toBeTrue();
 
     // Seats are not event-derived and are reported separately.
@@ -550,4 +549,9 @@ it('says a seat was never counted rather than reporting it as zero', function ()
     // admitting nothing has counted yet.
     expect($described['seats']['hotels']['used'])->toBeNull()
         ->and($described['seats']['hotels']['measured'])->toBeFalse();
+});
+
+it('no longer lists recommendations_delivered as awaiting a source', function () {
+    expect(MeterFeature::RECOMMENDATIONS_DELIVERED->isAwaitingSource())->toBeFalse()
+        ->and(MeterFeature::awaitingSource())->toBe([MeterFeature::CONVERSATIONS_HANDLED]);
 });

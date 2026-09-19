@@ -307,6 +307,7 @@ class WhatsAppController extends Controller
             reservation: $recognition->reservation,
             devicePaired: $pairing['paired'] && $pairing['active'],
             imageMediaId: $imageMediaId,
+            receivedAt: is_numeric($message['timestamp'] ?? null) ? (int) $message['timestamp'] : null,
         );
     }
 

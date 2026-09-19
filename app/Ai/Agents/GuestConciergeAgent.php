@@ -14,6 +14,7 @@ use App\Ai\Tools\UpdateRecommendationTool;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Support\Pitching\PitchTurn;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
@@ -30,6 +31,10 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
         public Guest $guest,
         public Hotel $hotel,
         public ?Reservation $reservation = null,
+        // This turn's pitching state. Set once the turn's decision is made,
+        // before the prompt runs, so the tools that report a problem can
+        // block a pitch in the same reply.
+        public ?PitchTurn $pitchTurn = null,
     ) {}
 
     protected function maxConversationMessages(): int
@@ -70,7 +75,9 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               booking follows a recommendation you showed them, pass that recommendation's id so it gets
               credited. Give the guest the reference code it returns and ask them to quote it at the desk.
             - A tool to create a task for staff — either a service request on the guest's behalf (e.g. extra
-              towels, a maintenance issue), or a follow-up task asking staff to contact the guest. If a
+              towels, a maintenance issue), or a follow-up task asking staff to contact the guest. Set its
+              kind: `service_request` when the guest needs something or something is wrong,
+              `booking_follow_up` only when staff should help an interested guest book an activity. If a
               category clearly fits, look up its id with the task-categories tool first and include it;
               otherwise leave it unset rather than guessing.
             - A tool to escalate the conversation to a human staff member.
@@ -133,8 +140,8 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new UpdateRecommendationTool($this->reservation),
             new CreateBookingTool($this->hotel, $this->guest, $this->reservation),
             new GetTaskCategoriesTool($this->hotel),
-            new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation),
-            new EscalateToHumanTool($this->guest, $this->hotel),
+            new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
+            new EscalateToHumanTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
         ];
     }
 }

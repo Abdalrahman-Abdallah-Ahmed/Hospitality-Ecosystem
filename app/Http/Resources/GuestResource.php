@@ -31,6 +31,9 @@ class GuestResource extends JsonResource
             // identity_hash itself stays internal — only whether identity
             // resolution has run is of any use to a client.
             'identity_resolved_at' => $this->identity_resolved_at,
+            // Read-only: stamped when the guest messages the hotel.
+            'first_contacted_at' => $this->first_contacted_at,
+            'last_contacted_at' => $this->last_contacted_at,
             'hotel' => HotelResource::make($this->whenLoaded('hotel')),
             'reservations' => ReservationResource::collection($this->whenLoaded('reservations')),
             'stays' => StayResource::collection($this->whenLoaded('stays')),

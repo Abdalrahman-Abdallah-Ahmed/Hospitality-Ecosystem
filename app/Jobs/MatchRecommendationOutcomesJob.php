@@ -20,9 +20,9 @@ use Illuminate\Queue\SerializesModels;
  *
  * It runs only where nothing observed the link: no booking carrying the
  * recommendation id, no conversational outcome, no staff entry. It can reach
- * two of the six outcomes — BOOKED (a matching booking turned up) and EXPIRED
- * (by elimination). It is structurally incapable of seeing a refusal or an
- * undelivered offer, which is why capture exists.
+ * BOOKED (a matching booking turned up), and by elimination EXPIRED or — once
+ * delivery is measured — NOT_DELIVERED. It is structurally incapable of seeing
+ * a refusal, which is why capture exists.
  *
  * A match is not a cause. A booking following a recommendation is a sequence,
  * not proof: the guest may have booked anyway, because a friend mentioned it
@@ -35,6 +35,8 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
     public int $matched = 0;
 
     public int $expired = 0;
+
+    public int $notDelivered = 0;
 
     public function __construct(
         public ?string $hotelId = null,
@@ -60,7 +62,7 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
             'matcher_version' => config('recommendations.attribution.matcher_version'),
         ];
 
-        $before = ['matched' => $this->matched, 'expired' => $this->expired];
+        $before = ['matched' => $this->matched, 'expired' => $this->expired, 'not_delivered' => $this->notDelivered];
 
         // One summary event rather than one per match — a nightly run over
         // thousands of rows must not flood the audit trail.
@@ -72,6 +74,7 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
         EventLogger::record($hotel, 'recommendation_outcomes_matched', changes: [
             'matched' => $this->matched - $before['matched'],
             'expired' => $this->expired - $before['expired'],
+            'not_delivered' => $this->notDelivered - $before['not_delivered'],
             ...$context,
         ]);
     }
@@ -140,9 +143,13 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
     }
 
     /**
-     * The guest departed and nothing was ever recorded. That is EXPIRED
-     * reached purely by elimination, so its attribution is NONE and its
-     * evidence level L4 — nothing was observed at all.
+     * The guest departed and nothing was ever recorded, reached purely by
+     * elimination, so its attribution is NONE and its evidence level L4 —
+     * nothing was observed at all.
+     *
+     * Delivery is measured, so elimination can say which of two things
+     * happened: offered and left undecided (EXPIRED), or generated and never
+     * offered (NOT_DELIVERED).
      */
     private function expireUndecided(Hotel $hotel, array $context): void
     {
@@ -155,14 +162,20 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
             ->cursor();
 
         foreach ($recommendations as $recommendation) {
+            $neverDelivered = $recommendation->delivered_at === null;
+
             $service->record(
                 $recommendation,
-                OutcomeType::EXPIRED,
+                $neverDelivered ? OutcomeType::NOT_DELIVERED : OutcomeType::EXPIRED,
                 AttributionMethod::NONE,
                 attributes: ['context' => $context],
             );
 
-            $this->expired++;
+            if ($neverDelivered) {
+                $this->notDelivered++;
+            } else {
+                $this->expired++;
+            }
         }
     }
 }

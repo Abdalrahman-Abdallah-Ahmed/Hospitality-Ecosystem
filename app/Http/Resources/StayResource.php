@@ -32,6 +32,9 @@ class StayResource extends JsonResource
             'currency' => $this->currency,
             'market_segment' => $this->market_segment,
             'source_channel' => $this->source_channel,
+            // Read-only: stamped when the guest messages the hotel during this stay.
+            'first_contacted_at' => $this->first_contacted_at,
+            'last_contacted_at' => $this->last_contacted_at,
             'guest' => GuestResource::make($this->whenLoaded('guest')),
             'reservation' => ReservationResource::make($this->whenLoaded('reservation')),
             'room' => RoomResource::make($this->whenLoaded('room')),

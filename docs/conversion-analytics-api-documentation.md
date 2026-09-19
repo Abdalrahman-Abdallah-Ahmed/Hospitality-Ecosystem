@@ -54,7 +54,7 @@ to the caller's own hotel(s).
   },
 
   "evidence_level": "L2",
-  "notes": "10% of attributed bookings are inferred (L2), not observed. 34 bookings are all-inclusive and will never settle; excluded from the settlement rate. 22 accepted guests produced no booking. Attribution window: 72h. Delivery is assumed unless a recommendation was explicitly recorded as not_delivered."
+  "notes": "10% of attributed bookings are inferred (L2), not observed. 34 bookings are all-inclusive and will never settle; excluded from the settlement rate. 22 accepted guests produced no booking. Attribution window: 72h. A recommendation counts as delivered only once it reached the guest (sent in a WhatsApp reply, recorded by staff, or carried by a booking)."
 }
 ```
 
@@ -82,8 +82,13 @@ would gain.
 
 > `accepted` is **cumulative** — it counts recommendations that reached *at
 > least* acceptance, so a booked one is included. That is what makes the two
-> rates comparable and their difference meaningful. It also means
-> `declined + expired + accepted = delivered`.
+> rates comparable and their difference meaningful.
+>
+> The outcome counts do **not** add up to `delivered`. `delivered` counts only
+> recommendations with a `delivered_at`, but `accepted` and `booked` also
+> include bookings the nightly matcher inferred, and those never stamp
+> delivery. A delivered recommendation still waiting for an outcome is in
+> `delivered` but in none of the outcome counts. See below.
 
 ### `realisation_rate` and what a `0` means
 
@@ -100,11 +105,23 @@ either no guest turned up, or the outlets are not marking attendance yet.
 rate that stays at `0` while bookings accumulate is a process signal, not a
 guest-behaviour signal.
 
-### `delivered` is an assumption
+### `delivered` is measured
 
-`delivered = recommendations_made − not_delivered`. Anything not explicitly
-recorded as undelivered is assumed to have reached the guest. `notes` says so
-every time.
+*Changed 2026-09-19.* `delivered` counts only recommendations that actually
+reached the guest, meaning they have a `delivered_at`: sent in a WhatsApp reply,
+recorded by staff, or carried by a booking. See
+[Delivery](recommendation-outcome-api-documentation.md#5-delivery). It used to
+be `recommendations_made − not_delivered`, which assumed everything else had
+been offered.
+
+`acceptance_rate` and `booking_rate` divide by `delivered`, so a
+recommendation that was only generated no longer counts against the agent.
+
+A booking inferred by the nightly matcher does not stamp delivery. It can
+count in `accepted` and `booked` without counting in `delivered`. So
+`accepted` or `booked` can be larger than `delivered`, and `acceptance_rate`
+or `booking_rate` can come back **above 1**. Show the value as it is; do not
+cap it at 100%. `attribution.inferred` shows how many bookings were inferred.
 
 ## Money: two fields, never merged
 

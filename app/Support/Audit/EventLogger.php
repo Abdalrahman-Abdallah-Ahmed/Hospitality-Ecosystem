@@ -99,6 +99,16 @@ class EventLogger
         }
     }
 
+    /**
+     * Who is acting right now, as the audit trail would record it: an AI
+     * agent inside asAiAgent(), otherwise the signed-in user, otherwise the
+     * system. For writers that must label their own records the same way.
+     */
+    public static function currentActorKind(): ActorKind
+    {
+        return self::resolveActorKind(Auth::user());
+    }
+
     private static function resolveActorKind(?Model $actor): ActorKind
     {
         if (self::$actorKindOverride !== null) {

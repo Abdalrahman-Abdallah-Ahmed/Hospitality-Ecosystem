@@ -79,23 +79,19 @@ safety net rather than the mechanism.
 
 ## Not measured, and why
 
-Two features are declared in the catalogue but never written. They are named
+One feature is declared in the catalogue but never written. It is named
 rather than omitted so the endpoint can return an explicit gap: **a meter
 reading zero and a meter that does not exist are different facts.**
 
-- **`recommendations_delivered`** — delivery is *inferred* today, not
-  measured. `/api/analytics/conversion` treats a recommendation as delivered
-  unless an outcome explicitly records `not_delivered`, and labels that
-  assumption in its notes. That is fine in a report that says so; it is not
-  fine in a usage table, where an estimated number becomes a disputed invoice
-  later. Needs the measured delivery timestamp from P1-002 A-1.
 - **`conversations_handled`** — needs a definition of when a conversation
   ends. `agent_conversations` has no status column and `ConversationStatus`
   is unused, so no such moment exists yet.
 
-Until the first is measured, the generated-vs-delivered pair — the one that
-separates "our agent is weak" from "the hotel's staff never passed it on" —
-cannot be completed.
+**`recommendations_delivered` is measured since 2026-09-19.** It is recorded
+once per recommendation, the first time the recommendation reaches a guest: a
+WhatsApp reply, a staff-recorded outcome, or a booking carrying its id. It is
+a count only, with the channel in `metadata` and never a price. See
+[Delivery](recommendation-outcome-api-documentation.md#5-delivery).
 
 ## Endpoints
 
@@ -153,26 +149,26 @@ Seats come from the counter, since they are not event-derived.
           "ai_insights_generated": { "code": "ai_insights_generated", "label": "AI insights", "category": "cost_driver", "used": 0, "unit": "insights", "measured": true },
           "recommendations_generated": { "code": "recommendations_generated", "label": "Recommendations generated", "category": "cost_driver", "used": 412, "unit": "recommendations", "measured": true },
           "embeddings_generated": { "code": "embeddings_generated", "label": "Knowledge base indexing", "category": "cost_driver", "used": 1340, "unit": "chunks", "measured": true },
-          "recommendations_delivered": { "code": "recommendations_delivered", "label": "Recommendations delivered", "category": "value_signal", "used": null, "unit": "recommendations", "measured": false },
+          "recommendations_delivered": { "code": "recommendations_delivered", "label": "Recommendations delivered", "category": "value_signal", "used": 287, "unit": "recommendations", "measured": true },
           "bookings_created": { "code": "bookings_created", "label": "Bookings created", "category": "value_signal", "used": 96, "unit": "bookings", "measured": true }
         },
         "recommendations": {
           "generated": 412,
-          "delivered": null,
-          "delivered_basis": "not measured",
-          "delivered_reason": "Delivery is inferred, not measured: …"
+          "delivered": 287,
+          "delivered_basis": "measured",
+          "delivered_reason": "Counted once per recommendation when it reached the guest: …"
         }
       }
     ],
     "not_measured": {
-      "recommendations_delivered": "…",
       "conversations_handled": "…"
     }
   }
 }
 ```
 
-`delivered` is an explicit `null` with a reason, never a zero.
+`delivered` is the `recommendations_delivered` meter for the period.
+`delivered_reason` says what it counts.
 
 ### `GET /api/usage?from=2026-09-01&to=2026-09-30`
 
@@ -227,11 +223,11 @@ WP-9 conversation.
     },
     "recommendations": {
       "generated": 142,
-      "delivered": null,
-      "delivered_basis": "not measured",
+      "delivered": 97,
+      "delivered_basis": "measured",
       "delivered_reason": "…"
     },
-    "not_measured": { "recommendations_delivered": "…", "conversations_handled": "…" }
+    "not_measured": { "conversations_handled": "…" }
   }
 }
 ```
@@ -277,9 +273,9 @@ from *we do not track that* — different answers to give a customer.
 
 ### `used: null` with `measured: false` is not zero
 
-Two features have no source recording them yet — `recommendations_delivered`
-and `conversations_handled`. They return `null`, never `0`, because zero is a
-claim nobody can support: nothing is counting, so nobody knows the number.
+One feature has no source recording it yet: `conversations_handled`. It
+returns `null`, never `0`, because zero is a claim nobody can support: nothing
+is counting, so nobody knows the number.
 Render these as "not tracked", never as an empty bar.
 
 The same applies to a seat that has never been recounted. In practice the

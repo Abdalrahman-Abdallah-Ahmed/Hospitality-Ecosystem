@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
+use App\Enums\DeliveryChannel;
 use App\Enums\OutcomeType;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
@@ -13,9 +15,11 @@ use App\Jobs\GenerateActivityRecommendationsJob;
 use App\Models\Booking;
 use App\Models\Recommendation;
 use App\Models\Reservation;
+use App\Services\RecommendationDeliveryService;
 use App\Services\RecommendationOutcomeService;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 
 class RecommendationController extends Controller
@@ -115,10 +119,12 @@ class RecommendationController extends Controller
             }
         }
 
+        $outcomeType = OutcomeType::from($validated['outcome']);
+
         try {
             $outcome = app(RecommendationOutcomeService::class)->record(
                 $recommendation,
-                OutcomeType::from($validated['outcome']),
+                $outcomeType,
                 AttributionMethod::STAFF,
                 $booking,
                 [
@@ -131,6 +137,19 @@ class RecommendationController extends Controller
             );
         } catch (RuntimeException $e) {
             return apiResponse($e->getMessage(), 422);
+        }
+
+        // A person saw the guest react to it, so it was offered. Stamped after
+        // the outcome, so a first-time entry does not read as a reaction in
+        // zero minutes. NOT_DELIVERED is the one outcome that proves nothing
+        // was offered.
+        if ($outcomeType !== OutcomeType::NOT_DELIVERED) {
+            app(RecommendationDeliveryService::class)->markDelivered(
+                $recommendation,
+                DeliveryChannel::fromRecorded($validated['channel'] ?? null),
+                isset($validated['occurred_at']) ? Carbon::parse($validated['occurred_at']) : now(),
+                ActorKind::USER,
+            );
         }
 
         return apiResponse('Recommendation outcome recorded successfully.', 201, RecommendationOutcomeResource::make($outcome));

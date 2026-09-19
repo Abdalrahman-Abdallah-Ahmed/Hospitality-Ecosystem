@@ -77,6 +77,8 @@ Practical implications for the UI:
   "priority": 0,
   "status": "pending",
   "recommended_at": "2026-08-17T19:30:39.000000Z",
+  "delivered_at": null,
+  "delivery_channel": null,
   "accepted_at": null,
   "rejected_at": null,
   "dismissed_at": null,
@@ -102,6 +104,7 @@ Field notes for the UI:
 - `hotel`, `reservation.guest`, and `activity` are eager-loaded on `index`/`show`/`update`; `reservation` itself is loaded specifically for its `guest` (i.e. `reservation.guest`), so other reservation fields like `room`/`adults`/`children` are also present on the nested object, but its own `hotel`/`room` relations are **not** further eager-loaded — don't expect `reservation.room` to be populated.
 - `conversation_id` can be `null`. It's resolved (or a new conversation started) automatically server-side whenever `reservation_id` is set on `update` — you never send it directly (see below).
 - A recommendation succeeds when it produces a **booking**, not a payment — see `docs/conversion-analytics-api-documentation.md`. What happened to it is recorded in `recommendation_outcomes`, readable per record via `GET /api/history/recommendation/{id}`.
+- `delivered_at` / `delivery_channel` (read-only) say when and how the guest was actually offered this recommendation (`whatsapp`, `face_to_face`, `phone`, `email`). `null` means it never reached the guest. The AI reading a recommendation does not count. Only the guest reacting in chat, staff recording an outcome, or a booking carrying the id does. When delivery is stamped, `status` moves from `pending` to `sent`. See `docs/recommendation-outcome-api-documentation.md#5-delivery`.
 - `evidence_level` is always `L3` for a fresh recommendation — it's a prediction about a guest, a hypothesis until they act on it (`L1` observed → `L4` unverified is the full scale). `evidence_sources` holds the `[reservation_id, activity_id]` the recommendation was reasoned from. Neither field is settable through this API.
 
 ## 1. List Recommendations
@@ -116,7 +119,7 @@ All optional, same generic behavior as every other list endpoint in this API:
 
 | Param | Type | Example | Behavior |
 | --- | --- | --- | --- |
-| `filter[<column>]` | string, or array for multiple values | `filter[reservation_id]=019f...` | Exact match on any real `recommendations` column: `id`, `conversation_id`, `reservation_id`, `activity_id`, `hotel_id`, `reason`, `predicted_confidence`, `guest_confidence`, `priority`, `status`, `recommended_at`, `accepted_at`, `rejected_at`, `dismissed_at`, `created_at`, `updated_at`. |
+| `filter[<column>]` | string, or array for multiple values | `filter[reservation_id]=019f...` | Exact match on any real `recommendations` column: `id`, `conversation_id`, `reservation_id`, `activity_id`, `hotel_id`, `reason`, `predicted_confidence`, `guest_confidence`, `priority`, `status`, `recommended_at`, `delivered_at`, `delivery_channel`, `accepted_at`, `rejected_at`, `dismissed_at`, `created_at`, `updated_at`. |
 | `search` | string | `search=snorkel` | Partial (`LIKE %term%`) match across string/text columns (mainly `reason`, `status`, and the id columns). |
 | `sort` | string | `sort=-predicted_confidence` | Sort by a real column. Prefix with `-` for descending. |
 | `page` | integer | `page=2` | Page number, 1-indexed. |
@@ -173,6 +176,8 @@ Rules are derived automatically from the table schema (same mechanism used by ev
 | `predicted_confidence` | optional, numeric. |
 | `priority` | optional, integer. |
 | `recommended_at` | optional, date. |
+
+**`delivered_at` and `delivery_channel` are not accepted either**: they are not fillable, so sending them does nothing.
 
 **`status`, `guest_confidence`, `accepted_at`, `rejected_at`, and `dismissed_at` are silently ignored, even though they're real, fillable columns.** These fields represent the *guest's own response* to the recommendation, captured live by the AI concierge (`App\Ai\Tools\UpdateRecommendationTool`) during the WhatsApp conversation — not something an admin edits after the fact. Sending them in the request body does nothing; they're stripped before the update is applied. If you need to see the guest's reaction, read them via `show`/`index` — this endpoint just can't set them. (If staff need to record their own follow-up action, e.g. "called the guest, they booked over the phone" or "offered it, they said the price was too high", use `POST /api/recommendation/{id}/outcome` — see `docs/recommendation-outcome-api-documentation.md`.)
 

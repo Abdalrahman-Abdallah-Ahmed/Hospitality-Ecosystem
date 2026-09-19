@@ -27,6 +27,10 @@ class ActivityResource extends JsonResource
             'available_until' => $this->available_until?->toDateString(),
             'operating_hours' => $this->operating_hours,
             'unavailable_periods' => $this->unavailable_periods,
+            // Pitching attributes. null = unknown, which never excludes an activity.
+            'audience' => $this->audience,
+            'duration_days' => $this->duration_days,
+            'daily_capacity' => $this->daily_capacity,
             'category' => ActivityCategoryResource::make($this->whenLoaded('category')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

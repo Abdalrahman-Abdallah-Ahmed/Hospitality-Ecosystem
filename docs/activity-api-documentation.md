@@ -95,6 +95,9 @@ Every endpoint that returns an activity (`index`, `store`, `show`, `update`) eag
   "unavailable_periods": [
     { "start_date": "2026-12-24", "end_date": "2026-12-26", "reason": "Holiday closure" }
   ],
+  "audience": "family",
+  "duration_days": null,
+  "daily_capacity": 12,
   "created_at": "2026-08-01T10:00:00.000000Z",
   "updated_at": "2026-08-01T10:00:00.000000Z",
   "category": {
@@ -117,6 +120,7 @@ Field notes for the UI:
 - **Activities use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row (unlike rooms, which hard-delete). A deleted activity simply stops showing up in `index`/`show`. `deleted_at` is not part of the response body (`ActivityResource` doesn't output it).
 - `category_id` is nullable — an activity can exist with no category, in which case **`category` comes back as `null`**, not an object. Always null-check `activity.category` before reading `activity.category.name`. Populate the category picker itself from [`GET /api/activity-category`](#activity-category-api) (this embedded object is read-only convenience, not a substitute for the picker list).
 - `available_from`, `available_until`, `operating_hours`, and `unavailable_periods` describe when the activity can be done. Each one is `null` when not set, and `null` means no restriction. See [Activity Timeframe](#activity-timeframe).
+- `audience`, `duration_days`, and `daily_capacity` tell the WhatsApp concierge who an activity suits, how many days it takes, and how many people it can take per day. Each one is `null` when not set, and `null` means "unknown". See [Pitching Attributes](#pitching-attributes).
 
 ## Activity Timeframe
 
@@ -156,6 +160,24 @@ Validation errors come back as standard `422` responses. They are keyed by path,
 
 These fields are **informational**. Creating a booking does not check them yet. They are shown to the WhatsApp AI concierge, so it can tell guests when an activity is open.
 
+## Pitching Attributes
+
+*Added 2026-09-19.* Three optional fields help the WhatsApp concierge decide which activity to suggest to a guest. Existing activities have all three set to `null`.
+
+**`null` means "unknown", and an unknown never blocks an activity.** A hotel that leaves them empty gets the same behaviour as before. A hotel that fills them in gets better suggestions.
+
+| Field | Format | Meaning |
+| --- | --- | --- |
+| `audience` | `"all"`, `"family"`, `"adults_only"`, or `null` | Who the activity is designed for. `family` = designed with children in mind. `adults_only` = not suitable for, or not open to, children. `null` = not stated (different from `all`). Only affects the **order** of suggestions, and never hides an activity: parents may want the couples' spa while the children are at kids' club. |
+| `duration_days` | integer 1–30, or `null` | How many **consecutive** days the activity takes (a 3-day diving course = `3`). `null` is treated as a single-day activity. A guest who does not have enough open days left before departure is not offered it. |
+| `daily_capacity` | integer ≥ 1, or `null` | How many people the activity can take per day. A day is full when the `pax` on that day's non-cancelled bookings reaches this number. `null` = unknown, and the activity is never treated as full. `0` is rejected, because it would mean "full every day". |
+
+`daily_capacity` is a rough daily limit, not a timetable. Bookings still start as `pending` and staff confirm them. These fields are informational: creating a booking does not check them.
+
+Validation errors come back as standard `422` responses keyed by the field name (`audience`, `duration_days`, `daily_capacity`).
+
+**Please don't pre-fill `audience` from the category name.** "Kids Club" looks obvious, but "Adventure" does not, and a guessed value looks exactly like one a person chose. Leave it `null` until someone at the hotel sets it.
+
 ## 1. List Activities
 
 ### Endpoint
@@ -174,7 +196,7 @@ All optional, same generic behavior as every other list endpoint in this API:
 | `page` | integer | `page=2` | Page number, 1-indexed. |
 | `per_page` | integer, 1–100 | `per_page=25` | Page size. Defaults to 15. |
 
-`filter`/`sort` are validated against the activities table's real columns: `id`, `hotel_id`, `category_id`, `name`, `description`, `price`, `currency`, `is_active`, `available_from`, `available_until`, `operating_hours`, `unavailable_periods`, `created_at`, `updated_at`, `deleted_at`. An unknown key in either returns a `422`. Only filter or sort on the two date columns (e.g. `sort=available_from`). `operating_hours` and `unavailable_periods` are JSON and can't be matched usefully.
+`filter`/`sort` are validated against the activities table's real columns: `id`, `hotel_id`, `category_id`, `name`, `description`, `price`, `currency`, `is_active`, `available_from`, `available_until`, `operating_hours`, `unavailable_periods`, `audience`, `duration_days`, `daily_capacity`, `created_at`, `updated_at`, `deleted_at`. An unknown key in either returns a `422`. Only filter or sort on the two date columns (e.g. `sort=available_from`). `operating_hours` and `unavailable_periods` are JSON and can't be matched usefully.
 
 ### Example Request
 
@@ -249,7 +271,10 @@ HTTP `422`:
   },
   "unavailable_periods": [
     { "start_date": "2026-12-24", "end_date": "2026-12-26", "reason": "Holiday closure" }
-  ]
+  ],
+  "audience": "all",
+  "duration_days": null,
+  "daily_capacity": 4
 }
 ```
 
@@ -267,6 +292,9 @@ HTTP `422`:
 | `available_from`, `available_until` | optional, `Y-m-d` date or `null`. `available_until` must be on or after `available_from`. |
 | `operating_hours` | optional, object keyed by weekday, or `null`. See [Activity Timeframe](#activity-timeframe). |
 | `unavailable_periods` | optional, list of `{start_date, end_date, reason}`, or `null`. See [Activity Timeframe](#activity-timeframe). |
+| `audience` | optional, one of `all`, `family`, `adults_only`, or `null`. See [Pitching Attributes](#pitching-attributes). |
+| `duration_days` | optional, integer 1–30, or `null`. |
+| `daily_capacity` | optional, integer ≥ 1, or `null`. |
 
 **Important — hotel scoping:** unlike `room`/`guest` (which reject a mismatched `hotel_id` with a `403`), `activity` follows the same pattern as `team`/`task-category`/`task`: whatever `hotel_id` you send is **discarded**, and the record is always created under the caller's own hotel. Auto-fill and hide this field rather than trying to validate it client-side.
 

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Enums\CreatedBy;
+use App\Enums\GuestSignal;
 use App\Enums\Priority;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -10,6 +11,7 @@ use App\Models\Reservation;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Services\CreationNotificationService;
+use App\Support\Pitching\PitchTurn;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -21,6 +23,7 @@ class CreateGuestServiceRequestTool implements Tool
         private readonly Guest $guest,
         private readonly Hotel $hotel,
         private readonly ?Reservation $reservation = null,
+        private readonly ?PitchTurn $pitchTurn = null,
     ) {}
 
     /**
@@ -36,17 +39,26 @@ class CreateGuestServiceRequestTool implements Tool
      */
     public function handle(Request $request): Stringable|string
     {
-        $task = Task::create([
+        $kind = $this->kind($request);
+
+        $task = Task::make([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
             'reservation_id' => $this->reservation?->id,
-            'room_id' => $this->reservation?->room->id,
+            'room_id' => $this->reservation?->room?->id,
             'task_category_id' => $this->taskCategoryId($request),
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
             'created_by' => CreatedBy::GUEST,
             'priority' => $this->priority($request),
         ]);
+        $task->guest_signal = $kind;
+        $task->save();
+
+        // Something is needed or broken: nothing may be pitched in this reply.
+        if ($kind === GuestSignal::SERVICE_REQUEST) {
+            $this->pitchTurn?->markBlockingRequest();
+        }
 
         // Attributed to the guest, but written by the concierge agent, so
         // admins hear about it the same as any other AI-created task.
@@ -69,7 +81,23 @@ class CreateGuestServiceRequestTool implements Tool
                 ->default(Priority::NORMAL->value),
             'task_category_id' => $schema->string()
                 ->description('The id of the task category this request falls under, if one clearly fits. Leave unset if none does.'),
+            'kind' => $schema->string()
+                ->enum([GuestSignal::SERVICE_REQUEST->value, GuestSignal::BOOKING_FOLLOW_UP->value])
+                ->description('service_request: the guest needs something or something is broken. booking_follow_up: the guest is interested in an activity and staff should help them book it. When in doubt, use service_request.')
+                ->default(GuestSignal::SERVICE_REQUEST->value),
         ];
+    }
+
+    /**
+     * Only a follow-up the agent explicitly labels as one is treated as a
+     * positive signal. Anything else is a service request, which keeps
+     * pitching quiet — the conservative default.
+     */
+    private function kind(Request $request): GuestSignal
+    {
+        return $request->string('kind')->toString() === GuestSignal::BOOKING_FOLLOW_UP->value
+            ? GuestSignal::BOOKING_FOLLOW_UP
+            : GuestSignal::SERVICE_REQUEST;
     }
 
     /**

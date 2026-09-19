@@ -63,7 +63,7 @@ class RecommendationOutcomeService
             'decline_reason' => $attributes['decline_reason'] ?? null,
             'evidence_quote' => $attributes['evidence_quote'] ?? null,
             'confidence' => $attributes['confidence'] ?? null,
-            'context' => $attributes['context'] ?? null,
+            'context' => $this->contextWithSuperseded($existing, $outcome, $method, $attributes),
             'occurred_at' => $occurredAt,
         ];
 
@@ -146,17 +146,72 @@ class RecommendationOutcomeService
     }
 
     /**
-     * How long the guest took to act, from when the recommendation was made.
-     * Null when it cannot be computed — never zero, which would read as
-     * "acted instantly".
+     * The row is upserted, so an overwrite would erase what the earlier
+     * outcome rested on — the guest's quoted "yes" disappears the moment the
+     * booking lands. The replaced evidence is carried into context.superseded
+     * instead, each statement kept next to the classification it supported:
+     * copying an old quote onto the new row would put "no, too expensive" on
+     * a BOOKED row for a guest who later booked anyway.
+     *
+     * A re-record of the same classification on the same evidence (the
+     * nightly job running twice) appends nothing, but the chain is always
+     * carried forward.
+     */
+    private function contextWithSuperseded(
+        ?RecommendationOutcome $existing,
+        OutcomeType $outcome,
+        AttributionMethod $method,
+        array $attributes,
+    ): ?array {
+        $context = $attributes['context'] ?? null;
+        $chain = $existing?->context['superseded'] ?? [];
+
+        if ($existing && ! $this->restates($existing, $outcome, $method, $attributes)) {
+            $chain[] = [
+                'outcome' => $existing->outcome->value,
+                'attribution_method' => $existing->attribution_method->value,
+                'evidence_quote' => $existing->evidence_quote,
+                'confidence' => $existing->confidence,
+                'decline_reason' => $existing->decline_reason,
+                'occurred_at' => $existing->occurred_at?->toIso8601String(),
+            ];
+        }
+
+        if ($chain === []) {
+            return $context;
+        }
+
+        return [...($context ?? []), 'superseded' => $chain];
+    }
+
+    private function restates(
+        RecommendationOutcome $existing,
+        OutcomeType $outcome,
+        AttributionMethod $method,
+        array $attributes,
+    ): bool {
+        return $existing->outcome === $outcome
+            && $existing->attribution_method === $method
+            && $existing->evidence_quote === ($attributes['evidence_quote'] ?? null)
+            && $existing->decline_reason === ($attributes['decline_reason'] ?? null);
+    }
+
+    /**
+     * How long the guest took to act, from when they were offered it — or,
+     * when delivery was never measured, from when it was made. For a
+     * recommendation generated days before the guest saw it, the two differ
+     * by days. Null when it cannot be computed — never zero, which would
+     * read as "acted instantly".
      */
     private function minutesToOutcome(Recommendation $recommendation, Carbon $occurredAt): ?int
     {
-        if (! $recommendation->recommended_at) {
+        $from = $recommendation->delivered_at ?? $recommendation->recommended_at;
+
+        if (! $from) {
             return null;
         }
 
-        $minutes = $recommendation->recommended_at->diffInMinutes($occurredAt, absolute: false);
+        $minutes = $from->diffInMinutes($occurredAt, absolute: false);
 
         return $minutes >= 0 ? (int) $minutes : null;
     }

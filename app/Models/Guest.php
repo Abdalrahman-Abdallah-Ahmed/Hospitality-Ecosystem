@@ -49,6 +49,9 @@ class Guest extends Model
         'preferences' => 'array',
         'is_vip' => 'boolean',
         'identity_resolved_at' => 'datetime',
+        // Written only by GuestContactService; deliberately not fillable.
+        'first_contacted_at' => 'datetime',
+        'last_contacted_at' => 'datetime',
     ];
 
     protected static function booted(): void

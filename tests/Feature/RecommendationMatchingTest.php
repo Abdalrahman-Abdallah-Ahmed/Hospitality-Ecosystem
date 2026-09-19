@@ -7,6 +7,7 @@ use App\Enums\StayStatus;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Models\EventLog;
 use App\Models\Hotel;
+use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Stay;
 use App\Services\RecommendationOutcomeService;
@@ -185,6 +186,8 @@ it('never lets staff capture overwrite a direct booking link', function () {
 it('marks the recommendation expired when the guest departs undecided', function () {
     [, $hotel] = wp5AdminWithHotel();
     [$recommendation, $guest] = wp5Recommendation($hotel);
+    // Offered, so leaving without a decision is EXPIRED, not NOT_DELIVERED.
+    Recommendation::whereKey($recommendation->id)->update(['delivered_at' => now()->subHours(5)]);
 
     Stay::create([
         'hotel_id' => $hotel->id,
@@ -234,4 +237,48 @@ it('writes one summary event for a nightly run, not one per match', function () 
 
     expect(EventLog::withoutGlobalScope('hotel')->where('event_type', 'recommendation_outcome.created')->count())->toBe(0)
         ->and(EventLog::withoutGlobalScope('hotel')->where('event_type', 'hotel.recommendation_outcomes_matched')->count())->toBe(1);
+});
+
+/** The guest has left, so undecided recommendations can be written off. */
+function departedStayFor(Hotel $hotel, $guest, $recommendation): Stay
+{
+    return Stay::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => $recommendation->reservation_id,
+        'planned_arrival_date' => '2026-09-01',
+        'planned_departure_date' => '2026-09-06',
+        'checked_in_at' => '2026-09-01 14:00',
+        'checked_out_at' => '2026-09-06 10:00',
+        'status' => StayStatus::DEPARTED,
+    ]);
+}
+
+it('writes not_delivered for an undelivered recommendation after departure', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    [$recommendation, $guest] = wp5Recommendation($hotel);
+    departedStayFor($hotel, $guest, $recommendation);
+
+    $job = runMatcher($hotel);
+    $outcome = wp5Outcome($recommendation);
+
+    // Generated and never offered: a process failure, not a guest's choice.
+    expect($job->notDelivered)->toBe(1)
+        ->and($job->expired)->toBe(0)
+        ->and($outcome->outcome)->toBe(OutcomeType::NOT_DELIVERED)
+        ->and($outcome->attribution_method)->toBe(AttributionMethod::NONE)
+        ->and($outcome->evidence_level)->toBe(EvidenceLevel::L4)
+        ->and(EventLog::withoutGlobalScope('hotel')
+            ->where('event_type', 'hotel.recommendation_outcomes_matched')
+            ->sole()->changes['not_delivered'])->toBe(1);
+});
+
+it('writes expired for a delivered but undecided recommendation after departure', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    [$recommendation, $guest] = wp5Recommendation($hotel);
+    departedStayFor($hotel, $guest, $recommendation);
+    Recommendation::whereKey($recommendation->id)->update(['delivered_at' => now()->subHours(5)]);
+
+    expect(runMatcher($hotel)->expired)->toBe(1)
+        ->and(wp5Outcome($recommendation)->outcome)->toBe(OutcomeType::EXPIRED);
 });

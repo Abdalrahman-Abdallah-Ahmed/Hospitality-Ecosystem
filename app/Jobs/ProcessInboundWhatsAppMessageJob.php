@@ -15,16 +15,20 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\User;
 use App\Models\WhatsAppInboundMessage;
+use App\Services\GuestContactService;
 use App\Services\Metering\MeteringService;
+use App\Services\Pitching\PitchCoordinator;
 use App\Services\WhatsAppMessageService;
 use App\Support\Ai\AiCostContext;
 use App\Support\Audit\EventLogger;
+use App\Support\Pitching\PitchTurn;
 use App\Support\Tenancy\TenantContext;
 use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Carbon;
 use Laravel\Ai\Files\Image;
 use Throwable;
 
@@ -78,6 +82,9 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         public ?Reservation $reservation,
         public bool $devicePaired,
         public ?string $imageMediaId = null,
+        // Meta's own message timestamp (Unix seconds), so a queue delay does
+        // not shift the recorded contact time.
+        public ?int $receivedAt = null,
     ) {}
 
     /**
@@ -119,6 +126,8 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
+        $this->recordContact();
+
         if ($inbound->reply_text === null) {
             $inbound->update(['reply_text' => $this->replyFor($inbound, $whatsApp, $metering)]);
         }
@@ -126,6 +135,29 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         $whatsApp->send($this->phoneNumber, $inbound->reply_text);
 
         $inbound->update(['status' => InboundMessageStatus::REPLIED, 'replied_at' => now()]);
+    }
+
+    /**
+     * The guest contacted us whether or not we manage to answer, so this runs
+     * before the agent — whose call can throw, for example at the daily spend
+     * ceiling. Idempotent, so a retried job stamps nothing new. Failing here
+     * must never stop the reply.
+     */
+    private function recordContact(): void
+    {
+        if ($this->senderType !== SenderType::GUEST || ! $this->sender instanceof Guest) {
+            return;
+        }
+
+        try {
+            app(GuestContactService::class)->recordInbound(
+                $this->sender,
+                $this->reservation?->stay,
+                $this->receivedAt ? Carbon::createFromTimestamp($this->receivedAt) : now(),
+            );
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     public function failed(?Throwable $exception): void
@@ -153,7 +185,7 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         $inbound->update(['generation_started_at' => now()]);
 
         try {
-            $reply = $this->generate($whatsApp);
+            [$reply, $pitchTurn] = $this->generate($whatsApp);
         } catch (AiSpendCeilingExceededException) {
             return self::UNAVAILABLE_REPLY;
         } catch (Throwable $e) {
@@ -178,10 +210,17 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
             ));
         }
 
+        if ($pitchTurn) {
+            app(PitchCoordinator::class)->complete($pitchTurn);
+        }
+
         return $reply;
     }
 
-    private function generate(WhatsAppMessageService $whatsApp): string
+    /**
+     * @return array{0: string, 1: ?PitchTurn} the reply, and the guest turn's pitching state
+     */
+    private function generate(WhatsAppMessageService $whatsApp): array
     {
         $agent = $this->senderType === SenderType::ADMIN
             ? AdminAdvisorAgent::make(user: $this->sender)
@@ -217,17 +256,31 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         // what lets the cost report separate guest-driven spend — which
         // nothing we decide bounds — from our own scheduled work. The context
         // also enforces the daily ceilings for this account.
+        //
+        // A guest turn decides whether it may pitch before the concierge
+        // runs, inside the same cost context: the turn classifier is an AI
+        // call caused by this guest message.
         $response = TenantContext::runForHotel($this->hotel?->id, fn () => AiCostContext::for(
             kind: $this->senderType === SenderType::GUEST
                 ? AiTriggerKind::GUEST_MESSAGE
                 : AiTriggerKind::STAFF_REQUEST,
             hotel: $this->hotel,
             trigger: $this->sender,
-            callback: fn () => EventLogger::asAiAgent(
-                fn () => $agent->prompt($messageText, attachments: $attachments)
-            ),
+            callback: fn () => EventLogger::asAiAgent(function () use ($agent, $messageText, $attachments) {
+                if ($agent instanceof GuestConciergeAgent) {
+                    $agent->pitchTurn = app(PitchCoordinator::class)->begin(
+                        $this->sender,
+                        $this->hotel,
+                        $this->reservation,
+                        $messageText,
+                        $agent->currentConversation(),
+                    );
+                }
+
+                return $agent->prompt($messageText, attachments: $attachments);
+            }),
         ));
 
-        return $response->text;
+        return [$response->text, $agent instanceof GuestConciergeAgent ? $agent->pitchTurn : null];
     }
 }

@@ -50,6 +50,9 @@ class Stay extends Model
         'children' => 'integer',
         'nights' => 'integer',
         'room_revenue' => 'decimal:2',
+        // Written only by GuestContactService; deliberately not fillable.
+        'first_contacted_at' => 'datetime',
+        'last_contacted_at' => 'datetime',
     ];
 
     /**

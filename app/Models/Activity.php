@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
+use App\Enums\ActivityAudience;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
@@ -30,6 +31,9 @@ class Activity extends Model
         'available_until',
         'operating_hours',
         'unavailable_periods',
+        'audience',
+        'duration_days',
+        'daily_capacity',
     ];
 
     protected $casts = [
@@ -39,6 +43,9 @@ class Activity extends Model
         'available_until' => 'date',
         'operating_hours' => 'array',
         'unavailable_periods' => 'array',
+        'audience' => ActivityAudience::class,
+        'duration_days' => 'integer',
+        'daily_capacity' => 'integer',
     ];
 
     public function category(): BelongsTo

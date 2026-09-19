@@ -183,3 +183,67 @@ it('clears a timeframe column when it is set to null', function () {
         ->assertOk()
         ->assertJsonPath('body.operating_hours', null);
 });
+
+it('accepts and returns audience, duration_days and daily_capacity', function () {
+    $hotel = hotelForActivities();
+
+    $response = $this->withHeaders(activityApiHeaders())->actingAs(activityAdmin($hotel), 'sanctum')
+        ->postJson('/api/activity', [
+            'hotel_id' => $hotel->id,
+            'name' => 'PADI Open Water',
+            'price' => 450,
+            'audience' => 'adults_only',
+            'duration_days' => 3,
+            'daily_capacity' => 6,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('body.audience', 'adults_only')
+        ->assertJsonPath('body.duration_days', 3)
+        ->assertJsonPath('body.daily_capacity', 6);
+
+    $activity = Activity::findOrFail($response->json('body.id'));
+
+    $this->withHeaders(activityApiHeaders())->actingAs(activityAdmin($hotel), 'sanctum')
+        ->putJson("/api/activity/{$activity->id}", ['audience' => 'family', 'daily_capacity' => null])
+        ->assertOk()
+        ->assertJsonPath('body.audience', 'family')
+        ->assertJsonPath('body.duration_days', 3)
+        ->assertJsonPath('body.daily_capacity', null);
+});
+
+it('rejects out-of-range pitching attributes', function (array $payload, string $errorKey) {
+    $hotel = hotelForActivities();
+
+    $this->withHeaders(activityApiHeaders())->actingAs(activityAdmin($hotel), 'sanctum')
+        ->postJson('/api/activity', ['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10, ...$payload])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors($errorKey);
+})->with([
+    'a duration_days of zero' => [['duration_days' => 0], 'duration_days'],
+    'a duration_days over 30' => [['duration_days' => 31], 'duration_days'],
+    'an unknown audience value' => [['audience' => 'teens'], 'audience'],
+    'a negative daily_capacity' => [['daily_capacity' => -5], 'daily_capacity'],
+    // Zero would mean "full every day" and silently disable pitching it.
+    'a daily_capacity of zero' => [['daily_capacity' => 0], 'daily_capacity'],
+]);
+
+it('rejects out-of-range pitching attributes on update', function () {
+    $hotel = hotelForActivities();
+    $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10]);
+
+    $this->withHeaders(activityApiHeaders())->actingAs(activityAdmin($hotel), 'sanctum')
+        ->putJson("/api/activity/{$activity->id}", ['duration_days' => 0])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('duration_days');
+});
+
+it('leaves all three pitching attributes null when not supplied', function () {
+    $hotel = hotelForActivities();
+
+    $this->withHeaders(activityApiHeaders())->actingAs(activityAdmin($hotel), 'sanctum')
+        ->postJson('/api/activity', ['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10])
+        ->assertCreated()
+        ->assertJsonPath('body.audience', null)
+        ->assertJsonPath('body.duration_days', null)
+        ->assertJsonPath('body.daily_capacity', null);
+});

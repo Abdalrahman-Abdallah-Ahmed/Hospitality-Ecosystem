@@ -27,6 +27,9 @@ class TaskResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'created_by' => $this->created_by,
+            // Read-only: why a guest-related task exists (escalation,
+            // service_request, booking_follow_up). Set by the concierge.
+            'guest_signal' => $this->guest_signal,
             'status' => $this->status,
             'priority' => $this->priority,
             'due_date' => $this->due_date,

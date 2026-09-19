@@ -1,13 +1,16 @@
 <?php
 
+use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
 use App\Enums\ChargeModel;
+use App\Enums\DeliveryChannel;
 use App\Enums\EvidenceLevel;
 use App\Enums\OutcomeType;
 use App\Enums\UserRole;
 use App\Models\RecommendationOutcome;
 use App\Models\User;
 use App\Services\BookingService;
+use App\Services\RecommendationDeliveryService;
 use App\Services\RecommendationOutcomeService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -275,4 +278,89 @@ it('refuses a booking from another hotel', function () {
         AttributionMethod::STAFF,
         $foreign,
     ))->toThrow(RuntimeException::class);
+});
+
+// --- superseded evidence and delivery timing --------------------------------
+
+it('keeps the guest\'s quoted acceptance when a booking supersedes it', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    [$recommendation, $guest, $activity] = wp5Recommendation($hotel);
+
+    app(RecommendationOutcomeService::class)->record(
+        $recommendation,
+        OutcomeType::ACCEPTED,
+        AttributionMethod::CONVERSATIONAL,
+        attributes: ['confidence' => 0.9, 'evidence_quote' => 'Yes, book the boat for us both'],
+    );
+
+    wp5Booking($hotel, [
+        'guest_id' => $guest->id,
+        'activity_id' => $activity->id,
+        'recommendation_id' => $recommendation->id,
+    ]);
+
+    $outcome = wp5Outcome($recommendation);
+    $superseded = $outcome->context['superseded'];
+
+    // The booking row carries no quote of its own; the "yes" is kept next to
+    // the classification it supported, not copied onto the booking.
+    expect($outcome->outcome)->toBe(OutcomeType::BOOKED)
+        ->and($outcome->evidence_quote)->toBeNull()
+        ->and($superseded)->toHaveCount(1)
+        ->and($superseded[0]['outcome'])->toBe('accepted')
+        ->and($superseded[0]['attribution_method'])->toBe('conversational')
+        ->and($superseded[0]['evidence_quote'])->toBe('Yes, book the boat for us both')
+        ->and($superseded[0]['confidence'])->toBe('0.90');
+});
+
+it('keeps the whole chain across several overwrites', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    [$recommendation] = wp5Recommendation($hotel);
+    $service = app(RecommendationOutcomeService::class);
+
+    $service->record($recommendation, OutcomeType::DELIVERED, AttributionMethod::STAFF);
+    $service->record($recommendation, OutcomeType::DECLINED, AttributionMethod::CONVERSATIONAL,
+        attributes: ['confidence' => 0.9, 'evidence_quote' => 'No thanks, too pricey', 'decline_reason' => 'price']);
+    $service->record($recommendation, OutcomeType::ACCEPTED, AttributionMethod::CONVERSATIONAL,
+        attributes: ['confidence' => 0.9, 'evidence_quote' => 'Actually, we will do it']);
+
+    $chain = wp5Outcome($recommendation)->context['superseded'];
+
+    expect(array_column($chain, 'outcome'))->toBe(['delivered', 'declined'])
+        ->and($chain[1]['evidence_quote'])->toBe('No thanks, too pricey')
+        ->and($chain[1]['decline_reason'])->toBe('price');
+});
+
+it('does not append a duplicate when the same outcome is recorded again', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    [$recommendation] = wp5Recommendation($hotel);
+    $service = app(RecommendationOutcomeService::class);
+    $attributes = ['confidence' => 0.9, 'evidence_quote' => 'Sounds lovely, yes'];
+
+    $service->record($recommendation, OutcomeType::ACCEPTED, AttributionMethod::CONVERSATIONAL, attributes: $attributes);
+    $service->record($recommendation, OutcomeType::ACCEPTED, AttributionMethod::CONVERSATIONAL, attributes: $attributes);
+
+    expect(wp5Outcome($recommendation)->context)->toBeNull();
+});
+
+it('measures minutes to outcome from delivery, not generation', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    // Generated three days before the guest ever saw it.
+    [$recommendation] = wp5Recommendation($hotel, ['recommended_at' => now()->subDays(3)]);
+
+    app(RecommendationDeliveryService::class)->markDelivered(
+        $recommendation,
+        DeliveryChannel::WHATSAPP,
+        now()->subMinutes(30),
+        ActorKind::AI_AGENT,
+    );
+
+    app(RecommendationOutcomeService::class)->record(
+        $recommendation,
+        OutcomeType::ACCEPTED,
+        AttributionMethod::CONVERSATIONAL,
+        attributes: ['confidence' => 0.9, 'occurred_at' => now()],
+    );
+
+    expect(wp5Outcome($recommendation)->minutes_to_outcome)->toBe(30);
 });

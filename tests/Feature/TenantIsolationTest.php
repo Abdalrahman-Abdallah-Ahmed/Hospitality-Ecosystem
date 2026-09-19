@@ -14,6 +14,7 @@ use App\Models\HotelGroup;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeChunk;
+use App\Models\PitchDecision;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
@@ -90,6 +91,21 @@ function tenantOwnedModelFactories(): array
                 'guest_id' => $guest->id,
                 'planned_arrival_date' => '2026-09-01',
                 'planned_departure_date' => '2026-09-04',
+            ]);
+        },
+        // Pitch decisions quote the guest's own words, so another hotel
+        // seeing them is a privacy leak as well as a tenancy one.
+        PitchDecision::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return PitchDecision::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'eligible' => false,
+                'gates' => [],
+                'opening_quote' => 'what can we do tonight',
+                'rules_version' => '1.0',
+                'decided_at' => now(),
             ]);
         },
         ActivityCategory::class => fn (Hotel $hotel) => ActivityCategory::create([

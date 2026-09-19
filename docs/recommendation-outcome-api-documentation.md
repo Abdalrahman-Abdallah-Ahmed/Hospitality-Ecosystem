@@ -154,10 +154,45 @@ level is rejected — two fields that can disagree eventually will.
 
 - `expected_value` is what was **committed**, never what was settled. Money
   lives on the transactions linked to the booking.
-- `minutes_to_outcome` is measured from `recommended_at`; `null` when it cannot
-  be computed — never zero, which would read as "acted instantly".
+- `minutes_to_outcome` is measured from when the guest was offered it
+  (the recommendation's `delivered_at`), or from `recommended_at` when no
+  delivery was recorded before this outcome. A recommendation made days before
+  the guest saw it would otherwise look like days of hesitation. `null` when it
+  cannot be computed — never zero, which would read as "acted instantly".
+- `context.superseded` keeps the evidence of every earlier outcome this row
+  replaced, oldest first. See [Superseded evidence](#superseded-evidence).
 - One live row per recommendation, upserted as the state advances. The change
   history is in the audit trail: `GET /api/history/recommendation/{id}`.
+- Recording any outcome except `not_delivered` also marks the recommendation
+  as delivered (see [Delivery](#5-delivery)), with `occurred_at` as the time
+  and `channel` as the channel (`face_to_face` when omitted).
+
+### Superseded evidence
+
+When a stronger or equal outcome replaces an earlier one, the earlier row's
+evidence is kept in `context.superseded` instead of being overwritten:
+
+```json
+"context": {
+  "superseded": [
+    {
+      "outcome": "accepted",
+      "attribution_method": "conversational",
+      "evidence_quote": "Yes, book the boat for us both",
+      "confidence": "0.90",
+      "decline_reason": null,
+      "occurred_at": "2026-09-18T17:02:11+00:00"
+    }
+  ]
+}
+```
+
+The new row carries only its own evidence. A guest who said *"no, too
+expensive"* and later booked anyway keeps that quote next to the `declined`
+classification it supported, not on the `booked` row. Recording the same
+outcome again with the same method, quote and reason appends nothing. Other
+keys in `context` (for example the matcher's window) sit next to
+`superseded`.
 
 ### Errors
 
@@ -208,8 +243,10 @@ nothing observed a link. A booking matches a recommendation when **all** of:
    `RECOMMENDATION_ATTRIBUTION_WINDOW_HOURS`)
 5. Neither side already matched
 
-The nearest preceding recommendation wins. Every inferred row records the rule
-that produced it:
+The nearest preceding recommendation wins. When the guest leaves with nothing
+recorded, the job writes `expired`, or `not_delivered` for a recommendation
+that never reached them (see [Delivery](#5-delivery)). Every inferred row
+records the rule that produced it:
 
 ```json
 { "attribution_window_hours": 72, "matcher_version": "1.0" }
@@ -221,6 +258,54 @@ the rows follow one rule and half another, with no way to separate them.
 **A match is not a cause.** A booking following a recommendation is a sequence,
 not proof — the guest may have booked anyway. Proving causation needs a control
 group of comparable guests who received no recommendation. That is Phase 3.
+
+## 5. Delivery
+
+*Added 2026-09-19.* A recommendation can exist without ever reaching the guest.
+Each recommendation now records when, and how, it was actually offered:
+
+| Field | Meaning |
+| --- | --- |
+| `delivered_at` | When the guest was offered it. `null` = never delivered. |
+| `delivery_channel` | `whatsapp`, `face_to_face`, `phone` or `email`. |
+
+Both are read-only. `PUT /api/recommendation/{id}` ignores them. Delivery is
+stamped **once**. A later stamp changes nothing, so the first time the guest
+was offered it stands.
+
+**Reading a recommendation is not delivering it.** Delivery is stamped only
+when:
+
+| What happened | Channel |
+| --- | --- |
+| The guest reacted to it in the WhatsApp chat (the concierge recorded their reaction) | `whatsapp` |
+| Staff recorded `delivered`, `declined`, `accepted` or `booked` through [endpoint 1](#1-record-an-outcome-staff-capture) | the request's `channel`, default `face_to_face` |
+| A booking was created carrying the `recommendation_id` | the booking's `channel` if it is one of the four, otherwise `face_to_face` |
+
+The nightly matcher never stamps delivery. An inferred booking says nothing
+about whether our offer reached the guest.
+
+Stamping delivery also moves `status` from `pending` to `sent`, and counts one
+`recommendations_delivered` in usage metering.
+
+`delivered_at` means that WhatsApp **accepted** the reply. It does not mean the
+message reached the phone. Meta's delivery and read receipts are not tracked.
+
+### `not_delivered` written automatically
+
+When a guest leaves with no outcome recorded, the nightly job decides by
+delivery:
+
+| `delivered_at` | Outcome written |
+| --- | --- |
+| set | `expired`: offered, and the guest left undecided |
+| `null` | `not_delivered`: generated, and never reached the guest |
+
+Both use attribution `none` (L4): they are reached by elimination.
+
+**Staff must record face-to-face offers.** A recommendation that staff offered
+in person without recording it here becomes `not_delivered` when the guest
+leaves.
 
 ## Related Docs
 

@@ -56,3 +56,67 @@ Two new migrations: `whatsapp_inbound_messages`, and expression indexes on phone
 
 - Pushing to `main` now runs `pint --test` and the full test suite against Postgres + pgvector first. A failure stops the deploy.
 - The deploy script runs `migrate --force` and `composer install --no-dev`.
+
+---
+
+The sections below come from the first three packages of the [conversational pitching plan](PGRIP_Ecosystem_WP_Conversational_Pitching_v1_0.md) (WP-13 to WP-15). None of them turns pitching on. They make guest contact and recommendation delivery measurable.
+
+## 7. New: Guest Contact Timestamps (Read-Only)
+
+Guests and stays now carry `first_contacted_at` and `last_contacted_at`: when the guest first and last messaged the hotel on WhatsApp. On a stay, only messages sent during that stay count. `null` means the guest never messaged.
+
+- Returned on the guest object and on each nested stay. They cannot be set: create and update ignore them.
+- Use the stay's value to answer "did this guest talk to us during this visit?". The guest's value covers every visit.
+- History before today was rebuilt from stored conversations (`php artisan guests:backfill-contact-timestamps`). It is a minimum, because messages whose turn failed early were never stored.
+
+**What to change in the frontend:** nothing is required. A "last contacted" column or a "never contacted" badge is now possible.
+
+**Full docs:** [Guest API § The Guest Object](guest-api-documentation.md#the-guest-object)
+
+## 8. New: Activity Audience, Duration and Daily Capacity
+
+Activities accept three new optional fields: `audience` (`all`, `family`, `adults_only`), `duration_days` (1–30) and `daily_capacity` (≥ 1). `null` means "unknown" and never excludes an activity. `daily_capacity: 0` is rejected.
+
+**What to change in the frontend:** add the three fields to the activity form. Leave them empty unless someone at the hotel sets them. Don't pre-fill `audience` from the category name.
+
+**Full docs:** [Activity API § Pitching Attributes](activity-api-documentation.md#pitching-attributes)
+
+## 9. Changed: Recommendation Delivery Is Measured
+
+Recommendations now record `delivered_at` and `delivery_channel` (read-only): when and how the guest was actually offered one. They are stamped when the guest reacts in chat, when staff record any outcome other than `not_delivered`, or when a booking carries the recommendation id. When delivery is stamped, `status` moves from `pending` to `sent`. The AI only reading a recommendation does not count.
+
+- **Staff recording an outcome now also records delivery.** Send the real `channel` (`face_to_face`, `phone`, `email`, `whatsapp`). It defaults to `face_to_face`.
+- `minutes_to_outcome` is measured from delivery when a delivery was recorded earlier. Otherwise it is still measured from `recommended_at`.
+- When a stronger outcome replaces an earlier one, the earlier evidence (the guest's quote, confidence, reason) is kept in the outcome's `context.superseded` instead of being lost.
+- Usage: `recommendations_delivered` is now a real count (`measured: true`) and has left `not_measured`. `recommendations.delivered` in the usage report is a number, and `delivered_basis` is `"measured"`.
+
+**Full docs:** [Recommendation Outcome API § Delivery](recommendation-outcome-api-documentation.md#5-delivery), [Usage Metering API](usage-metering-api-documentation.md#not-measured-and-why)
+
+## 10. Changed: Conversion Analytics Counts Measured Delivery
+
+`GET /api/analytics/conversion` now counts `delivered` as the recommendations that actually reached the guest, instead of everything not marked `not_delivered`. `acceptance_rate` and `booking_rate` divide by it, so a recommendation that was only generated no longer lowers them. The response shape is unchanged.
+
+The nightly job now writes `not_delivered` (instead of `expired`) for a recommendation that never reached a guest who has left. So staff should record face-to-face offers, or those will count as not delivered.
+
+**Full docs:** [Conversion Analytics § delivered is measured](conversion-analytics-api-documentation.md#delivered-is-measured)
+
+## 11. Rollout
+
+Three new migrations add nullable columns to `guests`, `stays`, `activities` and `recommendations`. After migrating, run `php artisan guests:backfill-contact-timestamps` once. It is safe to run again. Add `--dry-run` to preview it.
+
+## 12. New: Task `guest_signal` (Read-Only), and Pitching Rules (Off)
+
+Tasks now return `guest_signal`: why a guest-related task exists (`escalation`, `service_request`, `booking_follow_up`, or `null`). Only the WhatsApp concierge sets it, and existing concierge tasks were labelled where their origin was certain. Escalations now also carry the guest's `reservation_id`.
+
+Behind the scenes, every guest WhatsApp message now records whether the concierge would be allowed to suggest an activity, and why or why not (a new `pitch_decisions` table with no API yet). Pitching itself is **off** (`PITCHING_ENABLED=false`), and nothing is suggested to guests yet.
+
+**What to change in the frontend:** nothing is required. A `guest_signal` badge on task rows is possible. Note that while a guest has an escalation this stay, or an open service request from the last 24 hours, the concierge will not suggest activities to them.
+
+**Full docs:** [Task Management API § The Task Object](task-management-api-documentation.md#the-task-object)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PITCHING_ENABLED` | `false` | Master switch for conversational pitching. Leave off until the owner decisions in the pitching plan (§15) are recorded. |
+| `PITCHING_MAX_PER_STAY` | `1` | Unsolicited suggestions per stay. A guest asking for one doesn't count. |
+
+Two more migrations: `tasks.guest_signal` (with the backfill), and the `pitch_decisions` table plus `recommendations.pitch_decision_id`.

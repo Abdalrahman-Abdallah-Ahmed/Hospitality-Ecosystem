@@ -177,21 +177,20 @@ class UsageReport
      * "our agent is weak" from "the hotel's staff never passed it on" — two
      * problems with two different owners.
      *
-     * Delivered is reported as an explicit null with a reason rather than a
-     * zero. A meter reading zero and a meter that does not exist are
-     * different facts, and only one of them is the hotel's fault.
+     * Delivered is measured: one event per recommendation, written when it
+     * first reached a guest.
      */
     public function recommendationPair(array $features): array
     {
         return [
             'generated' => $features[MeterFeature::RECOMMENDATIONS_GENERATED->publicCode()]['used'] ?? 0,
-            'delivered' => null,
-            'delivered_basis' => 'not measured',
-            'delivered_reason' => self::DELIVERED_NOT_MEASURED,
+            'delivered' => $features[MeterFeature::RECOMMENDATIONS_DELIVERED->publicCode()]['used'] ?? 0,
+            'delivered_basis' => 'measured',
+            'delivered_reason' => self::DELIVERED_MEASURED,
         ];
     }
 
-    private const DELIVERED_NOT_MEASURED = 'Delivery is inferred, not measured: /api/analytics/conversion assumes a recommendation was delivered unless an outcome explicitly records not_delivered. Metering an assumption would put an estimate in a usage table. Needs the measured delivery timestamp from P1-002 A-1.';
+    private const DELIVERED_MEASURED = 'Counted once per recommendation when it reached the guest: sent in a WhatsApp reply, recorded by staff, or carried by a booking.';
 
     /**
      * Meters that are declared but have no source to record from yet.
@@ -204,7 +203,6 @@ class UsageReport
     public function notMeasured(): array
     {
         return [
-            MeterFeature::RECOMMENDATIONS_DELIVERED->value => self::DELIVERED_NOT_MEASURED,
             MeterFeature::CONVERSATIONS_HANDLED->value => 'Needs a definition of when a conversation ends; agent_conversations has no status column.',
         ];
     }

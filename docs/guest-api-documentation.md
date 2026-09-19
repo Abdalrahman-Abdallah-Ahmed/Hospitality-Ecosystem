@@ -96,6 +96,8 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, `co
   "channel": "booking",
   "identity_hash": "phone:9f2c1a...",
   "identity_resolved_at": "2026-07-31T09:15:00.000000Z",
+  "first_contacted_at": "2026-09-02T08:11:40.000000Z",
+  "last_contacted_at": "2026-09-03T19:02:15.000000Z",
   "created_at": "2026-07-31T09:15:00.000000Z",
   "updated_at": "2026-07-31T09:15:00.000000Z",
   "deleted_at": null,
@@ -125,6 +127,8 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, `co
       "currency": "USD",
       "market_segment": null,
       "source_channel": "whatsapp",
+      "first_contacted_at": "2026-09-02T08:11:40.000000Z",
+      "last_contacted_at": "2026-09-03T19:02:15.000000Z",
       "created_at": "2026-09-01T09:00:00.000000Z",
       "updated_at": "2026-09-01T14:32:00.000000Z",
       "deleted_at": null
@@ -145,6 +149,7 @@ Field notes for the UI:
 - Guests use `SoftDeletes`, so `DELETE` does **not** permanently erase the row.
 - **`identity_hash`** and **`identity_resolved_at`** are internal fields (Phase 1 WP-2) used to detect the same person arriving through a different channel — see [Create a Guest](#2-create-a-guest). Not meant for display; `identity_hash` is a one-way hash of the guest's normalised email or phone, not the raw value.
 - **`stays`** (Phase 1 WP-2) is every stay this guest has had — one per reservation, in booking order, not just the current/latest one. A reservation without a room assigned still produces a stay (`room_id: null`). `status` is one of `expected` (booked, not arrived), `in_house`, `departed`, `no_show`, or `cancelled`. `checked_in_at`/`checked_out_at`/`nights` are `null` until they actually happen — don't assume they mirror the reservation's `arrival_date`/`departure_date` (those are the *planned* dates; a guest can check out early or late). There is no separate `GET /api/stay` endpoint — stays only ever arrive nested here or on the reservation.
+- **`first_contacted_at` / `last_contacted_at`** (read-only) record when this guest first and last messaged the hotel on WhatsApp. They appear on the guest (any stay) and on each stay (only messages that belong to that stay). `null` means no message was ever recorded. A returning guest can have a recent `last_contacted_at` on the guest and `null` on a stay where they never wrote, so use the stay's value to ask "did they talk to us during this visit?". These fields cannot be set. If sent on create or update they are ignored. The time is when WhatsApp received the message, not when the reply went out. Stamps from before 2026-09-19 were rebuilt from stored conversations. They are a minimum: a message whose turn failed before the AI ran was never stored.
 - Because `reservations`, `conversations`, and `stays` are all eager-loaded, a guest detail response can be noticeably larger than a room response. The list endpoint also includes these nested relations in each row — for a hotel with long-tenured repeat guests, `stays` can grow to cover their entire history.
 
 ## 1. List Guests
@@ -398,3 +403,4 @@ The UI should distinguish this from custom business-rule errors like:
 - `DELETE` is soft-delete, not hard-delete.
 - **New:** `POST /api/guest` no longer creates a duplicate row for a guest who already exists at this hotel with the same `email` or `phone_number`, even if `channel`/`external_id` differ — it reuses (and restores, if soft-deleted) the existing guest instead. Check `body.id` against a guest you already knew about if your UI needs to tell "reused" apart from "newly created."
 - **New:** `is_vip` flags a VIP guest. Set it on create or update, and list VIPs with `filter[is_vip]=true`. When create reuses an existing guest, the submitted `is_vip` is not applied, so flag an existing guest with `PUT`.
+- **New:** `first_contacted_at` and `last_contacted_at` on guests and on each stay show when the guest messaged the hotel. Read-only.

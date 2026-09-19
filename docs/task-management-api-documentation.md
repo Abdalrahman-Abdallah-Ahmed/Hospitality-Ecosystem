@@ -255,6 +255,7 @@ Hard delete. Tasks referencing this category have `task_category_id` set to `NUL
   "title": "Fix the AC in room 204",
   "description": null,
   "created_by": "ai",
+  "guest_signal": null,
   "status": "pending",
   "priority": "normal",
   "due_date": null,
@@ -267,6 +268,7 @@ Hard delete. Tasks referencing this category have `task_category_id` set to `NUL
 Field notes:
 
 - `created_by` is a fixed enum: `ai`, `system`, `guest`, `maintenance_schedule`, `manual`. Defaults to `ai` if omitted.
+- `guest_signal` (read-only, *added 2026-09-19*) says why a guest-related task exists: `escalation` (the concierge handed the guest to a human), `service_request` (the guest needs something or something is broken), `booking_follow_up` (staff should help an interested guest book an activity), or `null` (a task not raised by the concierge). Only the WhatsApp concierge sets it; create and update ignore it. While a guest has an escalation this stay, or a `service_request` from the last 24 hours that is still `pending` or `in_progress`, the concierge does not suggest activities to them. Completing or cancelling a service request lifts that block. An escalation keeps it in place until the guest leaves, whatever the task's status.
 - `status` is a fixed enum: `pending`, `in_progress`, `completed`, `cancelled`. Defaults to `pending`.
 - `priority` is a fixed enum: `low`, `normal`, `high`. Defaults to `normal`. A service request the WhatsApp concierge creates for a VIP guest (`guest.is_vip`) is always `high`.
 - Unlike `category` on hotel-policy or `status` on room, **these three fields are real, server-enforced enums** — sending any other string returns a `422`.
@@ -275,7 +277,7 @@ Field notes:
 
 ### 3.1 List Tasks — `GET /api/task`
 
-Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`.
+Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `guest_signal`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`.
 
 **Breaking change — response shape:** `body` is no longer the paginator directly. It's now:
 

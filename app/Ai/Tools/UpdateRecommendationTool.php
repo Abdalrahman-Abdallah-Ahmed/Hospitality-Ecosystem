@@ -2,11 +2,14 @@
 
 namespace App\Ai\Tools;
 
+use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
+use App\Enums\DeliveryChannel;
 use App\Enums\OutcomeType;
 use App\Enums\RecommendationStatus;
 use App\Models\Recommendation;
 use App\Models\Reservation;
+use App\Services\RecommendationDeliveryService;
 use App\Services\RecommendationOutcomeService;
 use App\Support\Audit\EventLogger;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -71,28 +74,42 @@ class UpdateRecommendationTool implements Tool
         EventLogger::asAiAgent(function () use ($recommendation, $updates, $outcome, $request, $guestConfidence) {
             $recommendation->update($updates);
 
-            if (! $outcome) {
-                return;
+            if ($outcome) {
+                $this->recordOutcome($recommendation, $outcome, $request, $guestConfidence);
             }
 
-            app(RecommendationOutcomeService::class)->record(
+            // The guest reacted to it in this chat, so they saw it. Stamped
+            // after the outcome, never before: "now" is when we learned it,
+            // not when they first saw it, and stamping first would record
+            // the reaction as instantaneous.
+            app(RecommendationDeliveryService::class)->markDelivered(
                 $recommendation,
-                $outcome,
-                AttributionMethod::CONVERSATIONAL,
-                attributes: [
-                    'channel' => 'whatsapp',
-                    'decline_reason' => trim($request->string('decline_reason')->toString()) ?: null,
-                    // The raw statement is what settles a later dispute about
-                    // whether this classification was right.
-                    'evidence_quote' => trim($request->string('evidence_quote')->toString()) ?: null,
-                    'confidence' => $request->filled('confidence')
-                        ? $request->float('confidence')
-                        : $guestConfidence,
-                ],
+                DeliveryChannel::WHATSAPP,
+                now(),
+                ActorKind::AI_AGENT,
             );
         });
 
         return "Recommendation updated (id: {$recommendation->id}).";
+    }
+
+    private function recordOutcome(Recommendation $recommendation, OutcomeType $outcome, Request $request, ?float $guestConfidence): void
+    {
+        app(RecommendationOutcomeService::class)->record(
+            $recommendation,
+            $outcome,
+            AttributionMethod::CONVERSATIONAL,
+            attributes: [
+                'channel' => 'whatsapp',
+                'decline_reason' => trim($request->string('decline_reason')->toString()) ?: null,
+                // The raw statement is what settles a later dispute about
+                // whether this classification was right.
+                'evidence_quote' => trim($request->string('evidence_quote')->toString()) ?: null,
+                'confidence' => $request->filled('confidence')
+                    ? $request->float('confidence')
+                    : $guestConfidence,
+            ],
+        );
     }
 
     /**
