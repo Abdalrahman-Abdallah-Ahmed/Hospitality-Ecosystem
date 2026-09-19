@@ -40,9 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Must match the PHP composer.lock was resolved on: the locked Symfony
+      # 8.x packages require PHP >= 8.4.1, so an 8.3 runner cannot install them.
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: '8.4'
           extensions: mbstring, pdo_pgsql, pgsql, zip, gd
           coverage: none
 
