@@ -3,19 +3,18 @@
 namespace App\Support\Pitching;
 
 /**
- * The activities a turn may pitch, and why every other one was left out.
+ * The recommendations a turn may offer, and why the others were left out.
  * Serialised into pitch_decisions.candidates in the shape the engagement
  * report reads.
  */
 final readonly class CandidateList
 {
     /**
-     * @param  list<Candidate>  $shortlist  in rank order
-     * @param  list<array{activity_id: string, name: string, reason: string, detail: ?string}>  $excluded
+     * @param  list<Candidate>  $shortlist  in the recommendation agent's own order
+     * @param  list<array{recommendation_id: string, activity_id: string, name: string, reason: string, detail: ?string}>  $excluded
      */
     public function __construct(
         public int $considered,
-        public int $unscheduledBookings,
         public array $shortlist,
         public array $excluded,
     ) {}
@@ -32,7 +31,6 @@ final readonly class CandidateList
     {
         return [
             'considered' => $this->considered,
-            'unscheduled_bookings' => $this->unscheduledBookings,
             'shortlist' => array_map(
                 fn (Candidate $candidate, int $index) => $candidate->toArray($index + 1),
                 $this->shortlist,

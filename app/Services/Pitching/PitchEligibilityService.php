@@ -2,8 +2,6 @@
 
 namespace App\Services\Pitching;
 
-use App\Enums\BookingStatus;
-use App\Enums\CandidateExclusion;
 use App\Enums\GuestSignal;
 use App\Enums\PitchGate;
 use App\Enums\PitchOpening;
@@ -11,14 +9,11 @@ use App\Enums\PitchResult;
 use App\Enums\RecommendationStatus;
 use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
-use App\Models\Activity;
-use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\Stay;
 use App\Models\Task;
-use App\Support\Pitching\ActivityTimeframe;
 use App\Support\Pitching\Candidate;
 use App\Support\Pitching\CandidateList;
 use App\Support\Pitching\GateReport;
@@ -40,6 +35,13 @@ use Illuminate\Support\Collection;
  */
 class PitchEligibilityService
 {
+    /**
+     * The only reason a candidate is excluded. A single value, not an enum:
+     * offering a category the guest did not ask about is the one thing
+     * pitching still refuses to do on its own judgment (16.3).
+     */
+    private const OUTSIDE_INTEREST = 'outside_interest';
+
     /**
      * The gates that cost nothing but a query. All of them are evaluated even
      * after one fails — which rule does the blocking is itself worth knowing —
@@ -101,34 +103,47 @@ class PitchEligibilityService
     }
 
     /**
-     * Every active activity, minus the ones this guest cannot do in the days
-     * they have left, each exclusion recorded with its reason. Ordered by
-     * name until ranking (WP-17) orders it.
+     * The reservation's pending recommendations, in the order
+     * RecommendationAgent set. Pitching forms no opinion of its own about
+     * which activity suits this guest, or whether it still fits their
+     * remaining days: that judgment already happened when they were
+     * generated. The only filter is the guest's own words — offering a
+     * category they did not ask about is not "whatever was generated", it is
+     * answering a different question.
      */
     public function candidates(Hotel $hotel, Stay $stay, ?string $interestCategoryId, CarbonInterface $now): CandidateList
     {
-        $local = $this->local($hotel, $now);
-        $lastDay = $stay->planned_departure_date->copy()->subDay()->toDateString();
-        $activities = Activity::active()->where('hotel_id', $hotel->id)->orderBy('name')->orderBy('id')->get();
-        $stayBookings = $this->stayBookings($stay);
-        $dailyPax = $this->dailyPax($hotel, $activities, $local, $lastDay);
-
+        $recommendations = $this->pendingRecommendations($stay);
         $shortlist = [];
         $excluded = [];
 
-        foreach ($activities as $activity) {
-            $result = $this->evaluateActivity($activity, $interestCategoryId, $stayBookings, $dailyPax, $local, $lastDay);
+        foreach ($recommendations as $recommendation) {
+            $activity = $recommendation->activity;
 
-            if ($result instanceof Candidate) {
-                $shortlist[] = $result;
-            } else {
-                $excluded[] = ['activity_id' => $activity->id, 'name' => $activity->name, ...$result];
+            if ($interestCategoryId && $activity->category_id !== $interestCategoryId) {
+                $excluded[] = [
+                    'recommendation_id' => $recommendation->id,
+                    'activity_id' => $activity->id,
+                    'name' => $activity->name,
+                    'reason' => self::OUTSIDE_INTEREST,
+                    'detail' => null,
+                ];
+
+                continue;
             }
+
+            $shortlist[] = new Candidate(
+                recommendationId: $recommendation->id,
+                activityId: $activity->id,
+                name: $activity->name,
+                reason: $recommendation->reason,
+                priority: (int) $recommendation->priority,
+                predictedConfidence: $recommendation->predicted_confidence,
+            );
         }
 
         return new CandidateList(
-            considered: $activities->count(),
-            unscheduledBookings: $stayBookings->whereNull('scheduled_for')->count(),
+            considered: $recommendations->count(),
             shortlist: array_slice($shortlist, 0, (int) config('pitching.shortlist_size')),
             excluded: $excluded,
         );
@@ -217,141 +232,25 @@ class PitchEligibilityService
     }
 
     /**
-     * @return Collection<int, Booking>
+     * Still offerable: generated, never delivered, never pitched, and its
+     * activity still on the menu.
+     *
+     * @return Collection<int, Recommendation>
      */
-    private function stayBookings(Stay $stay): Collection
+    private function pendingRecommendations(Stay $stay): Collection
     {
-        return Booking::where('stay_id', $stay->id)
-            ->where('status', '!=', BookingStatus::CANCELLED->value)
+        return Recommendation::query()
+            ->where('reservation_id', $stay->reservation_id)
+            ->where('status', RecommendationStatus::PENDING->value)
+            ->whereNull('delivered_at')
+            ->whereNull('pitch_decision_id')
+            ->whereHas('activity', fn ($query) => $query->where('is_active', true))
             ->with('activity')
+            // The recommendation agent's own order: its top suggestion first.
+            ->orderBy('priority')
+            ->orderByDesc('predicted_confidence')
+            ->orderBy('id')
             ->get();
-    }
-
-    /**
-     * People already booked per activity per local date, for the activities
-     * whose capacity is known. Bookings with no date cannot fill a day.
-     *
-     * @param  Collection<int, Activity>  $activities
-     * @return array<string, array<string, int>> activity id => date => pax
-     */
-    private function dailyPax(Hotel $hotel, Collection $activities, CarbonInterface $local, string $lastDay): array
-    {
-        $limited = $activities->whereNotNull('daily_capacity')->modelKeys();
-
-        if ($limited === []) {
-            return [];
-        }
-
-        $timezone = $this->timezone($hotel);
-        $pax = [];
-
-        Booking::where('hotel_id', $hotel->id)
-            ->whereIn('activity_id', $limited)
-            ->where('status', '!=', BookingStatus::CANCELLED->value)
-            ->whereBetween('scheduled_for', [
-                $local->copy()->startOfDay()->utc(),
-                Carbon::parse($lastDay, $timezone)->endOfDay()->utc(),
-            ])
-            ->get(['activity_id', 'scheduled_for', 'pax'])
-            ->each(function (Booking $booking) use (&$pax, $timezone) {
-                $date = $booking->scheduled_for->copy()->setTimezone($timezone)->toDateString();
-                $pax[$booking->activity_id][$date] = ($pax[$booking->activity_id][$date] ?? 0) + $booking->pax;
-            });
-
-        return $pax;
-    }
-
-    /**
-     * The activity's possible start dates, or why it has none. The checks run
-     * in a fixed order and each narrows the dates the next one sees: open,
-     * then with room, then without a clash, then long enough.
-     *
-     * @param  Collection<int, Booking>  $stayBookings
-     * @param  array<string, array<string, int>>  $dailyPax
-     * @return Candidate|array{reason: string, detail: ?string}
-     */
-    private function evaluateActivity(
-        Activity $activity,
-        ?string $interestCategoryId,
-        Collection $stayBookings,
-        array $dailyPax,
-        CarbonInterface $local,
-        string $lastDay,
-    ): Candidate|array {
-        if ($interestCategoryId && $activity->category_id !== $interestCategoryId) {
-            return $this->exclusion(CandidateExclusion::OUTSIDE_INTEREST);
-        }
-
-        if ($stayBookings->contains('activity_id', $activity->id)) {
-            return $this->exclusion(CandidateExclusion::ALREADY_BOOKED);
-        }
-
-        $open = ActivityTimeframe::openDates($activity, $local, Carbon::parse($lastDay), $local);
-
-        if ($open === []) {
-            return $this->exclusion(CandidateExclusion::CLOSED_ON_ALL_DATES);
-        }
-
-        $withRoom = $activity->daily_capacity === null
-            ? $open
-            : array_values(array_filter($open, fn (string $date) => ($dailyPax[$activity->id][$date] ?? 0) < $activity->daily_capacity));
-
-        if ($withRoom === []) {
-            return $this->exclusion(CandidateExclusion::NO_CAPACITY, 'Full on all '.count($open).' open date(s).');
-        }
-
-        $free = array_values(array_diff($withRoom, $this->clashingDates($activity, $stayBookings, $local)));
-
-        if ($free === []) {
-            return $this->exclusion(CandidateExclusion::CLASHES_ON_ALL_DATES, 'The guest has a booking in the same category on every date it has room.');
-        }
-
-        $duration = $activity->duration_days ?? 1;
-        $starts = ActivityTimeframe::startDates($free, $duration);
-
-        if ($starts === []) {
-            $longest = ActivityTimeframe::longestRun($free);
-
-            return $this->exclusion(CandidateExclusion::NOT_ENOUGH_DAYS, "Needs {$duration} consecutive open days; the longest run is {$longest}.");
-        }
-
-        return new Candidate(
-            activityId: $activity->id,
-            name: $activity->name,
-            openDates: $starts,
-            capacityKnown: $activity->daily_capacity !== null,
-        );
-    }
-
-    /**
-     * Activities have hours but no length, so a true time clash cannot be
-     * computed. Until they do (pitching plan §15, D-7): a date clashes when
-     * the guest already holds a booking in the same category on it.
-     *
-     * @param  Collection<int, Booking>  $stayBookings
-     * @return list<string>
-     */
-    private function clashingDates(Activity $activity, Collection $stayBookings, CarbonInterface $local): array
-    {
-        if ($activity->category_id === null) {
-            return [];
-        }
-
-        return $stayBookings
-            ->filter(fn (Booking $booking) => $booking->scheduled_for !== null
-                && $booking->activity?->category_id === $activity->category_id)
-            ->map(fn (Booking $booking) => $booking->scheduled_for->copy()->setTimezone($local->getTimezone())->toDateString())
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return array{reason: string, detail: ?string}
-     */
-    private function exclusion(CandidateExclusion $reason, ?string $detail = null): array
-    {
-        return ['reason' => $reason->value, 'detail' => $detail];
     }
 
     private function local(Hotel $hotel, CarbonInterface $now): CarbonInterface

@@ -3,18 +3,18 @@
 namespace App\Support\Pitching;
 
 /**
- * An active activity that survived every per-activity exclusion for a turn.
+ * A pending recommendation this turn may offer, carrying the reason
+ * RecommendationAgent gave for it.
  */
 final readonly class Candidate
 {
-    /**
-     * @param  list<string>  $openDates  possible start dates, Y-m-d in the hotel's timezone
-     */
     public function __construct(
+        public string $recommendationId,
         public string $activityId,
         public string $name,
-        public array $openDates,
-        public bool $capacityKnown,
+        public ?string $reason,
+        public int $priority,
+        public ?string $predictedConfidence,
     ) {}
 
     /**
@@ -24,10 +24,12 @@ final readonly class Candidate
     {
         return [
             'rank' => $rank,
+            'recommendation_id' => $this->recommendationId,
             'activity_id' => $this->activityId,
             'name' => $this->name,
-            'open_dates' => $this->openDates,
-            'capacity' => $this->capacityKnown ? 'known' : 'unknown',
+            'reason' => $this->reason,
+            'priority' => $this->priority,
+            'predicted_confidence' => $this->predictedConfidence,
         ];
     }
 }

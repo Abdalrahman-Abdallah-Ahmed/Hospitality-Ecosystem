@@ -1,12 +1,13 @@
 <?php
 
 use App\Ai\Agents\GuestConciergeAgent;
+use App\Ai\Agents\RecommendationAgent;
 use App\Ai\Agents\TurnSignalAgent;
 use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
-use App\Enums\CandidateExclusion;
 use App\Enums\GuestSignal;
 use App\Enums\InboundMessageStatus;
+use App\Enums\MeterFeature;
 use App\Enums\PitchGate;
 use App\Enums\PitchResult;
 use App\Enums\RecommendationStatus;
@@ -19,6 +20,7 @@ use App\Models\Activity;
 use App\Models\ActivityCategory;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\MeterEvent;
 use App\Models\PitchDecision;
 use App\Models\Recommendation;
 use App\Models\Reservation;
@@ -99,6 +101,25 @@ function pitchGuest(Hotel $hotel, array $stay = []): array
 function pitchActivity(Hotel $hotel, array $attributes = []): Activity
 {
     return Activity::create(['hotel_id' => $hotel->id, 'name' => 'Sunset Catamaran', 'price' => 80, ...$attributes]);
+}
+
+/**
+ * What RecommendationAgent leaves behind: a pending recommendation for an
+ * activity of this hotel. Pitching offers these and nothing else.
+ */
+function pitchRecommendation(Hotel $hotel, Reservation $reservation, string $name, array $recommendation = [], array $activity = []): Recommendation
+{
+    $created = Recommendation::create([
+        'hotel_id' => $hotel->id,
+        'reservation_id' => $reservation->id,
+        'activity_id' => pitchActivity($hotel, ['name' => $name, ...$activity])->id,
+        'reason' => 'Generated for this guest',
+        'priority' => 0,
+        'recommended_at' => now()->subHours(2),
+        ...$recommendation,
+    ]);
+
+    return $created->load('activity');
 }
 
 /** The classifier's answer for this turn. */
@@ -215,7 +236,7 @@ it('ignores an escalation from an earlier stay', function () {
     $escalation = guestSignalTask($guest, GuestSignal::ESCALATION);
     Task::whereKey($escalation->id)->update(['created_at' => '2026-03-02 10:00:00']);
     classifierSays();
-    pitchActivity($hotel);
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
 
     expect(gateOf(decideTurn($guest, $hotel, $reservation), PitchGate::ESCALATED_THIS_STAY)['passed'])->toBeTrue();
 });
@@ -237,7 +258,7 @@ it('does not block on an old, a finished, or a booking follow-up task', function
     guestSignalTask($guest, GuestSignal::SERVICE_REQUEST, ['status' => TaskStatus::COMPLETED]);
     guestSignalTask($guest, GuestSignal::BOOKING_FOLLOW_UP);
     classifierSays();
-    pitchActivity($hotel);
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
 
     $turn = decideTurn($guest, $hotel, $reservation);
 
@@ -280,7 +301,6 @@ it('records every gate result, not just the first failure', function () {
 it('fails closed when the classifier throws', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
     TurnSignalAgent::fake(fn () => throw new RuntimeException('provider down'));
 
     $turn = decideTurn($guest, $hotel, $reservation);
@@ -293,7 +313,6 @@ it('fails closed when the classifier throws', function () {
 it('treats a classifier quote not found in the message as a failure', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
     classifierSays(['evidence_quote' => 'we are so bored']);
 
     $turn = decideTurn($guest, $hotel, $reservation, 'Hi! What can we do this evening?');
@@ -305,7 +324,7 @@ it('treats a classifier quote not found in the message as a failure', function (
 it('accepts a quote that differs only in case and spacing', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
     classifierSays(['evidence_quote' => 'WHAT  can we   do']);
 
     $turn = decideTurn($guest, $hotel, $reservation, "Hi! What can\nwe do this evening?");
@@ -317,7 +336,6 @@ it('accepts a quote that differs only in case and spacing', function () {
 it('blocks a complaint even when it also opens the door', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
     classifierSays(['complaint' => true, 'evidence_quote' => 'the pool was freezing']);
 
     $turn = decideTurn($guest, $hotel, $reservation, 'The room is fine but the pool was freezing, what else is there?');
@@ -341,7 +359,7 @@ it('blocks when the message opens no door', function () {
 it('ignores an interest category id from another hotel', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
     $foreign = ActivityCategory::create(['hotel_id' => pitchHotel()->id, 'name' => 'Spa']);
     classifierSays(['opening' => 'asks_about_activities', 'interest_category_id' => $foreign->id]);
 
@@ -349,20 +367,6 @@ it('ignores an interest category id from another hotel', function () {
 
     expect($turn->decision->interest_category_id)->toBeNull()
         ->and($turn->eligible)->toBeTrue();
-});
-
-it('only offers activities in the category the guest asked about', function () {
-    $hotel = pitchHotel();
-    [$guest, $reservation] = pitchGuest($hotel);
-    $spa = ActivityCategory::create(['hotel_id' => $hotel->id, 'name' => 'Spa']);
-    $massage = pitchActivity($hotel, ['name' => 'Hot Stone Massage', 'category_id' => $spa->id]);
-    $boat = pitchActivity($hotel);
-    classifierSays(['opening' => 'asks_about_activities', 'interest_category_id' => $spa->id]);
-
-    $turn = decideTurn($guest, $hotel, $reservation);
-
-    expect(collect($turn->shortlist)->pluck('activityId')->all())->toBe([$massage->id])
-        ->and(exclusionOf($turn, $boat)['reason'])->toBe(CandidateExclusion::OUTSIDE_INTEREST->value);
 });
 
 // --- opening gates ----------------------------------------------------------
@@ -419,7 +423,7 @@ it('allows a suggestion on explicit request after the cap is reached', function 
     $hotel = pitchHotel();
     [$guest, $reservation, $stay] = pitchGuest($hotel);
     earlierPitch($stay, $reservation);
-    pitchActivity($hotel, ['name' => 'Snorkelling Trip']);
+    pitchRecommendation($hotel, $reservation, 'Snorkelling Trip');
     classifierSays();
 
     $turn = decideTurn($guest, $hotel, $reservation);
@@ -449,179 +453,101 @@ it('blocks after any refusal this stay, including a low-confidence one', functio
     expect(gateOf($turn, PitchGate::DECLINED_THIS_STAY)['passed'])->toBeFalse();
 });
 
-// --- candidates -------------------------------------------------------------
+// --- the shortlist ----------------------------------------------------------
 
-it('excludes a multi-day activity with too few consecutive open days before departure', function () {
+it('shortlists this reservation\'s pending recommendations in the agent\'s own order', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    $course = pitchActivity($hotel, ['name' => 'PADI Open Water', 'duration_days' => 4]);
-    $twoDay = pitchActivity($hotel, ['name' => 'Desert Camp', 'duration_days' => 2]);
+    // Generated out of order on purpose: priority wins, then confidence.
+    $second = pitchRecommendation($hotel, $reservation, 'Kids Cooking Class', ['priority' => 1, 'predicted_confidence' => 0.95]);
+    $first = pitchRecommendation($hotel, $reservation, 'Sunset Catamaran', ['priority' => 0, 'predicted_confidence' => 0.60]);
+    $third = pitchRecommendation($hotel, $reservation, 'Desert Camp', ['priority' => 1, 'predicted_confidence' => 0.40]);
     classifierSays();
 
     $turn = decideTurn($guest, $hotel, $reservation);
 
-    expect(exclusionOf($turn, $course)['reason'])->toBe(CandidateExclusion::NOT_ENOUGH_DAYS->value)
-        ->and(exclusionOf($turn, $course)['detail'])->toBe('Needs 4 consecutive open days; the longest run is 3.')
-        // A two-day trip can start on the 19th or the 20th, not the 21st.
-        ->and(collect($turn->shortlist)->firstWhere('activityId', $twoDay->id)->openDates)->toBe(['2026-09-19', '2026-09-20']);
+    expect(collect($turn->shortlist)->pluck('recommendationId')->all())
+        ->toBe([$first->id, $second->id, $third->id]);
+
+    $shortlist = $turn->decision->candidates['shortlist'];
+
+    expect($turn->decision->candidates['considered'])->toBe(3)
+        ->and($shortlist[0]['name'])->toBe('Sunset Catamaran')
+        ->and($shortlist[0]['reason'])->toBe('Generated for this guest')
+        ->and($shortlist[0]['predicted_confidence'])->toBe('0.60')
+        ->and($shortlist[0]['rank'])->toBe(1);
 });
 
-it('treats a null duration as a single day', function () {
-    $hotel = pitchHotel();
-    [$guest, $reservation] = pitchGuest($hotel);
-    $activity = pitchActivity($hotel, ['duration_days' => null]);
-    classifierSays();
-
-    $candidate = collect(decideTurn($guest, $hotel, $reservation)->shortlist)->firstWhere('activityId', $activity->id);
-
-    expect($candidate->openDates)->toBe(['2026-09-19', '2026-09-20', '2026-09-21']);
-});
-
-it('treats a null timeframe as open every day', function () {
-    $hotel = pitchHotel();
-    [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
-    classifierSays();
-
-    $turn = decideTurn($guest, $hotel, $reservation);
-
-    expect($turn->decision->candidates['shortlist'][0]['open_dates'])->toBe(['2026-09-19', '2026-09-20', '2026-09-21'])
-        ->and($turn->decision->candidates['shortlist'][0]['capacity'])->toBe('unknown');
-});
-
-it('excludes an activity closed on every remaining date by season, closure or weekday hours', function () {
-    $hotel = pitchHotel();
-    [$guest, $reservation] = pitchGuest($hotel);
-    $seasonOver = pitchActivity($hotel, ['name' => 'Whale Watching', 'available_until' => '2026-09-18']);
-    $closed = pitchActivity($hotel, ['name' => 'Dune Bashing', 'unavailable_periods' => [
-        ['start_date' => '2026-09-19', 'end_date' => '2026-09-21', 'reason' => 'Maintenance'],
-    ]]);
-    // The 19th–21st are Saturday to Monday.
-    $weekdaysOnly = pitchActivity($hotel, ['name' => 'Pottery Class', 'operating_hours' => [
-        'tuesday' => [['start' => '10:00', 'end' => '12:00']],
-    ]]);
-    classifierSays();
-
-    $turn = decideTurn($guest, $hotel, $reservation);
-
-    foreach ([$seasonOver, $closed, $weekdaysOnly] as $activity) {
-        expect(exclusionOf($turn, $activity)['reason'])->toBe(CandidateExclusion::CLOSED_ON_ALL_DATES->value);
-    }
-
-    expect($turn->eligible)->toBeFalse()
-        ->and(gateOf($turn, PitchGate::NO_CANDIDATES)['passed'])->toBeFalse();
-});
-
-it('does not count today as open once today\'s last slot has ended', function () {
-    $hotel = pitchHotel();
-    // Leaves tomorrow, so today is the only day left. It is 15:00 locally.
-    [$guest, $reservation] = pitchGuest($hotel, ['planned_departure_date' => '2026-09-20']);
-    $morning = pitchActivity($hotel, ['name' => 'Morning Yoga', 'operating_hours' => [
-        'saturday' => [['start' => '07:00', 'end' => '09:00'], ['start' => '12:00', 'end' => '15:00']],
-    ]]);
-    $evening = pitchActivity($hotel, ['name' => 'Night Snorkel', 'operating_hours' => [
-        'saturday' => [['start' => '19:00', 'end' => '21:00']],
-    ]]);
-    classifierSays();
-
-    $turn = decideTurn($guest, $hotel, $reservation);
-
-    // A slot ending exactly now is over.
-    expect(exclusionOf($turn, $morning)['reason'])->toBe(CandidateExclusion::CLOSED_ON_ALL_DATES->value)
-        ->and(collect($turn->shortlist)->pluck('activityId')->all())->toBe([$evening->id]);
-});
-
-it('excludes an activity full on every remaining open date but not one with unknown capacity', function () {
-    $hotel = pitchHotel();
-    [$guest, $reservation] = pitchGuest($hotel);
-    $limited = pitchActivity($hotel, ['name' => 'Private Cruise', 'daily_capacity' => 4]);
-    $unlimited = pitchActivity($hotel, ['name' => 'Beach Volleyball']);
-
-    // Another guest fills the cruise on each of the three days, at 20:00 local.
-    [$other] = pitchGuest($hotel);
-    foreach (['2026-09-19', '2026-09-20', '2026-09-21'] as $date) {
-        foreach ([$limited, $unlimited] as $activity) {
-            wp5Booking($hotel, [
-                'guest_id' => $other->id,
-                'activity_id' => $activity->id,
-                'pax' => 4,
-                'scheduled_for' => Carbon::parse("{$date} 20:00", 'Asia/Riyadh')->utc(),
-            ]);
-        }
-    }
-    classifierSays();
-
-    $turn = decideTurn($guest, $hotel, $reservation);
-
-    expect(exclusionOf($turn, $limited)['reason'])->toBe(CandidateExclusion::NO_CAPACITY->value)
-        ->and(collect($turn->shortlist)->pluck('activityId')->all())->toBe([$unlimited->id]);
-});
-
-it('keeps a limited activity on the days that still have room', function () {
-    $hotel = pitchHotel();
-    [$guest, $reservation] = pitchGuest($hotel);
-    $limited = pitchActivity($hotel, ['name' => 'Private Cruise', 'daily_capacity' => 4]);
-    [$other] = pitchGuest($hotel);
-    wp5Booking($hotel, [
-        'guest_id' => $other->id,
-        'activity_id' => $limited->id,
-        'pax' => 3,
-        'scheduled_for' => Carbon::parse('2026-09-20 10:00', 'Asia/Riyadh')->utc(),
-    ]);
-    wp5Booking($hotel, [
-        'guest_id' => $other->id,
-        'activity_id' => $limited->id,
-        'pax' => 1,
-        'scheduled_for' => Carbon::parse('2026-09-20 18:00', 'Asia/Riyadh')->utc(),
-    ]);
-    classifierSays();
-
-    $candidate = decideTurn($guest, $hotel, $reservation)->decision->candidates['shortlist'][0];
-
-    expect($candidate['open_dates'])->toBe(['2026-09-19', '2026-09-21'])
-        ->and($candidate['capacity'])->toBe('known');
-});
-
-it('excludes an activity already booked this stay', function () {
+it('ignores a recommendation already delivered, refused or pitched', function () {
     $hotel = pitchHotel();
     [$guest, $reservation, $stay] = pitchGuest($hotel);
-    $booked = pitchActivity($hotel);
-    wp5Booking($hotel, ['guest_id' => $guest->id, 'stay_id' => $stay->id, 'activity_id' => $booked->id]);
+    $delivered = pitchRecommendation($hotel, $reservation, 'Already Seen');
+    Recommendation::whereKey($delivered->id)->update(['delivered_at' => now()->subHour()]);
+    pitchRecommendation($hotel, $reservation, 'Refused', ['status' => RecommendationStatus::REJECTED]);
+    earlierPitch($stay, $reservation);   // links its recommendation to a decision
+    $open = pitchRecommendation($hotel, $reservation, 'Still Open');
     classifierSays();
 
-    expect(exclusionOf(decideTurn($guest, $hotel, $reservation), $booked)['reason'])
-        ->toBe(CandidateExclusion::ALREADY_BOOKED->value);
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    expect(collect($turn->shortlist)->pluck('recommendationId')->all())->toBe([$open->id]);
 });
 
-it('excludes an activity that clashes with a same-category booking on every date', function () {
+it('ignores a recommendation whose activity is no longer active', function () {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    $retired = pitchRecommendation($hotel, $reservation, 'Retired Tour');
+    $retired->activity->update(['is_active' => false]);
+    classifierSays();
+
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    expect($turn->shortlist)->toBe([])
+        ->and($turn->decision->candidates['considered'])->toBe(0);
+});
+
+it('offers a recommendation regardless of prior bookings, timeframe or capacity', function () {
+    // The pitching plan originally excluded these; the 20 Sep 2026 revision
+    // dropped them, on the basis that RecommendationAgent's own judgment is
+    // trusted whole. This locks that decision in against an accidental
+    // reintroduction.
     $hotel = pitchHotel();
     [$guest, $reservation, $stay] = pitchGuest($hotel);
+    $awkward = pitchRecommendation($hotel, $reservation, 'PADI Open Water', activity: [
+        'available_until' => '2026-09-18',   // season already over
+        'duration_days' => 3,
+        'daily_capacity' => 1,
+        'operating_hours' => ['tuesday' => [['start' => '10:00', 'end' => '12:00']]],
+    ]);
+    wp5Booking($hotel, ['guest_id' => $guest->id, 'stay_id' => $stay->id, 'activity_id' => $awkward->activity_id]);
+    classifierSays();
+
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    expect(collect($turn->shortlist)->pluck('recommendationId')->all())->toBe([$awkward->id])
+        ->and($turn->decision->candidates['excluded'])->toBe([]);
+});
+
+it('keeps only recommendations in the category the guest asked about', function () {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
     $spa = ActivityCategory::create(['hotel_id' => $hotel->id, 'name' => 'Spa']);
-    $facial = pitchActivity($hotel, ['name' => 'Facial', 'category_id' => $spa->id]);
-    $massage = pitchActivity($hotel, ['name' => 'Massage', 'category_id' => $spa->id]);
-    foreach (['2026-09-19', '2026-09-20', '2026-09-21'] as $date) {
-        wp5Booking($hotel, [
-            'guest_id' => $guest->id,
-            'stay_id' => $stay->id,
-            'activity_id' => $facial->id,
-            'scheduled_for' => Carbon::parse("{$date} 16:00", 'Asia/Riyadh')->utc(),
-        ]);
-    }
-    wp5Booking($hotel, ['guest_id' => $guest->id, 'stay_id' => $stay->id, 'item_name' => 'Minibar']);
-    classifierSays();
+    $massage = pitchRecommendation($hotel, $reservation, 'Hot Stone Massage', activity: ['category_id' => $spa->id]);
+    $boat = pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
+    classifierSays(['opening' => 'asks_about_activities', 'interest_category_id' => $spa->id]);
 
     $turn = decideTurn($guest, $hotel, $reservation);
 
-    expect(exclusionOf($turn, $massage)['reason'])->toBe(CandidateExclusion::CLASHES_ON_ALL_DATES->value)
-        ->and($turn->decision->candidates['unscheduled_bookings'])->toBe(1);
+    expect(collect($turn->shortlist)->pluck('recommendationId')->all())->toBe([$massage->id])
+        ->and(exclusionOf($turn, $boat->activity)['reason'])->toBe('outside_interest');
 });
 
 it('keeps the shortlist to the configured size', function () {
     config(['pitching.shortlist_size' => 2]);
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    foreach (['Archery', 'Bowling', 'Cycling'] as $name) {
-        pitchActivity($hotel, ['name' => $name]);
+    foreach (['Archery', 'Bowling', 'Cycling'] as $index => $name) {
+        pitchRecommendation($hotel, $reservation, $name, ['priority' => $index]);
     }
     classifierSays();
 
@@ -630,6 +556,81 @@ it('keeps the shortlist to the configured size', function () {
     expect($candidates['considered'])->toBe(3)
         ->and(array_column($candidates['shortlist'], 'name'))->toBe(['Archery', 'Bowling'])
         ->and(array_column($candidates['shortlist'], 'rank'))->toBe([1, 2]);
+});
+
+// --- generating inline, when nobody has yet ---------------------------------
+
+it('generates recommendations inline for a reservation that has never had any', function () {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    $activity = pitchActivity($hotel, ['name' => 'Sunset Catamaran']);
+    classifierSays();
+    // Stands in for the model calling create-recommendation: the assertion is
+    // about PitchRecommendationGenerator's own orchestration, not about
+    // whether an LLM reliably calls a tool, which is RecommendationAgent's
+    // own concern.
+    RecommendationAgent::fake(function () use ($hotel, $reservation, $activity) {
+        Recommendation::create([
+            'hotel_id' => $hotel->id,
+            'reservation_id' => $reservation->id,
+            'activity_id' => $activity->id,
+            'reason' => 'Two adults, no water activity yet',
+            'predicted_confidence' => 0.8,
+            'priority' => 0,
+            'recommended_at' => now(),
+        ]);
+
+        return 'Generated one recommendation.';
+    });
+
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    expect($turn->eligible)->toBeTrue()
+        ->and(collect($turn->shortlist)->pluck('activityId')->all())->toBe([$activity->id])
+        ->and(MeterEvent::where('feature_code', MeterFeature::RECOMMENDATIONS_GENERATED->value)
+            ->where('source_id', $reservation->id)->value('quantity'))->toBe(1);
+});
+
+it('does not generate again for a reservation that has been generated for before', function () {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    // Already generated once — the one recommendation it produced was since
+    // refused, so nothing is pending, but that must not trigger a second run.
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran', ['status' => RecommendationStatus::REJECTED]);
+    classifierSays();
+    RecommendationAgent::fake()->preventStrayPrompts();
+
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    RecommendationAgent::assertNeverPrompted();
+    expect($turn->eligible)->toBeFalse()
+        ->and(gateOf($turn, PitchGate::NO_CANDIDATES)['passed'])->toBeFalse();
+});
+
+it('blocks the turn when generation runs and produces nothing to offer', function () {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    classifierSays();
+    RecommendationAgent::fake(['Nothing in the catalogue fits this guest.']);
+
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    expect($turn->eligible)->toBeFalse()
+        ->and(gateOf($turn, PitchGate::NO_CANDIDATES)['passed'])->toBeFalse()
+        ->and(MeterEvent::where('feature_code', MeterFeature::RECOMMENDATIONS_GENERATED->value)->exists())->toBeFalse();
+});
+
+it('still decides the turn when generation throws', function () {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    classifierSays();
+    RecommendationAgent::fake(fn () => throw new RuntimeException('provider down'));
+
+    $turn = decideTurn($guest, $hotel, $reservation);
+
+    expect($turn->eligible)->toBeFalse()
+        ->and($turn->decision)->not->toBeNull()
+        ->and(gateOf($turn, PitchGate::NO_CANDIDATES)['passed'])->toBeFalse();
 });
 
 // --- the decision row -------------------------------------------------------
@@ -657,7 +658,7 @@ it('refuses to update decision columns once written', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
     classifierSays();
-    pitchActivity($hotel);
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
 
     $decision = decideTurn($guest, $hotel, $reservation)->decision;
 
@@ -689,7 +690,7 @@ function pitchJob(Guest $guest, Reservation $reservation, string $message = 'Hi!
 it('writes exactly one completed decision per guest turn', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
-    pitchActivity($hotel);
+    pitchRecommendation($hotel, $reservation, 'Sunset Catamaran');
     classifierSays();
     GuestConciergeAgent::fake(['We have a sunset catamaran tonight!']);
 

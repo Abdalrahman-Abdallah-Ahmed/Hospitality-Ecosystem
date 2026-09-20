@@ -24,7 +24,46 @@ Read §2 before anything else. It lists every place this plan differs from the b
 
 **Section numbers.** The document sections are numbered §1 to §16 and the work packages are WP-13 to WP-18, each with its own `13.1`-style subsections. So "§13" means the **Sequence** section, and "13.3" means a subsection of WP-13.
 
-**Estimated total: 18–26 working days** for one developer, full time.
+**Estimated total: 15–22 working days** for one developer, full time.
+
+> ## Revision, 20 September 2026 — the shortlist comes from the recommendation agent
+>
+> **Owner decision.** Pitching no longer chooses an activity of its own. It
+> offers what `RecommendationAgent` already generated for the reservation,
+> in the order that agent set (`priority`, then `predicted_confidence`).
+>
+> Removed: the ranking rules (WP-17's `PitchRanker` and `RankingSignals`), and
+> the per-activity exclusion machinery in WP-16 (`ActivityTimeframe`,
+> open-date, capacity, clash and duration checks).
+>
+> Kept: every gate about the *guest* — the feature switch, stay, in-house,
+> departure day, pitch cap, earlier refusal, escalation, open service request,
+> complaint, opening. Those decide whether to speak at all, which is a separate
+> question from what to say.
+>
+> **Second revision, same day.** The owner went further: remove the two
+> exclusions the first revision kept (already booked this stay, season or
+> closure rules out every day) — pitching offers whatever
+> `RecommendationAgent` generated, unreviewed. The one exclusion left is the
+> guest's own words: a category they did not ask about is filtered out. It is
+> a single value, not the enum the plan first specified, because one case
+> does not need one. Reservations with nothing generated are no longer
+> silently stuck either: a turn that finds none generates inline, once, the
+> first time it needs a shortlist (16.3.5).
+>
+> **Third revision, same day.** The concierge does not choose which shortlisted
+> recommendation to mention — but neither does a second, live call to
+> `RecommendationAgent`. An earlier draft of this section had the concierge
+> ask `RecommendationAgent` to pick among the shortlist on every eligible
+> turn; the owner rejected that too: `RecommendationAgent` runs on a guest
+> turn **only** through 16.3.5, when the reservation has never been generated
+> for at all. Once it has, the top of its own stored order is offered,
+> unreviewed, by plain code — no re-consultation, ever. The concierge's only
+> remaining job is deciding whether this is a natural moment to mention it,
+> and citing the words that make it one. See 17.1–17.2.
+>
+> The sections below are marked where they changed. WP-13, WP-15 and WP-18 are
+> unaffected.
 
 ---
 
@@ -65,7 +104,7 @@ This package teaches the AI concierge to do the same, **carefully**: at most onc
 | Can the rules tell whether an activity suits this party and fits in the days they have left? | WP-14 |
 | Did a recommendation actually reach the guest, or was it only generated? | WP-15 |
 | Is this guest allowed to be pitched right now, and if not, why not? | WP-16 |
-| Which activity should be pitched, and why that one? | WP-17 |
+| Which of the generated recommendations is offered, and why that one? | WP-16 shortlists, WP-17 pitches |
 | Does pitching work, measured on the right population? | WP-18 |
 | Which in-house guests has nobody talked to yet? | WP-18 |
 
@@ -82,7 +121,7 @@ The brief was written from an earlier reading of the repo. These are the points 
 | # | The brief says | The repo says | What this plan does |
 |---|---|---|---|
 | C-1 | Prior purchases come from `transactions` via `master_guest_id`. | **No `master_guest_id` column exists.** (`Guest::eventLoggedAttributes()` lists it, but that is a dangling name.) Guests are per hotel; `GuestIdentityService::findExistingGuest()` reuses a guest row **within one hotel only**, deliberately. | Prior-stay history = `transactions` for the same `guest_id` on *other* stays at the same hotel. History across a hotel group is not available and is a privacy and tenancy decision (§15, D-9). |
-| C-2 | Gates: "remaining nights insufficient for the activity", "no capacity on any date". | Since 18 Sep 2026 (`9886d45`) activities carry a **timeframe**: season (`available_from`/`available_until`), weekday `operating_hours` in hotel time, and `unavailable_periods`. Null = no restriction. There is still **no capacity, duration (in days) or audience data**, and bookings do not check the timeframe. | WP-16 uses the timeframe to work out which remaining days an activity is open. WP-14 adds the three missing optional columns. For those, `null` means *unknown* and never fires a gate; the unknown is recorded in provenance. |
+| C-2 | Gates: "remaining nights insufficient for the activity", "no capacity on any date". | Since 18 Sep 2026 (`9886d45`) activities carry a **timeframe**: season (`available_from`/`available_until`), weekday `operating_hours` in hotel time, and `unavailable_periods`. Null = no restriction. There is still **no capacity, duration (in days) or audience data**, and bookings do not check the timeframe. | *Revised 20 Sep 2026:* WP-16 uses only the season and closure dates, to drop a recommendation that cannot happen before the guest leaves. Weekday hours, capacity and duration are not checked at all — staff confirm the slot on a `PENDING` booking. WP-14's three columns ship as catalogue data. |
 | C-3 | Put `first_contacted_at` / `last_contacted_at` on `guests`. | Guest rows are reused across stays at the same hotel. A guest-level timestamp cannot say whether a guest who messaged in March *also* messaged during their September stay, once they message again in October. | Stamp both `guests` **and** `stays`. Segments are computed per stay (WP-13). |
 | C-4 | Store provenance in the outcome's `context` JSON. | `recommendation_outcomes` holds **one row per recommendation, upserted** (`unique('recommendation_id')`). `RecommendationOutcomeService::record()` writes `'context' => $attributes['context'] ?? null`, `'evidence_quote' => … ?? null` and `'confidence' => … ?? null` on every update. `BookingService::creditRecommendation()` passes none of them. **So at the moment of conversion, the pitch's context and the guest's quoted "yes" are overwritten with null.** | Provenance goes in a new append-only `pitch_decisions` table (WP-16). WP-15 also fixes the overwrite, so earlier L1 evidence is preserved when a stronger outcome supersedes it. |
 | C-5 | Attribution is `CONVERSATIONAL`, L1. | A booking carrying `recommendation_id` is credited `AttributionMethod::DIRECT` by `BookingService`, and DIRECT **outranks** CONVERSATIONAL (precedence 4 > 3). | No change needed: both are L1 and the precedence chain is correct. But say it plainly in the docs. **Converted pitches appear under `attribution.direct`**, while CONVERSATIONAL holds accepted, declined and delivered outcomes that did not become bookings. |
@@ -90,7 +129,7 @@ The brief was written from an earlier reading of the repo. These are the points 
 | C-7 | Pitches only at contextual openings; never appended to an unrelated reply. | The current prompt tells the agent to recommend *"when you're wrapping up a conversation about their stay"* — i.e. appended to unrelated replies. It also says *"tailor a recommendation yourself"*, which creates **no recommendation row**. Those pitches are invisible to every metric today. | WP-17 removes both paragraphs. Every suggestion now goes through one tool that writes a row. |
 | C-8 | Queue jobs set tenancy via `TenantContext::runForHotel()`, "as already done". | Only `CreateAiInsightsJob` and `MatchRecommendationOutcomesJob` do. **`ProcessInboundWhatsAppMessageJob` runs unscoped**; its tools filter by `hotel_id` by hand. | New pitching code wraps *its own* queries in `runForHotel()`. **Do not wrap the whole concierge call** — see WP-16 Trap 1. |
 | C-9 | "Departing today." | `SenderRecognitionService` uses `now()->toDateString()` in the app timezone (UTC). `hotels.timezone` exists. | All new date logic uses the hotel's local date (WP-16). |
-| C-10 | Segment signal: nationality, market segment. | `stays.market_segment` is **never written** by any code path. `guests.nationality` is filled only when someone types it. | Recommend excluding segment from ranking entirely; record it in provenance only (§15, D-6). |
+| C-10 | Segment signal: nationality, market segment. | `stays.market_segment` is **never written** by any code path. `guests.nationality` is filled only when someone types it. | Moot since the 20 Sep 2026 revision: nothing is ranked at pitch time. Still recorded in provenance. |
 | C-11 | "Already declined anything this stay." | `UpdateRecommendationTool` sets `recommendations.status = rejected` on an explicit no. But the service's **confidence floor** can record the *outcome* as DELIVERED when the agent was unsure. | The decline gate reads `recommendations.status`, not the outcome (WP-16 Trap 4). |
 | C-12 | "The conversation is a complaint." | There is no structural marker for a complaint. `EscalateToHumanTool` creates a `Task` with a fixed title and **no `reservation_id`**. `CreateGuestServiceRequestTool` is used both for "the AC is broken" *and* for "help this guest book the boat trip". | WP-16 adds `tasks.guest_signal` and a layered detection proposal (§WP-16, 16.4). |
 | C-13 | `delivered_at` = "the agent mentioned it in a reply". | `WhatsAppMessageService::send()` returning means **Meta accepted the message**, not that it reached the phone. The webhook ignores Meta's delivery-status callbacks. | `delivered_at` means "sent in a reply that WhatsApp accepted". Device receipts are future work, noted in the docs. |
@@ -105,7 +144,7 @@ The brief was written from an earlier reading of the repo. These are the points 
 - a **separate classifier** whose output code consumes as a hard gate. It is not the pitching agent's own judgment, because an agent told to sell should not also decide whether it may sell;
 - a **same-turn backstop** in code.
 
-The classifier is still an LLM. That is stated here rather than hidden. It is also *not* a scoring model: it decides whether a gate is open, never what to rank first. Ranking stays pure rules (§WP-17).
+The classifier is still an LLM. That is stated here rather than hidden. It is also *not* a scoring model: it decides whether a gate is open, never which activity is offered. The order comes from the recommendations already generated for the reservation (§WP-17).
 
 ---
 
@@ -114,17 +153,17 @@ The classifier is still an LLM. That is stated here rather than hidden. It is al
 | WP | Name | Days (est.) |
 |---|---|---|
 | WP-13 | Contact stamping and backfill | 2–3 |
-| WP-14 | Activity pitching attributes | 1–2 |
+| WP-14 | Activity pitching attributes (shipped; now catalogue data only — see WP-14) | 1–2 |
 | WP-15 | Delivery tracking | 3–4 |
-| WP-16 | Eligibility gates, complaint detection, decision provenance | 5–7 |
-| WP-17 | Ranking, the pitch tool, concierge integration | 4–6 |
+| WP-16 | Eligibility gates, complaint detection, decision provenance | 4–6 |
+| WP-17 | The pitch tool and concierge integration | 2–4 |
 | WP-18 | Engagement segments and the reception list | 3–4 |
 
 ### Out of scope
 
 - Outbound messaging of any kind, email, templates, campaigns, scheduled sends
 - Consent management: guests give consent when they make the reservation. The `guests.marketing_consent` column was dropped on 18 Sep 2026 (`2026_09_18_000000_drop_marketing_consent_from_guests_table`)
-- A scoring or ML model for ranking
+- Any ranking of activities at pitch time, scoring or otherwise: the recommendation agent's own order is used
 - Payment, deposit or pricing logic
 - Frontend work (the APIs below are consumed by a frontend built separately)
 - A slot or per-time capacity model for activities (WP-14 adds a daily capacity only)
@@ -141,8 +180,8 @@ The classifier is still an LLM. That is stated here rather than hidden. It is al
 | **Opening** | Something in the guest's *current* message that makes a suggestion welcome: they ask what to do, mention boredom, the kids, the weather, the evening. The list is an owner decision (§15, D-2). |
 | **Explicit request** | An opening where the guest *asks for* a suggestion ("what do you recommend?"). Treated differently from a contextual opening — see 16.2. |
 | **Gate** | A hard rule that blocks pitching for the whole turn. Evaluated in code. |
-| **Candidate** | An active activity that survived all per-activity exclusions. |
-| **Shortlist** | The top N ranked candidates (default 3) the agent may choose from. |
+| **Candidate** | A pending recommendation for this reservation whose activity is still offerable. |
+| **Shortlist** | The first N candidates (default 3), in the recommendation agent's own order, that the agent may choose from. |
 | **Turn** | One inbound guest message plus the one reply to it. One run of `ProcessInboundWhatsAppMessageJob`. |
 | **Staged** | The agent has called the pitch tool; a recommendation row exists; the reply has **not** been sent yet. |
 | **Delivered** | The reply containing the pitch was accepted by WhatsApp. `recommendations.delivered_at` is stamped. |
@@ -306,6 +345,22 @@ it('does not stamp another hotel\'s guest during backfill', ...);
 
 **Estimated: 1–2 days.**
 
+> **Revised 20 Sep 2026.** The exclusion and ranking rules these columns were
+> built for are gone (16.3, WP-17). Owner decision: keep them, because
+> `RecommendationAgent` should reason about duration, capacity and audience
+> when it generates — a diving course that takes three days, or a kids'
+> class for a couple, is a bad recommendation whether or not pitching would
+> have caught it separately.
+>
+> **Not wired in yet.** `GetActivitiesTool` — the tool both `RecommendationAgent`
+> and the WhatsApp concierge read the catalogue through — does not include
+> these three fields in what it returns, and neither agent's prompt mentions
+> them. Until that changes, staff can record them and the API returns them,
+> but no agent reasons about them. Closing that gap is a small, separate
+> change to `GetActivitiesTool` and `RecommendationAgent::instructions()`, not
+> part of this package. The section below is the original reasoning for why
+> the columns exist.
+
 ## Why
 
 Three of the brief's rules need facts the activity catalogue does not hold:
@@ -357,9 +412,9 @@ Add the three to `Activity::$fillable` and `$casts` (`audience` → `ActivityAud
 
 | Field | Rule it feeds | Used as |
 |---|---|---|
-| `duration_days` | How many **consecutive** days the activity takes (a 3-day diving course = 3). A start date is valid only if that many consecutive remaining dates, starting on it, are all open (16.3). `null` is treated as 1, i.e. a single-day activity, so only the open-dates check applies. | Per-candidate exclusion |
-| `daily_capacity` | Gate: a date is full when the sum of `pax` on non-cancelled bookings for this activity that day ≥ capacity. Excluded only when **every** remaining open date (16.3) is full. | Per-candidate exclusion |
-| `audience` | Ranking only. `FAMILY` ranks up for parties with children; `ADULTS_ONLY` ranks down for them. Never an exclusion: parents may want the couples' spa while the kids are at kids' club. | Ranking key |
+| `duration_days` | How many **consecutive** days the activity takes (a 3-day diving course = 3). `null` means a single day. | Intended for `RecommendationAgent`; not read anywhere yet |
+| `daily_capacity` | How many people the activity can take per day. `null` = unknown. | Intended for `RecommendationAgent`; not read anywhere yet |
+| `audience` | Who the activity is designed for. Never an exclusion: parents may want the couples' spa while the kids are at kids' club. | Intended for `RecommendationAgent`; not read anywhere yet |
 
 `daily_capacity` is deliberately crude. A real timetable (slots, times, resources) is its own module and out of scope. The booking lifecycle already covers the gap: a booking is created `PENDING` ("slot not yet confirmed") and staff confirm it.
 
@@ -384,7 +439,7 @@ it('leaves all three null when not supplied', ...);
 
 ## Traps
 
-1. **Do not default `daily_capacity` to 0.** Zero means "full every day" and silently disables pitching for the whole catalogue. Null means unknown.
+1. **Do not default `daily_capacity` to 0.** Zero would mean "full every day". Null means unknown. Nothing reads the column since the 20 Sep 2026 revision, but a later package might.
 2. **Do not backfill `audience` by guessing from category names.** "Kids Club" looks obvious; "Adventure" does not. An inferred audience is an L3 guess stored in an L1-looking column.
 
 ---
@@ -637,7 +692,7 @@ return [
         'classifier_history_messages' => 4,
     ],
 
-    // Bumped whenever a gate or ranking rule changes, and written into every
+    // Bumped whenever a gate changes, and written into every
     // decision row, so outcomes can be compared across rule versions.
     'rules_version' => '1.0',
 
@@ -723,33 +778,90 @@ The cap and decline gates run *after* the classifier only because they depend on
 
 **Counters are derived, never stored.** "Pitches this stay" is a `COUNT(*)` over recommendations linked to a `pitch_decisions` row for this stay whose opening was contextual. There is no `pitch_count` column to drift. This is the same rule the Phase 2 plan applied to usage: *events are the truth, totals are derived*.
 
-Per-activity exclusions (applied when building candidates, recorded per activity):
+**The shortlist, from the recommendation agent** *(revised 20 Sep 2026)*.
+Pitching does not choose an activity. The candidates for a turn are the
+reservation's own pending recommendations:
+
+```sql
+select * from recommendations
+ where reservation_id = :reservation
+   and status = 'pending'
+   and delivered_at is null
+   and pitch_decision_id is null
+ order by priority asc, predicted_confidence desc, id
+```
+
+joined to `activities`, keeping only rows where the activity is `is_active`.
+`priority` and `predicted_confidence` are the recommendation agent's own, so
+it decides the order. The first `shortlist_size` (default 3) go to the agent.
+
+**One exclusion, not an enum** *(revised 20 Sep 2026: owner decision, remove
+the not-needed checks)*. Booking status, timeframe, capacity and duration are
+not re-checked here — pitching offers whatever `RecommendationAgent`
+generated, unreviewed. The only thing it still filters on its own is the
+guest's own words:
 
 ```php
-// app/Enums/CandidateExclusion.php
-enum CandidateExclusion: string
+// PitchEligibilityService — a single string, not an enum: one case only
+private const OUTSIDE_INTEREST = 'outside_interest';
+```
+
+When the classifier reports an `interest_category_id`, only recommendations
+for activities in that category are candidates. If none are, the turn
+pitches nothing — a spa question is not answered with a boat trip. This is
+the one exclusion pitching still makes on its own judgment; keep it an
+exclusion rather than a ranking signal, because answering the wrong question
+is worse than answering the right one poorly.
+
+**No pending recommendation, no pitch.** That is the `NO_CANDIDATES` gate, and
+it is the normal case for a reservation nobody generated recommendations for.
+See 16.3.5 for how a reservation gets its first recommendations.
+
+### 16.3.5 Generating inline, when nobody has yet *(owner decision, 20 Sep 2026)*
+
+A reservation with no recommendations has nothing to shortlist, and most
+reservations have none: `RecommendationAgent` only runs when staff call
+`POST /api/reservation/{id}/recommendations/generate`. Leaving it there would
+mean most guests are never pitched, not because the rules blocked them but
+because nobody clicked a button.
+
+So a turn that reaches the shortlist step, for a reservation that has never
+been generated for, generates inline first:
+
+```php
+// app/Services/Pitching/PitchRecommendationGenerator.php
+class PitchRecommendationGenerator
 {
-    case ALREADY_BOOKED = 'already_booked';             // non-cancelled booking for this activity, this stay
-    case NOT_ENOUGH_DAYS = 'not_enough_days';           // no run of duration_days consecutive open dates before departure
-    case CLOSED_ON_ALL_DATES = 'closed_on_all_dates';   // timeframe: no remaining date is open — see below
-    case NO_CAPACITY = 'no_capacity';                   // full on every remaining open date (known capacity only)
-    case CLASHES_ON_ALL_DATES = 'clashes_on_all_dates'; // clashes on every remaining open date — see below
-    case OUTSIDE_INTEREST = 'outside_interest';         // guest asked about a different category
+    /** @throws \Throwable — the caller decides what an empty shortlist means */
+    public function ensureGenerated(Stay $stay): void;
 }
 ```
 
-**Open dates, from the activity timeframe.** The *remaining dates* are today through the day before `planned_departure_date`, in the hotel's timezone. A remaining date is **open** for an activity when all of these hold:
+Called from `PitchCoordinator::decide()`, right before
+`PitchEligibilityService::candidates()`, wrapped in the same try/catch as the
+classifier: a failure here is reported and simply leaves nothing to
+shortlist, which the `NO_CANDIDATES` gate already handles.
 
-1. it is inside the season: on or after `available_from`, and on or before `available_until` (a null bound is no limit);
-2. it is not inside any `unavailable_periods` range (both ends inclusive);
-3. `operating_hours` is null, or that weekday has at least one slot;
-4. for **today** only: `operating_hours` is null, or at least one of today's slots ends after the current local time.
+It runs **inside the guest message's own AI cost context**, which is already
+open when a turn reaches this point (`PitchCoordinator::begin()` runs inside
+`ProcessInboundWhatsAppMessageJob`'s `AiCostContext::for(GUEST_MESSAGE, …)`).
+Contexts nest and the innermost wins, so this spend is filed as guest-driven,
+the same treatment the classifier gets — not as the `staff_request` the
+queued `GenerateActivityRecommendationsJob` records when an admin asks
+directly. That job is untouched and still exists for the manual path.
 
-An activity with no open date is excluded as `CLOSED_ON_ALL_DATES`. The capacity and clash checks then look only at the open dates.
+**Once per reservation, ever.** The check is "has this reservation had *any*
+recommendation row, in any status" — not "does it have a pending one now". A
+reservation whose one recommendation was later refused is not regenerated;
+regenerating a stale batch is a deliberate follow-up, not this. Metered as
+`RECOMMENDATIONS_GENERATED`, same as the staff-triggered path, from the
+actual count of rows that appeared — never from what the model claims to have
+done.
 
-**Multi-day activities.** When `duration_days` is greater than 1, a date counts as a possible **start date** only if it and the following `duration_days − 1` dates are all remaining dates and all open, with capacity, and without a clash. No start date → `NOT_ENOUGH_DAYS`. For single-day activities every surviving open date is a start date. The candidate's `open_dates` is the list of start dates. Put the calculation in one pure method, `ActivityTimeframe::openDates(Activity $activity, CarbonInterface $from, CarbonInterface $until, CarbonInterface $now): array`, in `app/Support/Pitching/`, with no queries, so it can be tested case by case.
-
-**Clash, without durations.** Activities now have weekday hours but still no length, and a booking's `scheduled_for` has a start and no end, so a true time clash still cannot be computed. Default rule, pending the owner (§15, D-7): a remaining date *clashes* for an activity when the guest already holds a non-cancelled booking **in the same activity category** on that date. A booking with a null `scheduled_for` clashes with nothing and is counted in provenance as `unscheduled_bookings`. An activity is excluded only when every remaining date clashes.
+This adds latency to the *first* eligible turn for a reservation only: one
+more agent call (four tools, structured output) before the classifier and the
+concierge run. Every later turn for that reservation finds recommendations
+already there and skips straight to the shortlist.
 
 ### 16.4 Complaint detection — the proposal
 
@@ -851,7 +963,7 @@ Schema::create('pitch_decisions', function (Blueprint $table) {
     $table->text('opening_quote')->nullable();           // guest's words — see Trap 6
     $table->foreignUuid('interest_category_id')->nullable()
         ->constrained('activity_categories')->nullOnDelete();
-    $table->json('candidates')->nullable();              // shortlist + exclusions, shape below
+    $table->json('candidates')->nullable();              // shortlisted recommendations + exclusions, shape below
     $table->json('signals')->nullable();                 // inputs used: party, prior purchases, segment
     $table->string('rules_version');
     $table->timestamp('decided_at');
@@ -887,25 +999,25 @@ enum PitchResult: string
 }
 ```
 
-`candidates` JSON shape. Write it exactly like this; WP-18 reads it.
+`candidates` JSON shape *(revised 20 Sep 2026)*. Write it exactly like this;
+WP-18 reads it.
 
 ```json
 {
-  "considered": 14,
-  "unscheduled_bookings": 1,
+  "considered": 3,
   "shortlist": [
     {
       "rank": 1,
+      "recommendation_id": "01a0…",
       "activity_id": "9d1c…",
       "name": "Sunset Catamaran",
-      "reasons": ["category_booked_this_stay", "audience_fits_party"],
-      "sort_key": [1, 0, 1, 1, 0.0],
-      "open_dates": ["2026-09-19", "2026-09-20"],
-      "capacity": "unknown"
+      "reason": "Two adults on a five-night stay, no water activity booked yet",
+      "priority": 0,
+      "predicted_confidence": "0.90"
     }
   ],
   "excluded": [
-    { "activity_id": "4ab2…", "name": "PADI Open Water", "reason": "not_enough_days", "detail": "needs 3 consecutive open days, longest run is 2" }
+    { "recommendation_id": "01a1…", "activity_id": "4ab2…", "name": "PADI Open Water", "reason": "closed_on_all_dates", "detail": "Season ended 2026-09-18." }
   ]
 }
 ```
@@ -926,23 +1038,24 @@ class PitchEligibilityService
     /** Cap and decline, which depend on whether the opening is explicit. */
     public function evaluateOpeningGates(Stay $stay, PitchOpening $opening, GateReport $report): GateReport;
 
-    /** Per-activity exclusions, then ranking (WP-17). */
-    public function candidates(Guest $guest, Hotel $hotel, Stay $stay, ?string $interestCategoryId, CarbonInterface $now): CandidateList;
+    /** The reservation's pending recommendations, in the recommendation agent's order. */
+    public function candidates(Hotel $hotel, Stay $stay, ?string $interestCategoryId, CarbonInterface $now): CandidateList;
 }
 ```
 
-Value objects live in `app/Support/Pitching/`: `GateReport`, `GateResult`, `TurnSignal`, `CandidateList`, `Candidate`, `PitchTurn`. They are plain readonly classes with a `toArray()` for the JSON columns.
+Value objects live in `app/Support/Pitching/`: `GateReport`, `GateResult`, `TurnSignal`, `CandidateList`, `Candidate` (which carries the recommendation, not just the activity), `PitchTurn`. They are plain readonly classes with a `toArray()` for the JSON columns.
 
 **Evaluate every cheap gate even after one fails.** Recording that five of six passed is information: it tells you which rule is doing the blocking. Stop only before the classifier, which costs money.
 
 > **As implemented (19 Sep 2026).** Where the code differs from the text above:
 > - Migrations are `2026_09_19_000005` (guest signal) and `000006` (pitch decisions); `000000`–`000004` were already taken.
-> - `candidates()` takes no `Guest` yet; WP-17 adds it when ranking needs prior purchases. Until then the shortlist is the first N candidates by name.
+> - `candidates()` takes no `Guest`. Superseded by the 20 Sep 2026 revision: the shortlist is the reservation's pending recommendations, so the built version (activity exclusions, ordered by name) is being replaced.
 > - `PitchCoordinator` exists from WP-16 with `begin()` and `complete()`. The job calls `begin()` inside the cost context before the concierge runs, and `complete()` right after the reply is generated, recording `ineligible` or `no_pitch`. WP-17 moves completion of pitched turns to after the send and adds `abandon()`.
 > - Gates that need a stay are not recorded when there is none: the row shows `feature_disabled` and a failed `no_stay` only.
 > - The `PitchTurn` is set on the concierge after its conversation is resumed, so the escalation and service-request tools can mark it (Layer 3). `PitchTurn` is the one mutable value object, for that flag.
 > - The pitch cap counts pitches whose turn is still running or ended `pitched`; a `reply_failed` pitch never reached the guest and does not count.
 > - `tasks.guest_signal` is not fillable, so the tasks API cannot relabel a complaint.
+> - WP-17 narrows `$turn->shortlist` to at most its top-ranked entry before the decision row is written (17.1) — a plain code step inside `PitchCoordinator::decide()`, after `candidates()`, no AI call. `PitchDecision::candidates` on a completed turn then shows what was offered, not merely what was eligible to be offered.
 
 ## How to verify
 
@@ -961,13 +1074,13 @@ it('does not run the classifier when a cheap gate fails', ...);
 it('fails closed when the classifier throws', ...);
 it('treats a classifier quote not found in the message as a failure', ...);
 it('ignores an interest category id from another hotel', ...);
-it('excludes a multi-day activity with too few consecutive open days before departure', ...);
-it('treats a null duration as a single day', ...);
-it('excludes an activity closed on every remaining date by season, closure or weekday hours', ...);
-it('does not count today as open once today's last slot has ended', ...);
-it('treats a null timeframe as open every day', ...);
-it('excludes an activity full on every remaining open date but not one with unknown capacity', ...);
+it('shortlists this reservation\'s pending recommendations in the agent\'s own order', ...);
+it('blocks the turn when the reservation has no pending recommendation', ...);
+it('ignores a recommendation already delivered, refused or pitched', ...);
+it('ignores a recommendation whose activity is no longer active', ...);
 it('excludes an activity already booked this stay', ...);
+it('excludes an activity whose season or closures rule out every remaining day', ...);
+it('keeps only recommendations in the category the guest asked about', ...);
 it('records every gate result, not just the first failure', ...);
 it('writes a decision row for an ineligible turn', ...);
 it('refuses to update decision columns once written', ...);
@@ -982,6 +1095,7 @@ it('still replies to the guest when the eligibility service throws', ...);
 ## Acceptance criteria
 
 - [ ] Every gate in 16.3 is implemented in code, with a test that trips it
+- [ ] The shortlist is the reservation's pending recommendations, in the recommendation agent's order
 - [ ] Explicit requests bypass the cap and the decline gate, and nothing else
 - [ ] All date logic uses the hotel's timezone
 - [ ] `tasks.guest_signal` exists, is backfilled where certain, and is set by both concierge tools
@@ -1003,59 +1117,61 @@ it('still replies to the guest when the eligibility service throws', ...);
 
 ---
 
-# WP-17 — Ranking, the pitch tool, concierge integration
+# WP-17 — The pitch tool and concierge integration
 
-**Estimated: 4–6 days.**
+**Estimated: 2–4 days.** *(Revised 20 Sep 2026: ranking removed.)*
 
 ## Why
 
-WP-16 decides *whether* to pitch. This package decides *what*, gives the agent a controlled way to do it, and records delivery only once the reply has actually been sent.
+WP-16 decides *whether* to pitch, and hands over a shortlist of the
+reservation's own pending recommendations, already in `RecommendationAgent`'s
+own order. This package offers the top of that list, and records delivery
+only once the reply has actually been sent.
 
 ## What you build
 
-### 17.1 Ranking: rules, in order
+### 17.1 Who picks: code, from `RecommendationAgent`'s own stored order
 
-Ranking is a **lexicographic sort**: compare on the first key; only on a tie look at the second, and so on. There are no weights and no scores to add up. Every position can be explained in one sentence ("ranked first because they booked something in this category yesterday").
+**`RecommendationAgent` is never called at pitch time.** The only place a
+guest turn may cause it to run is 16.3.5 — once, for a reservation that has
+never been generated for at all. A reservation that already has
+recommendations never triggers a second call, live or otherwise, no matter
+how many turns it takes. That was tried as a "choose" step in an earlier
+draft of this section and is deliberately not built: re-consulting the model
+on every eligible turn, to pick among options it already ranked once, is a
+cost for a question it already answered.
 
-The brief's signals, as implemented:
-
-| Order | Signal | Source | How it is used |
-|---|---|---|---|
-| 1 | **What the guest just said** | `TurnSignal::$interestCategoryId` | **Filter**, not a sort key. If the guest asked about the spa, only spa activities are candidates. If none survive, no pitch; we do not answer a spa question with a boat trip. |
-| 2 | **Booked this stay** | `bookings` (non-cancelled, this `stay_id`) | Key: activity is in a category they already booked this stay → 1, else 0 |
-| 3 | **Bought on prior stays** | `transactions` for this `guest_id`, `stay_id` ≠ current, `activity_id` not null, not reversed | Key: same activity bought before → 2; same category → 1; else 0 |
-| 4 | **Party composition** | `stays.adults`, `stays.children` × `activities.audience` | Key: children > 0 and `FAMILY`, or no children and `ADULTS_ONLY` → 1; `ALL` or null → 0; children > 0 and `ADULTS_ONLY` → −1 |
-| 5 | **Segment** | `guests.nationality`, `stays.market_segment` | **Not used for ranking in v1.** Recorded in `signals` only. See §15 D-6. |
-| tie | Pre-generated recommendation | `recommendations` for this reservation, `pitch_decision_id` null, status `PENDING` | Key: exists → 1, then its `predicted_confidence` |
-| tie | Stable order | `activities.name` | So the same inputs always give the same list |
+So the offer is decided in code, deterministically, from what 16.3 already
+produced:
 
 ```php
-// app/Services/Pitching/PitchRanker.php — pure: no queries, fully unit-testable
-class PitchRanker
-{
-    /**
-     * @param  Collection<int, Candidate>  $candidates  already filtered
-     * @return Collection<int, Candidate>  ranked, each with reasons[] and sortKey[]
-     */
-    public function rank(Collection $candidates, RankingSignals $signals): Collection;
-}
+$offer = $candidates->shortlist[0] ?? null;   // already ordered: priority, then predicted_confidence, then id
 ```
 
-`RankingSignals` is built by `PitchEligibilityService::candidates()` with all the queries done up front. That keeps the ranker free of the database and trivial to test.
+`$candidates->shortlist` is still capped at `shortlist_size` (default 3) and
+still filtered to the category the guest asked about, exactly as 16.3
+describes — that filtering and ordering is untouched. Only the top entry is
+ever offered; positions 2 and 3 exist in `PitchDecision.candidates` purely
+for a person reviewing the turn later ("what else was available, and why did
+rank 1 win"), never for a live choice.
 
-### 17.2 How the agent gets candidates — the trade-off
+**Why not let the concierge, or a re-consulted `RecommendationAgent`, weigh
+the current message against the options.** Both were considered and both
+add a second judgment over a question `RecommendationAgent` already settled
+when it generated. A concierge with its own, differently-instructed judgment
+can disagree with the reasoning that produced the list in the first place;
+a second `RecommendationAgent` call agrees with itself by definition but
+costs a model call on every eligible turn to do it. Taking the stored order
+as final costs nothing extra and never contradicts the agent that made it.
 
-| Option | For | Against |
-|---|---|---|
-| **A. Agent chooses freely** from `GetActivitiesTool` | Best at matching nuance ("something quiet, my husband hates crowds") | Unexplainable; ignores prior purchases it cannot see; drifts; no way to tell what it passed over |
-| **B. Code picks one**, agent just phrases it | Fully explainable and deterministic | Code cannot read nuance in the live message; will pitch rank 1 even when the guest's words point at rank 2 |
-| **C. Code shortlists and ranks N; agent picks one from the shortlist** | Rules decide *what may be pitched* and in what order; the agent contributes only the live-language judgment; its choice is recorded as `chosen_rank` | Slightly more moving parts |
+`chosen_rank` records the offered recommendation's position in
+`RecommendationAgent`'s own stored order — always `1` under this rule, unless
+the interest-category filter removed rank 1 and the offer fell through to a
+lower one. That is still worth recording: it shows how often a guest's
+stated interest overrides the agent's own top pick, which the agent's stored
+order alone cannot show.
 
-**Recommendation: C, with N = 3.** The rules own everything they can own: gates, exclusions, history, party. The agent owns the one thing rules cannot do, reading the current sentence. And because `chosen_rank` is recorded, we can measure how often the agent overrides rule 1, and whether its overrides convert better or worse. That is exactly the evidence a later scoring model would need.
-
-The shortlist goes into the **system instructions for that turn**, not behind a tool call. It is short, it saves a round trip, and the agent cannot "forget" to look.
-
-### 17.3 The pitch tool
+### 17.2 The pitch tool
 
 ```php
 // app/Ai/Tools/PitchActivityTool.php
@@ -1063,34 +1179,35 @@ class PitchActivityTool implements Tool
 {
     public function __construct(
         private readonly PitchTurn $turn,          // shared with the job and the other tools
-        private readonly Hotel $hotel,
-        private readonly Reservation $reservation,
     ) {}
 
     // schema:
-    //   activity_id  (required) — must be on this turn's shortlist
     //   guest_words  (required) — the words in the guest's CURRENT message that make this welcome
+    //
+    // No activity_id. There is nothing to choose here — 17.1's code already
+    // picked the one candidate, and $turn carries at most that one. The
+    // concierge's only decision is whether now is a natural moment to
+    // mention it, and its only obligation is proving that with a quote.
 }
 ```
 
 `handle()` in order, refusing with a plain sentence the agent can act on at each failure:
 
-1. The turn is eligible, nothing has been staged yet this turn, and no escalation or service request has happened this turn (16.4 Layer 3).
-2. `activity_id` is on `$turn->shortlist()`.
-3. `guest_words` appears in the current message (same normalisation as the classifier). This is what makes "never appended to an unrelated reply" enforceable: the pitch must cite the sentence that invited it.
-4. Inside `DB::transaction()`, lock the stay row (`Stay::whereKey(...)->lockForUpdate()->first()`) and **re-check the cap**. Two messages processed by two workers at once must not both pitch.
-5. Reuse an existing `PENDING`, undelivered recommendation for this reservation and activity if there is one. Otherwise create one through `EventLogger::asAiAgent()`:
-   - `reason`: from the shortlist entry's reasons, in words
-   - `evidence_level`: `L3`
-   - `evidence_sources`: the stay, the activity, and any booking or transaction ids used as signals
-   - `recommended_at`: now
-   - `status`: `PENDING`
-6. Set `pitch_decision_id` on the recommendation. Stage it on `$turn`, with its rank.
-7. Return: *"Staged recommendation {id} for {name}. Mention it in this reply, briefly, after answering the guest. If they agree, pass recommendation_id {id} to the booking tool. Record their reaction with the update-recommendation tool."*
+1. The turn is eligible, `$turn->shortlist` carries exactly one candidate — 17.1 offered one, and nothing has been staged yet this turn, and no escalation or service request has happened this turn (16.4 Layer 3).
+2. `guest_words` appears in the current message (same normalisation as the classifier). This is what makes "never appended to an unrelated reply" enforceable: the pitch must cite the sentence that invited it, even though the concierge did not pick *what* to mention, only *that* now is the moment to mention it.
+3. Inside `DB::transaction()`, lock the stay row (`Stay::whereKey(...)->lockForUpdate()->first()`) and **re-check the cap**. Two messages processed by two workers at once must not both pitch.
+4. Take the recommendation the turn's single candidate carries. It already exists, written by `RecommendationAgent` at generation time, so nothing is created here — which is what keeps one activity from ending up with two rows.
+5. Set `pitch_decision_id` on the recommendation. Stage it on `$turn`, with its rank in `RecommendationAgent`'s own stored order (`chosen_rank`, 17.1).
+6. Return: *"Staged recommendation {id} for {name}. Mention it in this reply, briefly, after answering the guest. If they agree, pass recommendation_id {id} to the booking tool. Record their reaction with the update-recommendation tool."*
 
 The tool **does not** stamp delivery. Nothing has been sent yet.
 
-### 17.4 Wiring it into the job and the agent
+A concierge that calls this tool when `$turn->shortlist` is empty (nothing
+was offered, or the turn was ineligible) gets the same plain refusal as any
+other failed precondition — it cannot conjure an activity that was never
+offered to it.
+
+### 17.3 Wiring it into the job and the agent
 
 ```php
 // app/Services/Pitching/PitchCoordinator.php
@@ -1134,7 +1251,7 @@ $coordinator->complete($turn, $response->text);
 3. `mention_verified`: the activity's name appears in `$replyText` (case-insensitive). Stored, never used to block. The agent may reasonably translate a name.
 4. Write the completion columns: `result = PITCHED` (or `NO_PITCH` if eligible and nothing staged, or `INELIGIBLE`), `recommendation_id`, `chosen_rank`, `completed_at`.
 
-### 17.5 Agent changes
+### 17.4 Agent changes
 
 `GuestConciergeAgent`:
 
@@ -1146,39 +1263,32 @@ $coordinator->complete($turn, $response->text);
   - **Keep** the paragraph on recording reactions with the update-recommendation tool, and the booking-follow-up task rule (now with `kind = booking_follow_up`).
   - **Add** a section built from the turn:
 
-    When eligible:
-    > First, fully answer what the guest asked. Then, only if it fits naturally, suggest **one** activity from this list by calling the pitch tool with its id and the guest's own words that invited it. Mention only that activity, once, briefly. If the guest seems unhappy about anything, do not suggest anything.
-    > 1. {name} — {reason in words}. Open on: {open_dates, as weekday and date}. Only propose one of these days.
-    > 2. …
+    When the turn is eligible **and** one was offered (`$turn->shortlist` has an entry):
+    > First, fully answer what the guest asked. Then, only if it fits naturally, mention **{name}** — {the recommendation's own reason} — by calling the pitch tool with the guest's own words that invited it. Mention it once, briefly. If the guest seems unhappy about anything, do not mention it.
 
-    When not eligible:
+    When the turn is eligible but nothing was offered, or the turn is not eligible:
     > Do not suggest activities the guest did not ask about. If they ask what is available, answer factually from the activities tool without singling one out as a personal recommendation.
 
-  Keep the shortlist section in its own method, like `vipInstructions()`, so a test can assert on it.
+  There is no numbered list here any more — at most one activity ever reaches
+  this prompt, because 17.1's code already picked it. Keep the section in its
+  own method, like `vipInstructions()`, so a test can assert on it.
 
-- **Keep `GetRecommendationsTool`.** The agent needs recommendation ids to record reactions. Pre-generated recommendations now reach the guest **only** through the shortlist, where they win ties.
+- **Keep `GetRecommendationsTool`.** The agent needs recommendation ids to record reactions. Pre-generated recommendations now reach the guest **only** through the shortlist (17.1), where a pending one wins over none.
 
 ## How to verify
 
 ```php
-// tests/Feature/PitchRankerTest.php
-it('ranks an activity in a category booked this stay above one that is not', ...);
-it('ranks a previously bought activity above a previously bought category', ...);
-it('ignores reversed transactions as purchase history', ...);
-it('ranks family activities up for a party with children', ...);
-it('does not use nationality or market segment to rank', ...);
-it('restricts candidates to the category the guest asked about', ...);
-it('breaks ties with a pre-generated recommendation, then by name', ...);
-it('returns the same order for the same inputs', ...);
-
 // tests/Feature/PitchActivityToolTest.php
-it('refuses an activity that is not on this turn\'s shortlist', ...);
+it('stages the top-ranked pending recommendation', ...);
+it('falls through to the next-ranked recommendation when rank 1 is outside the guest\'s stated interest', ...);
+it('does nothing when the reservation has no pending recommendation to offer', ...);
 it('refuses when the quoted guest words are not in the current message', ...);   // ← the important one
 it('refuses a second pitch in the same turn', ...);
 it('refuses after the agent escalated earlier in the same turn', ...);
-it('reuses a pending pre-generated recommendation rather than duplicating it', ...);
+it('does not create a second recommendation row for the one it stages', ...);
 it('does not stamp delivery when the pitch is staged', ...);
 it('does not let two concurrent turns exceed the cap', ...);
+it('never calls RecommendationAgent when the reservation already has recommendations', ...);   // ← the important one
 
 // tests/Feature/ConversationalPitchingTest.php — end to end through the webhook
 it('stamps delivery and records a delivered outcome after the reply is sent', ...);
@@ -1191,12 +1301,12 @@ it('still answers the guest when the whole pitching layer throws', ...);
 
 ## Acceptance criteria
 
-- [ ] Ranking is a pure, deterministic, lexicographic rule set with a reason per key
-- [ ] Segment data is recorded but not used to rank
-- [ ] The agent sees at most N shortlisted activities and can pitch only one of them
+- [ ] Which recommendation is offered is decided in code, from `RecommendationAgent`'s own stored `priority`/`predicted_confidence`; nothing re-consults the model to choose
+- [ ] `RecommendationAgent` runs on a guest turn only through 16.3.5 (a reservation with none yet) — never a second time to pick among existing ones
+- [ ] The concierge sees at most one activity, already picked, and can only decide whether to mention it now
 - [ ] A pitch must cite words from the current message
 - [ ] Delivery is stamped only after `send()` returns
-- [ ] Every suggestion creates or reuses a recommendation row: no invisible pitches
+- [ ] Every suggestion carries an existing recommendation row: no invisible pitches, no duplicates
 - [ ] Old proactive-pitching prompt text is gone
 - [ ] Turned off (`PITCHING_ENABLED=false`), the concierge behaves exactly as before except for the removed paragraph
 
@@ -1204,10 +1314,10 @@ it('still answers the guest when the whole pitching layer throws', ...);
 
 1. **The model will try to pitch in text without the tool.** The prompt forbids it, and the tool is the only thing that writes a row. Track it anyway: count replies on ineligible turns that contain an active activity name the guest did not mention. Report the count in the logs; do not block on it.
 2. **Queue retries resend the message.** If `complete()` throws after the send, a retried job sends the reply twice and pitches twice. `complete()` must never throw: catch, report, return.
-3. **`predicted_confidence` is 0 on rule-created recommendations.** The column is non-null with default 0. Exclude `pitch_decision_id IS NOT NULL` rows from any analysis of predicted confidence, and say so in the recommendation docs.
-4. **Do not let the ranker read the database.** Once it does, tests need full fixtures, and "why was this ranked first" needs a debugger.
-5. **The agent's `maxConversationMessages()` is 10.** The shortlist belongs in the instructions, which are rebuilt every turn, not in message history, where it would go stale.
-6. **Bookings do not check the activity timeframe yet.** `CreateBookingTool` will record a booking for a closed day if the agent offers one. The shortlist carries `open_dates` and the prompt restricts the agent to them, but that is prompt-level. Making `BookingService::create()` reject a time outside the timeframe is a separate change, and it needs thought first, because staff override closures in real life. Until it ships, pitched bookings stay `PENDING` and staff confirm the slot.
+3. **A reservation that has never generated successfully looks the same as one the rules are quietly protecting.** Inline generation (16.3.5) retries on the *next* eligible turn only if the first one never produced a single row — if it throws every time (a provider outage, a spend ceiling), that reservation is stuck. Report generation failures separately from `NO_CANDIDATES`, so "the rules are working" and "generation is broken" are never the same number.
+4. **Recommendations age.** One generated on the first eligible turn does not know what the guest booked since, because the "once per reservation, ever" rule never regenerates — and there is no live re-consultation (17.1) to catch it either. There are no exclusions left to catch it (16.3.5 dropped them on purpose). If pitch decline reasons cluster on "already doing that", that is the signal to add a narrow refresh, not to bring live re-consultation or the exclusions back.
+5. **The agent's `maxConversationMessages()` is 10.** The offered activity is decided server-side (17.1), outside the concierge's own conversation entirely, so this only bears on the concierge's *own* prompt (the "mention {name}" paragraph, 17.4), which is rebuilt fresh every turn for the same reason it always was: stale instructions from ten messages ago are not this turn's decision.
+6. **Bookings do not check the activity timeframe yet.** `CreateBookingTool` will record a booking for a closed day if the agent offers one. Since the revision dropped the open-date list, the prompt no longer restricts the agent to particular days at all. Making `BookingService::create()` reject a time outside the timeframe is a separate change, and it needs thought first, because staff override closures in real life. Until it ships, pitched bookings stay `PENDING` and staff confirm the slot.
 
 ---
 
@@ -1388,7 +1498,7 @@ Week 1     WP-13 ████████ ────────────�
            WP-14 ░░░░████ ─────────────────────────── activity attributes (parallel)
 Week 1–2   WP-15 ░░░░░░░░████████ ─────────────────── delivery tracking          ← CHECKPOINT 1
 Week 2–3   WP-16 ░░░░░░░░░░░░░░░░██████████ ───────── gates + complaints + provenance
-Week 3–4   WP-17 ░░░░░░░░░░░░░░░░░░░░░░░░░░████████── ranking + tool + agent     ← CHECKPOINT 2
+Week 3–4   WP-17 ░░░░░░░░░░░░░░░░░░░░░░░░░░████──── pitch tool + agent        ← CHECKPOINT 2
 Week 4–5   WP-18 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░████ segments + reception list  ← CHECKPOINT 3
 ```
 
@@ -1410,7 +1520,7 @@ On a clean database:
 - [ ] No code path added here sends a WhatsApp message other than the reply to an inbound message
 - [ ] Every inbound guest message stamps contact on the guest and the resolved stay
 - [ ] Every guest turn with a stay writes exactly one `pitch_decisions` row
-- [ ] Every pitch creates or reuses a recommendation row; delivery is stamped only after a successful send
+- [ ] Every pitch carries a recommendation the recommendation agent generated; delivery is stamped only after a successful send
 - [ ] `RECOMMENDATIONS_DELIVERED` is metered, once per recommendation, with no monetary value
 - [ ] NOT_DELIVERED is written automatically after the cutover
 - [ ] A converted pitch keeps the guest's quoted acceptance in `context.superseded`
@@ -1435,11 +1545,12 @@ These are product, commercial or legal decisions. **Do not resolve them in code.
 | D-3 | **Complaint handling.** Accept the three-layer design, including one extra small-model call per eligible message? Does an escalation block for the rest of the stay or for a cooling-off period? How far back does an open service request count? | Three layers; rest of stay; 24 hours | Accept. Escalation for the rest of the stay is conservative and cheap to relax later; the reverse is not true. |
 | D-4 | ~~Marketing consent~~ — **resolved by the owner (18 Sep 2026).** Guests give consent when they make the reservation, so there is no consent gate. The `guests.marketing_consent` column has been dropped. | — | — |
 | D-5 | **Pre-arrival guests.** Pitch guests whose stay has not started? | No | No for v1: capacity and clash checks are about dates they are not yet present for. |
-| D-6 | **Segment signals.** Use nationality or market segment for ranking? | Recorded, not used | Keep out. `market_segment` is never populated, and ranking on nationality without evidence is an L3 guess that is also a profiling risk. |
-| D-7 | **Clash rule.** Activities have weekday hours but no duration, so a real time clash can't be computed | Same category, same date | Accept for v1. A `duration_minutes` column would allow a real time clash check later. |
+| D-6 | ~~Segment signals~~ — **moot since 20 Sep 2026.** Nothing is ranked at pitch time, so no signal is used. Still recorded in the decision row. | — | — |
+| D-7 | ~~Clash rule~~ — **moot since 20 Sep 2026.** Clash checking was removed with the exclusions; staff confirm the slot on a `PENDING` booking. | — | — |
 | D-8 | **Who sees what.** Reception list for employees without a role? Per-hotel on/off switch, or global? | Not in defaults until confirmed; global switch | Add the reception list to defaults. Add a per-hotel switch before a second hotel goes live. |
 | D-9 | **Group-level guest history.** Should prior purchases at a sister property count? | No (not possible today) | No, until a group-level identity and consent model exists. |
-| D-10 | **Capacity depth.** Is people-per-day enough, or are slots needed? | People per day, optional | Enough for a pilot; slots are a separate module. |
+| D-10 | ~~Capacity depth~~ — **moot since 20 Sep 2026.** Capacity is no longer checked when pitching. The column stays as catalogue data. |  — | — |
+| D-11 | ~~When are recommendations generated?~~ — **resolved by the owner, 20 Sep 2026.** Staff-triggered generation stays as it is; a turn that finds none also generates inline, once per reservation. See 16.3.5. | — | — |
 
 ---
 
@@ -1456,8 +1567,9 @@ These are product, commercial or legal decisions. **Do not resolve them in code.
 | A-7 | Staff record face-to-face outcomes through the existing outcome endpoint | Otherwise face-to-face deliveries become NOT_DELIVERED after the cutover; add a note to the rollout checklist |
 | A-8 | Pitching is enabled only after §15 decisions are recorded | A pitch reaches guests under rules nobody approved |
 | A-9 | Every guest consents to recommendations when making the reservation (owner, 18 Sep 2026) | A consent gate must be added to 16.3 before go-live |
+| A-10 | *Superseded 20 Sep 2026 by inline generation (16.3.5).* A reservation with none gets generated for on its first eligible turn, so this no longer depends on staff or on timing. What can still fail is the generation call itself — provider outage, a spend ceiling hit. | A reservation stuck with no recommendations pitches nothing, turn after turn, and looks identical in the decision log to one the rules are correctly staying quiet on. |
 
-**Confidence:** high for WP-13, WP-14 and WP-15 — they extend patterns the repo already uses (derived counts, idempotent metering, write-once fields, precedence). Moderate for WP-16 and WP-17: the gates and ranking are straightforward, but classifier accuracy can only be judged on real pilot traffic. Plan a manual review of the first 100 decision rows before trusting the segment report.
+**Confidence:** high for WP-13, WP-14 and WP-15 — they extend patterns the repo already uses (derived counts, idempotent metering, write-once fields, precedence). Moderate for WP-16 and WP-17: the gates are straightforward, but classifier accuracy, and how well the recommendation agent's order matches what guests accept, can only be judged on real pilot traffic. Plan a manual review of the first 100 decision rows before trusting the segment report.
 
 ---
 

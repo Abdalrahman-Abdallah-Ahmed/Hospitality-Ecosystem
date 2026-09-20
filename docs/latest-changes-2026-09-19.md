@@ -108,7 +108,7 @@ Three new migrations add nullable columns to `guests`, `stays`, `activities` and
 
 Tasks now return `guest_signal`: why a guest-related task exists (`escalation`, `service_request`, `booking_follow_up`, or `null`). Only the WhatsApp concierge sets it, and existing concierge tasks were labelled where their origin was certain. Escalations now also carry the guest's `reservation_id`.
 
-Behind the scenes, every guest WhatsApp message now records whether the concierge would be allowed to suggest an activity, and why or why not (a new `pitch_decisions` table with no API yet). Pitching itself is **off** (`PITCHING_ENABLED=false`), and nothing is suggested to guests yet.
+Behind the scenes, every guest WhatsApp message now records whether the concierge would be allowed to suggest an activity, and why or why not (a new `pitch_decisions` table with no API yet). What it *could* offer is whatever `RecommendationAgent` already generated for that reservation — a reservation nobody has ever generated for gets one generated inline, on its first eligible turn, so staff no longer have to trigger it by hand. Pitching itself is **off** (`PITCHING_ENABLED=false`), and nothing is suggested to guests yet.
 
 **What to change in the frontend:** nothing is required. A `guest_signal` badge on task rows is possible. Note that while a guest has an escalation this stay, or an open service request from the last 24 hours, the concierge will not suggest activities to them.
 

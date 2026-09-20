@@ -28,6 +28,7 @@ class PitchCoordinator
     public function __construct(
         private readonly PitchEligibilityService $eligibility,
         private readonly TurnSignalClassifier $classifier,
+        private readonly PitchRecommendationGenerator $generator,
     ) {}
 
     /**
@@ -81,9 +82,21 @@ class PitchCoordinator
         }
 
         if ($report->passed()) {
+            // A reservation nobody has generated recommendations for has
+            // nothing to offer. Generating here, once per reservation, means
+            // a guest is never silently un-pitchable just because staff never
+            // clicked the button. A failure here is not this turn's failure:
+            // it just leaves nothing to shortlist, the same as if generation
+            // had never run.
+            try {
+                $this->generator->ensureGenerated($stay);
+            } catch (Throwable $e) {
+                report($e);
+            }
+
             $candidates = $this->eligibility->candidates($hotel, $stay, $signal->interestCategoryId, $now);
             $report = $report->with($candidates->isEmpty()
-                ? GateResult::block(PitchGate::NO_CANDIDATES, 'No activity survived the exclusions.')
+                ? GateResult::block(PitchGate::NO_CANDIDATES, 'No recommendation to offer.')
                 : GateResult::pass(PitchGate::NO_CANDIDATES));
         }
 
