@@ -3,9 +3,9 @@
 namespace App\Imports;
 
 use App\Enums\ReservationStatus;
-use App\Enums\RoomTypes;
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -78,13 +78,28 @@ class ReservationsImport implements ToCollection, WithHeadingRow
         $roomNumber = trim((string) ($row['room_number'] ?? ''));
 
         if ($roomNumber !== '') {
-            $room = Room::firstOrCreate(
-                ['hotel_id' => $this->hotel->id, 'room_number' => $roomNumber],
-                [
-                    'room_type' => RoomTypes::tryFrom(strtolower(trim((string) ($row['room_type'] ?? ''))))?->value,
-                    'floor' => trim((string) ($row['floor'] ?? '')) ?: null,
-                ]
-            );
+            $roomTypeName = trim((string) ($row['room_type'] ?? ''));
+            $roomType = null;
+
+            if ($roomTypeName !== '') {
+                $roomType = RoomType::where('hotel_id', $this->hotel->id)
+                    ->where('name', 'ilike', $roomTypeName)
+                    ->first();
+            }
+
+            if (! $roomType) {
+                $roomType = RoomType::where('hotel_id', $this->hotel->id)->first();
+            }
+
+            if ($roomType) {
+                $room = Room::firstOrCreate(
+                    ['hotel_id' => $this->hotel->id, 'room_number' => $roomNumber],
+                    [
+                        'room_type_id' => $roomType->id,
+                        'floor' => trim((string) ($row['floor'] ?? '')) ?: null,
+                    ]
+                );
+            }
         }
 
         $guest = ReservationCreator::findOrCreateGuest($this->hotel->id, [

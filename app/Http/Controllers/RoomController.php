@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\RoomTypes;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\RoomResource;
+use App\Http\Resources\RoomTypeResource;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Support\RequestRules\GenericQuery;
 
 class RoomController extends Controller
@@ -22,9 +23,10 @@ class RoomController extends Controller
         $query = Room::query();
 
         $rooms = GenericQuery::apply($query, $request);
+        $roomTypes = RoomType::where('hotel_id', $request->user()->hotel_id)->get();
 
         $data = RoomResource::collection($rooms)->additional([
-            'room_types' => RoomTypes::cases(),
+            'room_types' => RoomTypeResource::collection($roomTypes),
         ]);
 
         return apiResponse('Rooms fetched successfully.', 200, $data);

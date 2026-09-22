@@ -9,7 +9,6 @@ use App\Ai\Tools\GetGuestsTool;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\ReservationStatus;
-use App\Enums\RoomTypes;
 use App\Enums\TaskStatus;
 use App\Enums\UserRole;
 use App\Models\Activity;
@@ -18,6 +17,7 @@ use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
@@ -54,18 +54,27 @@ function callTool(object $tool, array $arguments): string
 
 it('creates a room and refuses to duplicate an existing room number', function () {
     $hotel = toolHotel();
+    $roomType = RoomType::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Suite',
+        'max_occupancy' => 2,
+        'adult_capacity' => 2,
+        'child_capacity' => 0,
+        'base_price' => 150,
+        'is_active' => true,
+    ]);
     $tool = new CreateRoomTool($hotel);
 
     $result = callTool($tool, [
         'room_number' => '203',
-        'room_type' => RoomTypes::SUITE->value,
+        'room_type' => 'Suite',
         'floor' => 2,
     ]);
 
     $room = Room::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->first();
 
     expect($result)->toContain('203')
-        ->and($room->room_type)->toBe(RoomTypes::SUITE)
+        ->and($room->room_type_id)->toBe($roomType->id)
         // `floor` is a string column ("mezzanine", "G"), not an integer.
         ->and($room->floor)->toBe('2')
         // `status` is a plain string column, not a cast enum.
@@ -112,7 +121,16 @@ it('creates a task, resolving the room by number and recording who asked', funct
     $hotel = toolHotel();
     $admin = toolAdmin($hotel);
 
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '512', 'room_type' => RoomTypes::DOUBLE->value]);
+    $roomType = RoomType::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Double',
+        'max_occupancy' => 2,
+        'adult_capacity' => 2,
+        'child_capacity' => 0,
+        'base_price' => 120,
+        'is_active' => true,
+    ]);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '512', 'room_type_id' => $roomType->id]);
     $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Maintenance']);
     $category = TaskCategory::create(['hotel_id' => $hotel->id, 'team_id' => $team->id, 'name' => 'Repairs']);
 

@@ -4,9 +4,9 @@ namespace App\Ai\Tools;
 
 use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\RoomStatusesEnum;
-use App\Enums\RoomTypes;
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Models\RoomType;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -43,30 +43,40 @@ class CreateRoomTool implements Tool
             return "Room {$roomNumber} already exists in this hotel (room id: {$existing->id}). Nothing was created.";
         }
 
+        $roomTypeName = $request->string('room_type')->toString() ?: 'Double';
+        $roomType = RoomType::where('hotel_id', $this->hotel->id)
+            ->where('name', ucfirst(strtolower($roomTypeName)))
+            ->first() ?? RoomType::where('hotel_id', $this->hotel->id)->first();
+
+        if (! $roomType) {
+            return 'No room types configured for this hotel. Please create room types first.';
+        }
+
         $room = Room::create([
             'hotel_id' => $this->hotel->id,
             'room_number' => $roomNumber,
-            'room_type' => $request->enum('room_type', RoomTypes::class, RoomTypes::DOUBLE),
+            'room_type_id' => $roomType->id,
             'floor' => $request->filled('floor') ? $request->integer('floor') : null,
-            // `status` is a plain string column, unlike room_type and
-            // housekeeping_status which are cast — so the backing value goes in.
             'status' => $request->enum('status', RoomStatusesEnum::class, RoomStatusesEnum::AVAILABLE)->value,
             'housekeeping_status' => HousekeepingStatusesEnum::CLEAN,
         ]);
 
-        return "Room {$room->room_number} created (room id: {$room->id}), type {$room->room_type->value}, status {$room->status}.";
+        return "Room {$room->room_number} created (room id: {$room->id}), type {$roomType->name}, status {$room->status}.";
     }
 
     public function schema(JsonSchema $schema): array
     {
+        $roomTypeNames = RoomType::where('hotel_id', $this->hotel->id)
+            ->pluck('name')
+            ->toArray();
+
         return [
             'room_number' => $schema->string()
                 ->description('The room number, unique within this hotel (e.g. "203").')
                 ->required(),
             'room_type' => $schema->string()
-                ->enum(RoomTypes::class)
-                ->description('The room type. Defaults to double if the admin does not say.')
-                ->default(RoomTypes::DOUBLE->value),
+                ->description('The room type name from this hotel\'s room types list. Defaults to first available if not specified.')
+                ->default($roomTypeNames[0] ?? 'Standard'),
             'floor' => $schema->integer()->description('Which floor the room is on, if mentioned.'),
             'status' => $schema->string()
                 ->enum(RoomStatusesEnum::class)
