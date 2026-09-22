@@ -1,5 +1,9 @@
 # Hospitality Ecosystem — Phase 2 Implementation Plan
 
+> **Superseded (2026-09-22)** by `docs/AI_Hospitality_Ecosystem_Implementation_Plan_v1_0.md`.
+> Unfinished work packages (WP-6, 7, 9, 11, 12) are deferred post-MVP; shipped metering and
+> AI cost attribution are kept.
+
 ## The SaaS Layer: Plans, Subscriptions, Metering, and Cost Control
 
 **Document ID:** PGRIP-ECO-P2-001

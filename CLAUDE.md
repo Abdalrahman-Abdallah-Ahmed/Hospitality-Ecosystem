@@ -144,7 +144,8 @@ Every API change updates the matching `docs/<resource>-api-documentation.md`.
 A new or changed permission also updates the permission reference in
 `docs/staff-roles-api-documentation.md`.
 Breaking changes are additionally summarized in `docs/latest-changes-<date>.md`.
-Phase/work-package plans live in `docs/PGRIP_Ecosystem_Phase2_Implementation_Plan_v1_0.md`.
+The roadmap lives in `docs/AI_Hospitality_Ecosystem_Implementation_Plan_v1_0.md`
+(it supersedes the PGRIP Phase 2 plan). Project principles: `.specify/memory/constitution.md`.
 
 ## Git
 
