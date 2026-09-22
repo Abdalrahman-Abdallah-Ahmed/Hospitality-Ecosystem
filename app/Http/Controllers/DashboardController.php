@@ -32,11 +32,11 @@ class DashboardController extends Controller
         $pendingTasks = Task::where('status', TaskStatus::PENDING)->count();
         $inProgressTasks = Task::where('status', TaskStatus::IN_PROGRESS)->count();
 
-        $todayArrivals = Reservation::with('room')
+        $todayArrivals = Reservation::with('room.roomType')
             ->whereDate('arrival_date', now()->toDateString())
             ->get();
 
-        $todayDepartures = Reservation::with('room')
+        $todayDepartures = Reservation::with('room.roomType')
             ->whereDate('departure_date', now()->toDateString())
             ->get();
 
@@ -75,7 +75,7 @@ class DashboardController extends Controller
 
         $vipGuests = Guest::where('is_vip', true)
             ->whereHas('stays', $currentVipStays)
-            ->with(['stays' => fn ($query) => $currentVipStays($query)->with('room')])
+            ->with(['stays' => fn ($query) => $currentVipStays($query)->with('room.roomType')])
             ->orderBy('first_name')
             ->get();
 

@@ -172,7 +172,7 @@ Notes:
 
 - The room array is at **`body.data`** (flat — this is Laravel's standard paginated resource collection shape, not a raw paginator).
 - Pagination controls (`current_page`, `last_page`, `total`, etc.) are on **`body.meta`**; first/last/prev/next page URLs are on **`body.links`**.
-- `body.room_types` lists the hotel's room types (full room type objects). Send the chosen one's `id` as `room_type_id` on create/update.
+- `body.room_types` lists the hotel's room types (full room type objects, sorted by name). Send the chosen one's `id` as `room_type_id` on create/update. For a super admin it lists every hotel's types; filter them by `hotel_id` to match the room's hotel.
 
 Only `index` changed shape — `store`, `show`, `update`, `destroy` still return a bare [room object](#the-room-object) in `body`, unchanged.
 

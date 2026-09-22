@@ -81,7 +81,7 @@ The Room Types API provides endpoints for hotel staff to manage room type invent
 
 **Query Parameters**:
 - `page` (int, default 1): Pagination page number
-- `per_page` (int, default 50, max 250): Records per page
+- `per_page` (int, default 15, max 100): Records per page
 - `sort` (string): Sort field; prefix with `-` for descending (e.g., `sort=-created_at`)
 - `search` (string): Full-text search on name and description
 - `filter[is_active]` (bool): Filter by active status (optional)

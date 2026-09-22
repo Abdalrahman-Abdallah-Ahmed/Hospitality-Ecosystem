@@ -23,7 +23,9 @@ class RoomController extends Controller
         $query = Room::query()->with('roomType');
 
         $rooms = GenericQuery::apply($query, $request);
-        $roomTypes = RoomType::where('hotel_id', $request->user()->hotel_id)->get();
+        // The hotel scope limits this to the caller's hotel; a super admin gets
+        // every hotel's types and picks by hotel_id.
+        $roomTypes = RoomType::query()->orderBy('name')->get();
 
         $data = RoomResource::collection($rooms)->additional([
             'room_types' => RoomTypeResource::collection($roomTypes),

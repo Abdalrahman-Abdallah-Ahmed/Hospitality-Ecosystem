@@ -267,6 +267,22 @@ it('lets a super admin view a room belonging to any hotel', function () {
         ->assertJsonPath('body.id', $room->id);
 });
 
+it('lists room types for the picker: own hotel for an admin, every hotel for a super admin', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+    [, $otherHotel] = adminWithOwnHotel();
+    $mine = roomTypeIdFor($hotel);
+    $theirs = roomTypeIdFor($otherHotel);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $adminTypes = $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/room')->assertOk()->json('body.room_types');
+    expect(collect($adminTypes)->pluck('id')->all())->toBe([$mine]);
+
+    $superTypes = $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->getJson('/api/room')->assertOk()->json('body.room_types');
+    expect(collect($superTypes)->pluck('id')->all())->toContain($mine, $theirs);
+});
+
 it('lets a super admin update a room belonging to any hotel', function () {
     [, $hotel] = adminWithOwnHotel();
     $room = roomFor($hotel);
