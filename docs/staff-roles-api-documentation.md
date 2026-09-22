@@ -77,6 +77,10 @@ An employee with no staff role has:
 | `rooms.create` | `POST /api/room` |
 | `rooms.update` | `PUT /api/room/{id}` |
 | `rooms.delete` | `DELETE /api/room/{id}` |
+| `room_types.view` | `GET /api/room-types`, `GET /api/room-types/{id}` |
+| `room_types.create` | `POST /api/room-types` |
+| `room_types.update` | `PUT /api/room-types/{id}` |
+| `room_types.delete` | `DELETE /api/room-types/{id}` |
 | `task_categories.view` | `GET /api/task-category`, `GET /api/task-category/{id}` |
 | `task_categories.create` | `POST /api/task-category` |
 | `task_categories.update` | `PUT /api/task-category/{id}` |

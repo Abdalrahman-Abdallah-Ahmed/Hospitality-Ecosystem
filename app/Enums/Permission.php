@@ -64,6 +64,11 @@ enum Permission: string
     case ROOMS_UPDATE = 'rooms.update';
     case ROOMS_DELETE = 'rooms.delete';
 
+    case ROOM_TYPES_VIEW = 'room_types.view';
+    case ROOM_TYPES_CREATE = 'room_types.create';
+    case ROOM_TYPES_UPDATE = 'room_types.update';
+    case ROOM_TYPES_DELETE = 'room_types.delete';
+
     case TASK_CATEGORIES_VIEW = 'task_categories.view';
     case TASK_CATEGORIES_CREATE = 'task_categories.create';
     case TASK_CATEGORIES_UPDATE = 'task_categories.update';

@@ -19,6 +19,7 @@ use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\RoomController;
+use App\Http\Controllers\RoomTypeController;
 use App\Http\Controllers\StaffRoleController;
 use App\Http\Controllers\TaskCategoryController;
 use App\Http\Controllers\TaskController;
@@ -67,6 +68,7 @@ Route::middleware('api.key')->group(function () {
         Route::get('/transaction/{transaction}', [TransactionController::class, 'show']);
         Route::resource('/hotel', HotelController::class)->except(['edit', 'create']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
+        Route::resource('/room-types', RoomTypeController::class)->except(['edit', 'create']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
         Route::resource('/hotel-policy', HotelPolicyController::class)->except(['edit', 'create', 'show']);
         Route::resource('/team', TeamController::class)->except(['edit', 'create']);
