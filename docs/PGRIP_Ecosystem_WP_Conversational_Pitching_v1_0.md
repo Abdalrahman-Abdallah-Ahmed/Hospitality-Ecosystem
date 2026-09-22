@@ -118,6 +118,27 @@ The system **never starts a conversation**. It only replies. There is no outboun
 
 The brief was written from an earlier reading of the repo. These are the points where the code says something different. The plan follows the code.
 
+> **Read this table as history, not as the current state.** Every "the repo
+> says" column below describes the repository on **18 September 2026**, the
+> day this plan was written. Several have since been closed — some by the
+> 19 September concierge work, most by WP-13 to WP-16 being built. A reviewer
+> reading the table as present tense will report work as "already done, plan
+> is stale"; it is the opposite — the plan was executed.
+>
+> | # | Status as of 20 Sep 2026 |
+> |---|---|
+> | C-2 | **Changed by decision, not by code.** The 20 Sep revision dropped the timeframe, capacity and duration checks entirely (16.3). The columns exist and nothing reads them. |
+> | C-4 | **Closed by WP-15.** `RecommendationOutcomeService::contextWithSuperseded()` carries replaced evidence into `context.superseded`. |
+> | C-6 | **Closed by WP-15.** `delivered_at` exists; the nightly job writes `NOT_DELIVERED`. |
+> | C-8 | **Stale as written.** `ProcessInboundWhatsAppMessageJob` already wraps the whole turn in `TenantContext::runForHotel()` (the 19 Sep concierge scope fix). See WP-16 Trap 1, corrected. |
+> | C-14 | **Closed by WP-13.** `guests:backfill-contact-timestamps` ships. |
+> | C-15 | **Closed by WP-15.** `RecommendationDeliveryService` writes `RecommendationStatus::SENT` on delivery. |
+>
+> C-1, C-3, C-5, C-7, C-9 to C-13 still stand. C-7 in particular is still
+> open: the concierge prompt's "wrapping up a conversation" and "tailor a
+> recommendation yourself" paragraphs are **still there**, and still produce
+> pitches with no row behind them. WP-17 removes them, and WP-17 is not built.
+
 | # | The brief says | The repo says | What this plan does |
 |---|---|---|---|
 | C-1 | Prior purchases come from `transactions` via `master_guest_id`. | **No `master_guest_id` column exists.** (`Guest::eventLoggedAttributes()` lists it, but that is a dangling name.) Guests are per hotel; `GuestIdentityService::findExistingGuest()` reuses a guest row **within one hotel only**, deliberately. | Prior-stay history = `transactions` for the same `guest_id` on *other* stays at the same hotel. History across a hotel group is not available and is a privacy and tenancy decision (§15, D-9). |
@@ -127,7 +148,7 @@ The brief was written from an earlier reading of the repo. These are the points 
 | C-5 | Attribution is `CONVERSATIONAL`, L1. | A booking carrying `recommendation_id` is credited `AttributionMethod::DIRECT` by `BookingService`, and DIRECT **outranks** CONVERSATIONAL (precedence 4 > 3). | No change needed: both are L1 and the precedence chain is correct. But say it plainly in the docs. **Converted pitches appear under `attribution.direct`**, while CONVERSATIONAL holds accepted, declined and delivered outcomes that did not become bookings. |
 | C-6 | `NOT_DELIVERED` finally gets a writer. | Staff can already write it through `POST /api/recommendation/{id}/outcome`. What is missing is an **automatic** writer and a measured `delivered_at`. | WP-15 adds `delivered_at` and teaches the nightly `MatchRecommendationOutcomesJob` to write NOT_DELIVERED instead of EXPIRED when nothing was ever delivered. |
 | C-7 | Pitches only at contextual openings; never appended to an unrelated reply. | The current prompt tells the agent to recommend *"when you're wrapping up a conversation about their stay"* — i.e. appended to unrelated replies. It also says *"tailor a recommendation yourself"*, which creates **no recommendation row**. Those pitches are invisible to every metric today. | WP-17 removes both paragraphs. Every suggestion now goes through one tool that writes a row. |
-| C-8 | Queue jobs set tenancy via `TenantContext::runForHotel()`, "as already done". | Only `CreateAiInsightsJob` and `MatchRecommendationOutcomesJob` do. **`ProcessInboundWhatsAppMessageJob` runs unscoped**; its tools filter by `hotel_id` by hand. | New pitching code wraps *its own* queries in `runForHotel()`. **Do not wrap the whole concierge call** — see WP-16 Trap 1. |
+| C-8 | Queue jobs set tenancy via `TenantContext::runForHotel()`, "as already done". | Only `CreateAiInsightsJob` and `MatchRecommendationOutcomesJob` do. **`ProcessInboundWhatsAppMessageJob` runs unscoped**; its tools filter by `hotel_id` by hand. | *Stale — see the status table above.* The job now wraps the whole turn, and the pitching code inherits that scope. WP-16 Trap 1 carries the corrected rule. |
 | C-9 | "Departing today." | `SenderRecognitionService` uses `now()->toDateString()` in the app timezone (UTC). `hotels.timezone` exists. | All new date logic uses the hotel's local date (WP-16). |
 | C-10 | Segment signal: nationality, market segment. | `stays.market_segment` is **never written** by any code path. `guests.nationality` is filled only when someone types it. | Moot since the 20 Sep 2026 revision: nothing is ranked at pitch time. Still recorded in provenance. |
 | C-11 | "Already declined anything this stay." | `UpdateRecommendationTool` sets `recommendations.status = rejected` on an explicit no. But the service's **confidence floor** can record the *outcome* as DELIVERED when the agent was unsure. | The decline gate reads `recommendations.status`, not the outcome (WP-16 Trap 4). |
@@ -1107,7 +1128,7 @@ it('still replies to the guest when the eligibility service throws', ...);
 
 ## Traps
 
-1. **Do not wrap the whole concierge call in `TenantContext::runForHotel()`.** `KnowledgeChunk` uses `BelongsToHotel`, and the global knowledge base is stored with `hotel_id = null`. Under a one-hotel scope the `whereIn` excludes nulls, so the concierge silently loses every global article, and no test fails unless one checks it. Wrap only the pitching service's own queries.
+1. ~~**Do not wrap the whole concierge call in `TenantContext::runForHotel()`.**~~ **Corrected 20 Sep 2026 — do not act on this as written.** The hazard was real when the plan was written: `KnowledgeChunk` uses `BelongsToHotel`, the global knowledge base is stored with `hotel_id = null`, and a one-hotel scope's `whereIn` excludes nulls, silently losing every global article. It has since been handled at the tool: `KnowledgeSearchTool` drops the scope and matches `hotel_id IS NULL OR hotel_id = :hotel` explicitly. `ProcessInboundWhatsAppMessageJob` consequently **does** wrap the whole turn (line 263), deliberately, and the pitching code inherits that scope rather than opening its own. The standing rule is narrower: **any new query on a model that stores shared rows as `hotel_id = null` must say so explicitly, because the global scope cannot.**
 2. **"Today" is local.** A resort in UTC+3 is on tomorrow's date from 21:00 UTC. `now()` without a timezone gets departure day wrong for three hours every night, which is exactly when guests message about the evening.
 3. **Fail closed, everywhere.** No stay, classifier error, unexpected null: the answer is *no pitch*. A missed pitch costs a small sale; a pitch to a complaining guest costs a review.
 4. **Read refusals from `recommendations.status`, not from the outcome.** The confidence floor records a hesitant "no thanks" as DELIVERED. The status is REJECTED either way.
