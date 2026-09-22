@@ -13,12 +13,9 @@ class RoomFactory extends Factory
 
     public function definition(): array
     {
-        $hotel = Hotel::factory();
-        $roomType = RoomType::factory();
-
         return [
-            'hotel_id' => $hotel,
-            'room_type_id' => $roomType,
+            'hotel_id' => Hotel::factory(),
+            'room_type_id' => fn (array $attributes) => RoomType::factory()->create(['hotel_id' => $attributes['hotel_id']])->id,
             'room_number' => $this->faker->unique()->numerify('###'),
             'floor' => $this->faker->numberBetween(1, 10),
             'status' => 'available',

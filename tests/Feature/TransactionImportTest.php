@@ -58,7 +58,7 @@ function importTxnCsv(array $rows): UploadedFile
 function checkedInStay(Hotel $hotel, string $roomNumber): Stay
 {
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => $roomNumber]);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => $roomNumber]);
 
     return Stay::create([
         'hotel_id' => $hotel->id,

@@ -43,14 +43,7 @@ class CreateRoomTool implements Tool
             return "Room {$roomNumber} already exists in this hotel (room id: {$existing->id}). Nothing was created.";
         }
 
-        $roomTypeName = $request->string('room_type')->toString() ?: 'Double';
-        $roomType = RoomType::where('hotel_id', $this->hotel->id)
-            ->where('name', ucfirst(strtolower($roomTypeName)))
-            ->first() ?? RoomType::where('hotel_id', $this->hotel->id)->first();
-
-        if (! $roomType) {
-            return 'No room types configured for this hotel. Please create room types first.';
-        }
+        $roomType = RoomType::resolveFor($this->hotel->id, $request->string('room_type')->toString());
 
         $room = Room::create([
             'hotel_id' => $this->hotel->id,
@@ -75,8 +68,7 @@ class CreateRoomTool implements Tool
                 ->description('The room number, unique within this hotel (e.g. "203").')
                 ->required(),
             'room_type' => $schema->string()
-                ->description('The room type name from this hotel\'s room types list. Defaults to first available if not specified.')
-                ->default($roomTypeNames[0] ?? 'Standard'),
+                ->description('The room type name, ideally one of: '.(implode(', ', $roomTypeNames) ?: 'none yet').'. A new name creates that type; leave empty for the hotel\'s default type.'),
             'floor' => $schema->integer()->description('Which floor the room is on, if mentioned.'),
             'status' => $schema->string()
                 ->enum(RoomStatusesEnum::class)

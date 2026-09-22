@@ -11,7 +11,6 @@ Added comprehensive room type inventory management system as the foundation for 
 #### Database Schema
 
 - **New table**: `room_types` with fields: id, hotel_id, name, description, max_occupancy, adult_capacity, child_capacity, bed_configuration, amenities, base_price, is_active, timestamps, soft delete marker
-- **Enhanced table**: `hotels` now includes `currency` field (ISO 4217 code, default USD) for per-hotel pricing configuration
 - **Modified table**: `rooms` now uses `room_type_id` (FK) instead of `room_type` enum; links physical rooms to room types
 
 #### API Endpoints
@@ -56,13 +55,20 @@ Room Type data model supports:
 Rooms previously using the `room_type` enum (single, double, twin, triple, suite, deluxe, family) are automatically backfilled with corresponding `RoomType` records during migration. The enum column is dropped after backfill completes.
 
 **Migration sequence**:
-1. Create `room_types` table with auto-generated records from enum values
-2. Add `currency` column to hotels (default USD)
-3. Add nullable `room_type_id` to rooms
-4. Backfill `room_type_id` from enum values
-5. Drop `room_type` enum column
+1. Create `room_types` table (with `CHECK` constraints on capacity and price)
+2. `hotels.currency` already existed; that migration is a no-op
+3. Create one room type per distinct enum value per hotel
+4. Add `room_type_id` to rooms and backfill it from the enum value
+5. Rooms that had no type go under a per-hotel **"Standard"** type (created if missing), then `room_type_id` becomes NOT NULL and the enum column is dropped
 
-**No data loss**: All existing room-type assignments preserved via FK relationships.
+**No data loss**: All existing room-type assignments preserved via FK relationships. Auto-created types have placeholder capacity (2 adults) and price (0); review them.
+
+#### Rooms API (`/api/room`)
+
+- `room_type_id` is **required** on create and must belong to the same hotel (another hotel's type → `403`). The old `room_type` string is gone.
+- Room responses carry `room_type_id` plus the embedded `room_type` object; `index` returns the hotel's room types as `body.room_types`.
+- Rooms created implicitly are filed automatically: the reservation import and the AI admin "create room" tool use the named type (matched case-insensitively, created if new) or, with no name, the hotel's oldest active type, or a new "Standard" type.
+- See `docs/room-api-documentation.md`.
 
 ### Documentation
 
@@ -85,7 +91,7 @@ Complete test coverage for:
 - Model: `App\Models\RoomType` with `BelongsToHotel`, `SoftDeletes`, `RecordsEvents` traits
 - Controller: `App\Http\Controllers\RoomTypeController` (RESTful CRUD)
 - Policy: `App\Policies\RoomTypePolicy` (authorization via `ChecksPermissions`)
-- Requests: `App\Http\Requests\RoomType\CreateRequest` and `UpdateRequest` (validation)
+- Requests: the shared `GenericStoreRequest` / `GenericUpdateRequest`; room-type rules (capacity, price, unique name) are checked in the controller
 - Resource: `App\Http\Resources\RoomTypeResource` (serialization)
 - Seeder: `database/seeders/RoomTypeSeeder.php` (sample data)
 

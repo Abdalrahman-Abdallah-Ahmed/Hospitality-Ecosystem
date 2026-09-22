@@ -20,7 +20,7 @@ class RoomController extends Controller
     {
         $this->authorize('viewAny', Room::class);
 
-        $query = Room::query();
+        $query = Room::query()->with('roomType');
 
         $rooms = GenericQuery::apply($query, $request);
         $roomTypes = RoomType::where('hotel_id', $request->user()->hotel_id)->get();
@@ -46,9 +46,18 @@ class RoomController extends Controller
             return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
+        if ($this->roomTypeIsDeleted($validated)) {
+            return apiResponse('The selected room type has been deleted.', 422);
+        }
+
+        $invalidRelation = invalidRelation($hotel, ['roomTypes' => $validated['room_type_id'] ?? null]);
+        if ($invalidRelation) {
+            return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
+        }
+
         $room = Room::create([...$validated, 'hotel_id' => $hotel->id]);
 
-        return apiResponse('Room created successfully.', 201, RoomResource::make($room));
+        return apiResponse('Room created successfully.', 201, RoomResource::make($room->load('roomType')));
     }
 
     /**
@@ -58,7 +67,7 @@ class RoomController extends Controller
     {
         $this->authorize('view', $room);
 
-        return apiResponse('Room fetched successfully.', 200, RoomResource::make($room));
+        return apiResponse('Room fetched successfully.', 200, RoomResource::make($room->load('roomType')));
     }
 
     /**
@@ -70,9 +79,18 @@ class RoomController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
+        if ($this->roomTypeIsDeleted($validated)) {
+            return apiResponse('The selected room type has been deleted.', 422);
+        }
+
+        $invalidRelation = invalidRelation($room->hotel, ['roomTypes' => $validated['room_type_id'] ?? null]);
+        if ($invalidRelation) {
+            return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
+        }
+
         $room->update($validated);
 
-        return apiResponse('Room updated successfully.', 200, RoomResource::make($room));
+        return apiResponse('Room updated successfully.', 200, RoomResource::make($room->load('roomType')));
     }
 
     /**
@@ -85,5 +103,17 @@ class RoomController extends Controller
         $room->delete();
 
         return apiResponse('Room deleted successfully.', 200);
+    }
+
+    /**
+     * The `exists` rule accepts soft-deleted room types, and invalidRelation()
+     * would then report one as another hotel's. The hotel scope keeps this to
+     * the caller's own hotels, so a foreign id still falls through to the 403.
+     */
+    private function roomTypeIsDeleted(array $validated): bool
+    {
+        $roomTypeId = $validated['room_type_id'] ?? null;
+
+        return $roomTypeId !== null && RoomType::onlyTrashed()->whereKey($roomTypeId)->exists();
     }
 }

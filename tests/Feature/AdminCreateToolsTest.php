@@ -89,6 +89,26 @@ it('creates a room and refuses to duplicate an existing room number', function (
         ->and(Room::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->count())->toBe(1);
 });
 
+it('creates the room type a new room names, or a default one when none is named', function () {
+    $hotel = toolHotel();
+    $tool = new CreateRoomTool($hotel);
+
+    callTool($tool, ['room_number' => '301', 'room_type' => 'Family Suite']);
+    callTool($tool, ['room_number' => '302']);
+    callTool($tool, ['room_number' => '303', 'room_type' => 'family suite']);
+
+    $types = RoomType::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->pluck('id', 'name');
+    $rooms = Room::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->pluck('room_type_id', 'room_number');
+
+    // With a type already present, an unnamed room reuses it instead of adding "Standard".
+    expect($types->keys()->all())->toBe(['Family Suite'])
+        ->and($rooms->all())->toBe([
+            '301' => $types['Family Suite'],
+            '302' => $types['Family Suite'],
+            '303' => $types['Family Suite'],
+        ]);
+});
+
 it('creates an activity and drops a category belonging to another hotel', function () {
     $hotel = toolHotel('Ours');
     $other = toolHotel('Theirs');

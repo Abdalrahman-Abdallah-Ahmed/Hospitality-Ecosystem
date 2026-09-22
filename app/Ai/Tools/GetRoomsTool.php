@@ -28,14 +28,14 @@ class GetRoomsTool implements Tool
      */
     public function handle(Request $request): Stringable|string
     {
-        $rooms = Room::where('hotel_id', $this->hotel->id)
+        $rooms = Room::with('roomType')->where('hotel_id', $this->hotel->id)
             ->orderBy('room_number')
             ->limit(100)
             ->get()
             ->map(fn (Room $room) => [
                 'id' => $room->id,
                 'room_number' => $room->room_number,
-                'room_type' => $room->room_type,
+                'room_type' => $room->roomType?->name,
                 'floor' => $room->floor,
                 'status' => $room->status,
                 'housekeeping_status' => $room->housekeeping_status,

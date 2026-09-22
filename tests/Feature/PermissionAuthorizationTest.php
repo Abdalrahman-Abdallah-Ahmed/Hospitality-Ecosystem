@@ -119,6 +119,7 @@ it('lets an employee read a resource only when their role grants it', function (
     'recommendations' => ['/api/recommendation', Permission::RECOMMENDATIONS_VIEW],
     'reservations' => ['/api/reservation', Permission::RESERVATIONS_VIEW],
     'rooms' => ['/api/room', Permission::ROOMS_VIEW],
+    'room types' => ['/api/room-types', Permission::ROOM_TYPES_VIEW],
     'task categories' => ['/api/task-category', Permission::TASK_CATEGORIES_VIEW],
     'tasks' => ['/api/task', Permission::TASKS_VIEW],
     'teams' => ['/api/team', Permission::TEAMS_VIEW],

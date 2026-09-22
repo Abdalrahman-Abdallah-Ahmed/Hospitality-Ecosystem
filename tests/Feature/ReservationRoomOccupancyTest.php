@@ -13,7 +13,7 @@ beforeEach(function () {
 
 it('does not occupy the room for a merely confirmed reservation, only once the guest actually checks in', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
@@ -34,7 +34,7 @@ it('does not occupy the room for a merely confirmed reservation, only once the g
 
 it('occupies the room once the reservation is updated to checked_in', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
@@ -59,7 +59,7 @@ it('occupies the room once the reservation is updated to checked_in', function (
 
 it('frees the room back to available once the guest checks out', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
@@ -86,7 +86,7 @@ it('frees the room back to available once the guest checks out', function () {
 
 it('frees the room back to available when a checked-in reservation is cancelled', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
@@ -111,7 +111,7 @@ it('frees the room back to available when a checked-in reservation is cancelled'
 
 it('keeps a room occupied when a future reservation is booked into it', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $tonight = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
     $nextWeek = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-2', 'channel' => 'booking_com']);
 
@@ -143,8 +143,8 @@ it('keeps a room occupied when a future reservation is booked into it', function
 
 it('frees the old room and occupies the new one when a checked-in guest moves rooms', function () {
     [$admin, $hotel] = adminWithHotel();
-    $oldRoom = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
-    $newRoom = Room::create(['hotel_id' => $hotel->id, 'room_number' => '102']);
+    $oldRoom = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
+    $newRoom = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '102']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $reservationId = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
@@ -168,7 +168,7 @@ it('frees the old room and occupies the new one when a checked-in guest moves ro
 
 it('leaves a room under maintenance alone when a future reservation is booked into it', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101', 'status' => 'maintenance']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101', 'status' => 'maintenance']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')

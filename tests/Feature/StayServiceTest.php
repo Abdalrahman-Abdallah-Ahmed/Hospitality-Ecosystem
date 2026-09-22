@@ -234,8 +234,8 @@ it('marks a stay cancelled when its reservation is cancelled', function () {
 it('carries reservation edits through to its stay without touching what actually happened', function () {
     $hotel = stayTestHotel();
     $guest = stayTestGuest($hotel);
-    $firstRoom = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
-    $secondRoom = Room::create(['hotel_id' => $hotel->id, 'room_number' => '102']);
+    $firstRoom = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
+    $secondRoom = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '102']);
 
     $reservation = ReservationCreator::create([
         'hotel_id' => $hotel->id,

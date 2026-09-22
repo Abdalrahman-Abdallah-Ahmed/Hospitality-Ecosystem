@@ -4,6 +4,7 @@ use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -37,8 +38,8 @@ function roomFor(Hotel $hotel, array $overrides = []): Room
 {
     return Room::create(array_merge([
         'hotel_id' => $hotel->id,
+        'room_type_id' => roomTypeIdFor($hotel),
         'room_number' => '101',
-        'room_type' => 'double',
         'floor' => '1',
         'status' => 'available',
     ], $overrides));
@@ -84,7 +85,7 @@ it('creates a room for the admin hotel with valid data', function () {
         ->postJson('/api/room', [
             'hotel_id' => $hotel->id,
             'room_number' => '201',
-            'room_type' => 'suite',
+            'room_type_id' => roomTypeIdFor($hotel),
             'floor' => '2',
             'status' => 'available',
         ]);
@@ -111,7 +112,7 @@ it('rejects a non-admin user from creating a room', function () {
     $hotel = Hotel::create(['owner_id' => $worker->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $this->withHeaders(roomApiHeaders())->actingAs($worker, 'sanctum')
-        ->postJson('/api/room', ['hotel_id' => $hotel->id])
+        ->postJson('/api/room', ['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel)])
         ->assertStatus(403);
 });
 
@@ -123,12 +124,50 @@ it('creates a room scoped to the caller own hotel, ignoring a spoofed hotel_id',
         ->postJson('/api/room', [
             'hotel_id' => $otherHotel->id,
             'room_number' => '999',
+            'room_type_id' => roomTypeIdFor($hotel),
         ]);
 
     $response->assertStatus(201)
         ->assertJsonPath('body.hotel_id', $hotel->id);
 
     expect(Room::where('hotel_id', $otherHotel->id)->where('room_number', '999')->exists())->toBeFalse();
+});
+
+it('rejects a room filed under another hotel room type', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+    [, $otherHotel] = adminWithOwnHotel();
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room', [
+            'hotel_id' => $hotel->id,
+            'room_number' => '301',
+            'room_type_id' => roomTypeIdFor($otherHotel),
+        ])
+        ->assertStatus(403);
+
+    expect(Room::withoutGlobalScope('hotel')->where('room_number', '301')->exists())->toBeFalse();
+});
+
+it('rejects a deleted room type with a 422 rather than a cross-hotel 403', function () {
+    [$admin, $hotel] = adminWithOwnHotel();
+    $deleted = RoomType::factory()->create(['hotel_id' => $hotel->id]);
+    $deleted->delete();
+    $room = roomFor($hotel);
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room', [
+            'hotel_id' => $hotel->id,
+            'room_number' => '302',
+            'room_type_id' => $deleted->id,
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'The selected room type has been deleted.');
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room/{$room->id}", ['room_type_id' => $deleted->id])
+        ->assertStatus(422);
+
+    expect($room->fresh()->room_type_id)->not->toBe($deleted->id);
 });
 
 // show
@@ -260,7 +299,7 @@ it('defaults a newly created room to clean', function () {
         ->postJson('/api/room', [
             'hotel_id' => $hotel->id,
             'room_number' => '204',
-            'room_type' => 'double',
+            'room_type_id' => roomTypeIdFor($hotel),
             'floor' => '2',
         ])
         ->assertStatus(201);

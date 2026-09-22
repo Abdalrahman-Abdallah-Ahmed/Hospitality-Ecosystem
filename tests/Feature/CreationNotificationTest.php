@@ -206,7 +206,7 @@ it('treats pivot and group admins as admins of the hotel', function () {
 it('renders the task and reservation emails', function () {
     $hotel = notifiedHotel('Nile Hotel');
     $user = notifiedUser($hotel, UserRole::ADMIN);
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '203']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '203']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Sara', 'phone_number' => '201222333444']);
     $task = Task::create([
         'hotel_id' => $hotel->id,

@@ -1,31 +1,45 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomType;
 use App\Models\User;
-use Tests\TestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(TestCase::class)->beforeEach(function () {
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
 });
 
-test('test_create_room_type_success', function () {
+function roomTypeAdmin(): array
+{
     $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    $admin = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
 
-    $response = $this->postJson('/api/room-types', [
-        'name' => 'Standard Room',
-        'description' => 'Comfortable room for single travelers',
-        'max_occupancy' => 2,
-        'adult_capacity' => 1,
-        'child_capacity' => 1,
-        'base_price' => 80.00,
-    ], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    return [$admin, $hotel];
+}
+
+function roomTypeHeaders(): array
+{
+    return ['X-API-KEY' => 'test-api-key'];
+}
+
+test('test_create_room_type_success', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+
+    $response = $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'Standard Room',
+            'description' => 'Comfortable room for single travelers',
+            'max_occupancy' => 2,
+            'adult_capacity' => 1,
+            'child_capacity' => 1,
+            'base_price' => 80.00,
+        ]);
 
     $response->assertStatus(201);
     $response->assertJsonPath('body.name', 'Standard Room');
@@ -33,144 +47,211 @@ test('test_create_room_type_success', function () {
 });
 
 test('test_create_room_type_validation_failure', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
 
-    $response = $this->postJson('/api/room-types', [
-        'description' => 'Missing required fields',
-    ], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
-
-    $response->assertStatus(422);
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', ['description' => 'Missing required fields'])
+        ->assertStatus(422);
 });
 
 test('test_list_room_types_paginated', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
     RoomType::factory()->count(3)->create(['hotel_id' => $hotel->id]);
 
-    $response = $this->getJson('/api/room-types?page=1&per_page=25', [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    $response = $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/room-types?page=1&per_page=25');
 
     $response->assertStatus(200);
-    $response->assertJsonIsArray('body');
-    expect($response->json('body'))->toHaveCount(3);
+    $response->assertJsonIsArray('body.data');
+    expect($response->json('body.data'))->toHaveCount(3);
 });
 
 test('test_get_single_room_type', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
     $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
 
-    $response = $this->getJson("/api/room-types/{$roomType->id}", [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
-
-    $response->assertStatus(200);
-    $response->assertJsonPath('body.id', $roomType->id);
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->getJson("/api/room-types/{$roomType->id}")
+        ->assertStatus(200)
+        ->assertJsonPath('body.id', $roomType->id);
 });
 
 test('test_update_room_type_fields', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
     $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id, 'base_price' => 80.00]);
 
-    $response = $this->putJson("/api/room-types/{$roomType->id}", [
-        'base_price' => 95.00,
-    ], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
-
-    $response->assertStatus(200);
-    $response->assertJsonPath('body.base_price', '95.00');
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room-types/{$roomType->id}", ['base_price' => 95.00])
+        ->assertStatus(200)
+        ->assertJsonPath('body.base_price', '95.00');
 });
 
 test('test_soft_delete_room_type', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
     $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
 
-    $response = $this->deleteJson("/api/room-types/{$roomType->id}", [], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->deleteJson("/api/room-types/{$roomType->id}")
+        ->assertStatus(200);
 
-    $response->assertStatus(200);
     expect(RoomType::find($roomType->id))->toBeNull();
 });
 
 test('test_soft_deleted_not_in_list', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
     $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
 
-    $this->deleteJson("/api/room-types/{$roomType->id}", [], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->deleteJson("/api/room-types/{$roomType->id}")
+        ->assertStatus(200);
 
-    $response = $this->getJson('/api/room-types', [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    $response = $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/room-types');
 
     $response->assertStatus(200);
-    expect($response->json('body'))->toHaveCount(0);
+    expect($response->json('body.data'))->toHaveCount(0);
 });
 
 test('test_create_with_invalid_capacity_sum', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
 
-    $response = $this->postJson('/api/room-types', [
-        'name' => 'Invalid Room',
-        'max_occupancy' => 2,
-        'adult_capacity' => 2,
-        'child_capacity' => 1,
-        'base_price' => 50.00,
-    ], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
-
-    $response->assertStatus(422);
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'Invalid Room',
+            'max_occupancy' => 2,
+            'adult_capacity' => 2,
+            'child_capacity' => 1,
+            'base_price' => 50.00,
+        ])
+        ->assertStatus(422);
 });
 
 test('test_create_with_zero_adult_capacity', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
 
-    $response = $this->postJson('/api/room-types', [
-        'name' => 'Invalid Room',
-        'max_occupancy' => 1,
-        'adult_capacity' => 0,
-        'child_capacity' => 1,
-        'base_price' => 50.00,
-    ], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
-
-    $response->assertStatus(422);
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'Invalid Room',
+            'max_occupancy' => 1,
+            'adult_capacity' => 0,
+            'child_capacity' => 1,
+            'base_price' => 50.00,
+        ])
+        ->assertStatus(422);
 });
 
 test('test_delete_blocked_by_active_rooms', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAdmin();
     $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
     Room::factory()->create(['hotel_id' => $hotel->id, 'room_type_id' => $roomType->id]);
 
-    $response = $this->deleteJson("/api/room-types/{$roomType->id}", [], [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->deleteJson("/api/room-types/{$roomType->id}")
+        ->assertStatus(422)
+        ->assertJsonPath('body.error', 'deletion_blocked_by_rooms');
+});
+
+test('test_create_rejects_a_name_already_used_in_the_hotel', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+    RoomType::factory()->create(['hotel_id' => $hotel->id, 'name' => 'Deluxe']);
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'deluxe',
+            'max_occupancy' => 2,
+            'adult_capacity' => 2,
+            'child_capacity' => 0,
+            'base_price' => 50.00,
+        ])
+        ->assertStatus(422);
+
+    // Another hotel may use the same name.
+    [$otherAdmin, $otherHotel] = roomTypeAdmin();
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($otherAdmin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $otherHotel->id,
+            'name' => 'Deluxe',
+            'max_occupancy' => 2,
+            'adult_capacity' => 2,
+            'child_capacity' => 0,
+            'base_price' => 50.00,
+        ])
+        ->assertStatus(201);
+});
+
+test('test_create_reuses_the_name_of_a_deleted_room_type', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+    $deleted = RoomType::factory()->create(['hotel_id' => $hotel->id, 'name' => 'Deluxe']);
+    $deleted->delete();
+
+    $response = $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'deluxe',
+            'max_occupancy' => 2,
+            'adult_capacity' => 2,
+            'child_capacity' => 0,
+            'base_price' => 50.00,
+        ])
+        ->assertStatus(201);
+
+    expect($response->json('body.id'))->not->toBe($deleted->id);
+    expect($deleted->fresh()->trashed())->toBeTrue();
+});
+
+test('test_create_treats_a_null_is_active_as_omitted', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'Suite',
+            'max_occupancy' => 2,
+            'adult_capacity' => 2,
+            'child_capacity' => 0,
+            'base_price' => 50.00,
+            'is_active' => null,
+        ])
+        ->assertStatus(201)
+        ->assertJsonPath('body.is_active', true);
+});
+
+test('test_create_rejects_a_negative_price', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'Cheap Room',
+            'max_occupancy' => 2,
+            'adult_capacity' => 2,
+            'child_capacity' => 0,
+            'base_price' => -1,
+        ])
+        ->assertStatus(422);
+});
+
+test('test_update_checks_capacity_against_the_stored_values', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+    $roomType = RoomType::factory()->create([
+        'hotel_id' => $hotel->id,
+        'max_occupancy' => 3,
+        'adult_capacity' => 2,
+        'child_capacity' => 1,
     ]);
 
-    $response->assertStatus(422);
-    $response->assertJsonPath('body.error', 'deletion_blocked_by_rooms');
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room-types/{$roomType->id}", ['max_occupancy' => 2])
+        ->assertStatus(422);
+
+    expect($roomType->fresh()->max_occupancy)->toBe(3);
+
+    // Keeping its own name is not a duplicate.
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/room-types/{$roomType->id}", ['name' => $roomType->name, 'max_occupancy' => 4])
+        ->assertStatus(200);
 });

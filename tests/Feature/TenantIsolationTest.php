@@ -81,6 +81,7 @@ function tenantOwnedModelFactories(): array
         },
         Room::class => fn (Hotel $hotel) => Room::create([
             'hotel_id' => $hotel->id,
+            'room_type_id' => roomTypeIdFor($hotel),
             'room_number' => '101',
         ]),
         Stay::class => function (Hotel $hotel) {
@@ -275,7 +276,7 @@ it('does not carry the tenant of one request into the next', function () {
 
 it('sees nothing at all for a restricted user with no accessible hotel', function () {
     $hotel = makeHotel();
-    Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
 
     $hotellessAdmin = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => null]);
 
@@ -287,8 +288,8 @@ it('sees nothing at all for a restricted user with no accessible hotel', functio
 it('leaves a super admin unrestricted', function () {
     $hotelA = makeHotel();
     $hotelB = makeHotel();
-    Room::create(['hotel_id' => $hotelA->id, 'room_number' => '101']);
-    Room::create(['hotel_id' => $hotelB->id, 'room_number' => '201']);
+    Room::create(['hotel_id' => $hotelA->id, 'room_type_id' => roomTypeIdFor($hotelA), 'room_number' => '101']);
+    Room::create(['hotel_id' => $hotelB->id, 'room_type_id' => roomTypeIdFor($hotelB), 'room_number' => '201']);
 
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
@@ -307,8 +308,8 @@ it('gives a group admin every hotel in their group automatically', function () {
     $hotelA->update(['hotel_group_id' => $group->id]);
     $hotelB->update(['hotel_group_id' => $group->id]);
 
-    Room::create(['hotel_id' => $hotelA->id, 'room_number' => '101']);
-    Room::create(['hotel_id' => $hotelB->id, 'room_number' => '201']);
+    Room::create(['hotel_id' => $hotelA->id, 'room_type_id' => roomTypeIdFor($hotelA), 'room_number' => '101']);
+    Room::create(['hotel_id' => $hotelB->id, 'room_type_id' => roomTypeIdFor($hotelB), 'room_number' => '201']);
 
     $director = User::factory()->role(UserRole::ADMIN)->create([
         'hotel_id' => null,
@@ -329,7 +330,7 @@ it('stamps hotel_id automatically on create when the model omits it', function (
     $hotel = makeHotel();
 
     TenantContext::runForHotel($hotel->id, function () use ($hotel) {
-        $room = Room::create(['room_number' => '101']);
+        $room = Room::create(['room_number' => '101', 'room_type_id' => roomTypeIdFor($hotel)]);
 
         expect($room->hotel_id)->toBe($hotel->id);
     });
@@ -340,7 +341,7 @@ it('does not override an explicitly provided hotel_id on create', function () {
     $hotelB = makeHotel();
 
     TenantContext::runForHotel($hotelA->id, function () use ($hotelB) {
-        $room = Room::create(['hotel_id' => $hotelB->id, 'room_number' => '101']);
+        $room = Room::create(['hotel_id' => $hotelB->id, 'room_type_id' => roomTypeIdFor($hotelB), 'room_number' => '101']);
 
         expect($room->hotel_id)->toBe($hotelB->id);
     });

@@ -78,28 +78,16 @@ class ReservationsImport implements ToCollection, WithHeadingRow
         $roomNumber = trim((string) ($row['room_number'] ?? ''));
 
         if ($roomNumber !== '') {
-            $roomTypeName = trim((string) ($row['room_type'] ?? ''));
-            $roomType = null;
-
-            if ($roomTypeName !== '') {
-                $roomType = RoomType::where('hotel_id', $this->hotel->id)
-                    ->where('name', 'ilike', $roomTypeName)
-                    ->first();
-            }
-
-            if (! $roomType) {
-                $roomType = RoomType::where('hotel_id', $this->hotel->id)->first();
-            }
-
-            if ($roomType) {
-                $room = Room::firstOrCreate(
-                    ['hotel_id' => $this->hotel->id, 'room_number' => $roomNumber],
-                    [
-                        'room_type_id' => $roomType->id,
-                        'floor' => trim((string) ($row['floor'] ?? '')) ?: null,
-                    ]
-                );
-            }
+            $room = Room::withoutGlobalScope('hotel')
+                ->where('hotel_id', $this->hotel->id)
+                ->where('room_number', $roomNumber)
+                ->first()
+                ?? Room::create([
+                    'hotel_id' => $this->hotel->id,
+                    'room_number' => $roomNumber,
+                    'room_type_id' => RoomType::resolveFor($this->hotel->id, $row['room_type'] ?? null)->id,
+                    'floor' => trim((string) ($row['floor'] ?? '')) ?: null,
+                ]);
         }
 
         $guest = ReservationCreator::findOrCreateGuest($this->hotel->id, [

@@ -7,6 +7,7 @@ use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Hotel extends Model
 {
-    use Filterable, HasUuids, SoftDeletes;
+    use Filterable, HasFactory, HasUuids, SoftDeletes;
 
     protected $keyType = 'string';
 
@@ -179,6 +180,11 @@ class Hotel extends Model
     public function rooms(): HasMany
     {
         return $this->hasMany(Room::class);
+    }
+
+    public function roomTypes(): HasMany
+    {
+        return $this->hasMany(RoomType::class);
     }
 
     public function reservations(): HasMany

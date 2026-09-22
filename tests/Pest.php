@@ -10,6 +10,7 @@ use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
+use App\Models\RoomType;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
@@ -174,4 +175,13 @@ function wp5Outcome(Recommendation $recommendation): ?RecommendationOutcome
     return RecommendationOutcome::withoutGlobalScope('hotel')
         ->where('recommendation_id', $recommendation->id)
         ->first();
+}
+
+/**
+ * Rooms require a room type. Tests that do not care which one file the room
+ * under the hotel's default type, created on first use.
+ */
+function roomTypeIdFor(Hotel $hotel): string
+{
+    return RoomType::resolveFor($hotel->id)->id;
 }

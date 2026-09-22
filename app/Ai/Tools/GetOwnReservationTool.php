@@ -40,7 +40,7 @@ class GetOwnReservationTool implements Tool
             'adults' => $this->reservation->adults,
             'children' => $this->reservation->children,
             'room_number' => $this->reservation->room?->room_number,
-            'room_type' => $this->reservation->room?->room_type,
+            'room_type' => $this->reservation->room?->roomType?->name,
             'reservation_value' => $this->reservation->reservation_value,
             'currency' => $this->reservation->currency,
             'special_requests' => $this->reservation->special_requests,

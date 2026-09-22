@@ -73,14 +73,15 @@ Successful custom API responses use this structure:
 
 ## The Room Object
 
-Every endpoint that returns a room returns it in this shape — **no relations are eager-loaded** (unlike the reservation endpoints, this does not embed a nested `hotel` object):
+Every endpoint that returns a room returns it in this shape, with its room type embedded (but not the `hotel`):
 
 ```json
 {
   "id": "019f9b37-c268-738c-bc46-53281c1763cf",
   "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
   "room_number": "101",
-  "room_type": "double",
+  "room_type_id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10",
+  "room_type": { "id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10", "name": "Double", "...": "room type object, see room-types-api-documentation.md" },
   "floor": "1",
   "status": "available",
   "housekeeping_status": "clean",
@@ -93,7 +94,7 @@ Field notes for the UI:
 
 - `id` and `hotel_id` are UUID strings, not integers — don't parse them as numbers.
 - `room_number` and `floor` are free-text strings and are nullable — a room can exist with either blank.
-- `room_type` is **now a real, server-enforced enum** (`App\Enums\RoomTypes`), not free text: `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family`. It's still nullable (a room can have no type set), but if you send a value, it must be one of these seven or the request is rejected with a `422` — see [Create a Room](#2-create-a-room). The full list is echoed back on every `index` call as `body.room_types` (plain strings, see [List Rooms](#1-list-rooms)) so the frontend doesn't need to hard-code it.
+- `room_type_id` is **required** and points at one of the hotel's [room types](room-types-api-documentation.md). `room_type` is that type embedded as an object (not a string any more). The hotel's types are echoed on every `index` call as `body.room_types` so the frontend can build the picker without a second request.
 - `status` is also a free-text string, not a restricted enum server-side (there's no `Rule::in`/cast enforcing specific values). It defaults to `"available"` at the database level when omitted on create. The API will accept any string here, so **the frontend should be the one constraining input** (e.g. a fixed dropdown of `available` / `occupied` / `maintenance` / whatever values the product actually uses) — don't rely on the server to reject typos.
 - `housekeeping_status` **is** a real, server-enforced enum (`App\Enums\HousekeepingStatusesEnum`): `clean`, `dirty`, `blocked`. Unlike `status`, an invalid value here is rejected with a `422`, so you can bind a dropdown straight to those three and trust the server to back you up. It defaults to `"clean"` at the database level when omitted on create, and is never null.
 - `status` and `housekeeping_status` are **two independent axes** — don't collapse them into one badge. `status` answers "can this room be sold" (`available` / `occupied` / `maintenance`); `housekeeping_status` answers "is it ready for a guest". A room can legitimately be `occupied` **and** `dirty` at the same time.
@@ -115,12 +116,12 @@ All optional:
 | Param | Type | Example | Behavior |
 | --- | --- | --- | --- |
 | `filter[<column>]` | string, or array for multiple values | `filter[housekeeping_status]=dirty` | Exact match on any real `rooms` column. `filter[housekeeping_status][]=dirty&filter[housekeeping_status][]=blocked` matches either. |
-| `search` | string | `search=101` | Partial (`LIKE %term%`) match across the room's string-typed columns: `room_number`, `room_type`, `floor`, `status`, `housekeeping_status`. |
+| `search` | string | `search=101` | Partial (`LIKE %term%`) match across the room's string-typed columns: `room_number`, `floor`, `status`, `housekeeping_status`. |
 | `sort` | string | `sort=-created_at` | Sort by a real column. Prefix with `-` for descending. |
 | `page` | integer | `page=2` | Page number, 1-indexed. |
 | `per_page` | integer, 1–100 | `per_page=25` | Page size. Defaults to 15. |
 
-`filter`/`sort` are validated against the rooms table's real columns: `id`, `hotel_id`, `room_number`, `room_type`, `floor`, `status`, `housekeeping_status`, `created_at`, `updated_at`. An unknown key in either returns a `422` (see below).
+`filter`/`sort` are validated against the rooms table's real columns: `id`, `hotel_id`, `room_number`, `room_type_id`, `floor`, `status`, `housekeeping_status`, `created_at`, `updated_at`. An unknown key in either returns a `422` (see below).
 
 ### Example Request
 
@@ -136,7 +137,7 @@ GET /api/room?filter[housekeeping_status]=dirty&sort=room_number
 
 ### Success Response
 
-HTTP `200 OK`. `index` serializes through `App\Http\Resources\RoomResource`, wrapped in a paginated Laravel resource collection, with `room_types` merged in as an extra top-level key:
+HTTP `200 OK`. `index` serializes through `App\Http\Resources\RoomResource`, wrapped in a paginated Laravel resource collection, with the hotel's `room_types` merged in as an extra top-level key:
 
 ```json
 {
@@ -162,7 +163,7 @@ HTTP `200 OK`. `index` serializes through `App\Http\Resources\RoomResource`, wra
       "to": 1,
       "total": 1
     },
-    "room_types": ["single", "double", "twin", "triple", "suite", "deluxe", "family"]
+    "room_types": [ { "id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10", "name": "Double", "...": "room type object" } ]
   }
 }
 ```
@@ -171,7 +172,7 @@ Notes:
 
 - The room array is at **`body.data`** (flat — this is Laravel's standard paginated resource collection shape, not a raw paginator).
 - Pagination controls (`current_page`, `last_page`, `total`, etc.) are on **`body.meta`**; first/last/prev/next page URLs are on **`body.links`**.
-- `body.room_types` is a fixed, hotel-independent list of the valid `room_type` values (plain strings, e.g. `"double"` — the same string you send back on create/update). Use it to populate a `room_type` dropdown instead of hard-coding the seven values.
+- `body.room_types` lists the hotel's room types (full room type objects). Send the chosen one's `id` as `room_type_id` on create/update.
 
 Only `index` changed shape — `store`, `show`, `update`, `destroy` still return a bare [room object](#the-room-object) in `body`, unchanged.
 
@@ -200,7 +201,7 @@ HTTP `422`:
 {
   "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
   "room_number": "101",
-  "room_type": "double",
+  "room_type_id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10",
   "floor": "1",
   "status": "available",
   "housekeeping_status": "clean"
@@ -213,7 +214,7 @@ HTTP `422`:
 | --- | --- |
 | `hotel_id` | **required**, string, must exist in `hotels.id` — see the hotel-scoping note below. |
 | `room_number` | optional, string, max 255. |
-| `room_type` | optional, must be one of `single`, `double`, `twin`, `triple`, `suite`, `deluxe`, `family` (see [`body.room_types`](#1-list-rooms)) — any other value returns a `422`. |
+| `room_type_id` | **required**, uuid, must be a room type of the **same hotel** (see [`body.room_types`](#1-list-rooms)). Missing → `422`; another hotel's type → `403`. |
 | `floor` | optional, string, max 255. |
 | `status` | optional, string, max 255. Defaults to `"available"` if omitted. Not restricted to a fixed list server-side — enforce allowed values client-side. |
 | `housekeeping_status` | optional, must be one of `clean`, `dirty`, `blocked` — any other value returns a `422`. Defaults to `"clean"` if omitted, so you can leave it out of the create form entirely. |
@@ -237,20 +238,19 @@ HTTP `422`:
 }
 ```
 
-### Error: Invalid `room_type`
+### Error: Room Type From Another Hotel
 
-HTTP `422`:
+HTTP `403`:
 
 ```json
 {
-  "message": "The given data was invalid.",
-  "errors": {
-    "room_type": ["The selected room type is invalid."]
-  }
+  "message": "The selected roomTypes does not belong to you.",
+  "code": 403,
+  "body": null
 }
 ```
 
-Same error applies on [update](#4-update-a-room) if `room_type` is included with a bad value.
+Same error applies on [update](#4-update-a-room) if `room_type_id` names another hotel's type.
 
 ### Error: Invalid `housekeeping_status`
 
@@ -410,7 +410,7 @@ curl -X POST http://your-domain.com/api/room \
   -d '{
     "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
     "room_number": "101",
-    "room_type": "double",
+    "room_type_id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10",
     "floor": "1",
     "status": "available",
     "housekeeping_status": "clean"
@@ -453,8 +453,8 @@ curl -X DELETE http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c176
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - List with `GET /api/room`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column` / `sort=-column`, paginate with `page`/`per_page`.
 - **Breaking change:** the room list is now at `body.data.data`, not `body.data` — `index`'s `body` is `{ data: <paginator>, room_types: [...] }`. Pagination fields (`current_page`, `last_page`, `total`) moved from `body.*` to `body.data.*`. See [List Rooms](#1-list-rooms).
-- `body.room_types` (only on `index`) is the authoritative list of valid `room_type` values — use it to populate the type picker instead of hard-coding it.
-- `status` is still a free-text string server-side — enforce your own fixed option list in the UI. `room_type` is **now a real server-enforced enum** (`single`/`double`/`twin`/`triple`/`suite`/`deluxe`/`family`) — an invalid value returns a `422`.
+- **Breaking change (2026-09-23):** rooms belong to a hotel-defined room type. Send `room_type_id` (required) instead of the old `room_type` string; `room_type` in responses is now the embedded room type object. `body.room_types` (only on `index`) lists the hotel's types for the picker.
+- `status` is still a free-text string server-side — enforce your own fixed option list in the UI.
 - **New field:** every room now also returns `housekeeping_status` — a server-enforced enum of `clean` / `dirty` / `blocked`, defaulting to `clean`. It's a **separate axis from `status`**, so render it as its own badge: `status` says whether the room can be sold, `housekeeping_status` says whether it's ready. `blocked` means out of order and should block assignment on its own. Filter the housekeeping worklist with `filter[housekeeping_status]=dirty`, and mark a room serviced with a one-key `PUT`. Expect it to change overnight without user action — a scheduled job dirties every in-house room at `00:01` server time (leaving `blocked` rooms alone), so refetch rather than caching it across a date boundary.
 - `hotel_id` can be set on create but **should not** be included on update — the API doesn't block reassignment, but doing so can strand the room outside the current admin's access.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."

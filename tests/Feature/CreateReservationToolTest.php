@@ -94,6 +94,7 @@ it('rejects a room that does not belong to the resolved hotel', function () {
     $otherHotel = hotelForReservationTool();
     $foreignRoom = Room::create([
         'hotel_id' => $otherHotel->id,
+        'room_type_id' => roomTypeIdFor($otherHotel),
         'room_number' => '101',
     ]);
 

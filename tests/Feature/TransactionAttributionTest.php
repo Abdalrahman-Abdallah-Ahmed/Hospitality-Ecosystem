@@ -29,7 +29,7 @@ function attributionHotel(): Hotel
 function stayInRoom(Hotel $hotel, string $roomNumber, ?string $checkedInAt, ?string $checkedOutAt): Stay
 {
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => $roomNumber]);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => $roomNumber]);
 
     return Stay::create([
         'hotel_id' => $hotel->id,
@@ -75,7 +75,7 @@ it('attributes to the guest who was in the room at that moment', function () {
 
 it('resolves the right stay when a room has hosted several guests in sequence', function () {
     $hotel = attributionHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '34304']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '34304']);
 
     $guestA = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'a-'.uniqid(), 'channel' => 'booking_com']);
     $stayA = Stay::create([

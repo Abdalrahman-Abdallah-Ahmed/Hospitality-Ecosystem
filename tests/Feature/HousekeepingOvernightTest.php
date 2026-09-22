@@ -31,8 +31,8 @@ function housekeepingRoom(Hotel $hotel, string $number, array $overrides = []): 
 {
     return Room::create(array_merge([
         'hotel_id' => $hotel->id,
+        'room_type_id' => roomTypeIdFor($hotel),
         'room_number' => $number,
-        'room_type' => 'double',
         'floor' => '1',
     ], $overrides));
 }

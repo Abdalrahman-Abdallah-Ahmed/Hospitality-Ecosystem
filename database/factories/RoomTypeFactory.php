@@ -12,13 +12,16 @@ class RoomTypeFactory extends Factory
 
     public function definition(): array
     {
+        $adults = $this->faker->numberBetween(1, 3);
+        $children = $this->faker->numberBetween(0, 2);
+
         return [
             'hotel_id' => Hotel::factory(),
             'name' => $this->faker->unique()->word().' Room',
             'description' => $this->faker->sentence(),
-            'max_occupancy' => $this->faker->numberBetween(1, 4),
-            'adult_capacity' => $this->faker->numberBetween(1, 3),
-            'child_capacity' => $this->faker->numberBetween(0, 2),
+            'max_occupancy' => $adults + $children,
+            'adult_capacity' => $adults,
+            'child_capacity' => $children,
             'bed_configuration' => null,
             'amenities' => null,
             'base_price' => $this->faker->randomFloat(2, 50, 500),

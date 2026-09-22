@@ -4,6 +4,7 @@ use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -42,7 +43,7 @@ it('rejects a non-admin user from importing reservations', function () {
 
 it('imports reservations and creates guests scoped to the admin hotel', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101', 'room_type' => 'double']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
 
     $file = importCsv([
         ['555-0100', 'Ann', 'Lee', '101', '2026-09-01', '2026-09-04'],
@@ -75,6 +76,10 @@ it('creates a room when the room_number in the file does not exist yet', functio
     $room = Room::where('hotel_id', $hotel->id)->where('room_number', '204')->first();
     expect($room)->not->toBeNull();
     expect(Reservation::where('room_id', $room->id)->exists())->toBeTrue();
+
+    // The file names no room type, and the hotel has none yet: a default is created.
+    expect($room->roomType->name)->toBe(RoomType::DEFAULT_NAME)
+        ->and($room->roomType->hotel_id)->toBe($hotel->id);
 });
 
 it('does not duplicate a guest matched by phone number on repeat import', function () {

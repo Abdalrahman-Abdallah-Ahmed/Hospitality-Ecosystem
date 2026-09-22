@@ -6,13 +6,14 @@ use App\Concerns\BelongsToHotel;
 use App\Enums\HousekeepingStatusesEnum;
 use App\Models\Concerns\Filterable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Room extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasFactory, HasUuids;
 
     protected $keyType = 'string';
 

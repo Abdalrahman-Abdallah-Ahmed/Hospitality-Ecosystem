@@ -154,7 +154,7 @@ it('rejects creating a reservation with a room from a different hotel', function
     [$admin, $hotel] = adminWithHotel();
     [, $otherHotel] = adminWithHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
-    $foreignRoom = Room::create(['hotel_id' => $otherHotel->id, 'room_number' => '101']);
+    $foreignRoom = Room::create(['hotel_id' => $otherHotel->id, 'room_type_id' => roomTypeIdFor($otherHotel), 'room_number' => '101']);
 
     $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->postJson('/api/reservation', [

@@ -1,62 +1,59 @@
 <?php
 
+use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\RoomType;
 use App\Models\User;
-use Tests\TestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(TestCase::class)->beforeEach(function () {
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
 });
 
-test('test_active_room_types_included_in_queries', function () {
+function roomTypeAvailabilityAdmin(): array
+{
     $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
-    $activeRoomType = RoomType::factory()->create([
-        'hotel_id' => $hotel->id,
-        'is_active' => true,
-    ]);
+    $admin = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
 
-    $response = $this->getJson('/api/room-types', [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    return [$admin, $hotel];
+}
+
+test('test_active_room_types_included_in_queries', function () {
+    [$admin, $hotel] = roomTypeAvailabilityAdmin();
+    $activeRoomType = RoomType::factory()->create(['hotel_id' => $hotel->id, 'is_active' => true]);
+
+    $response = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($admin, 'sanctum')
+        ->getJson('/api/room-types');
 
     $response->assertStatus(200);
-    $ids = collect($response->json('body'))->pluck('id')->toArray();
-    expect($ids)->toContain($activeRoomType->id);
+    expect($response->json('body.data.*.id'))->toContain($activeRoomType->id);
 });
 
 test('test_inactive_room_types_excluded_from_queries', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
-    $inactiveRoomType = RoomType::factory()->create([
-        'hotel_id' => $hotel->id,
-        'is_active' => false,
-    ]);
+    [$admin, $hotel] = roomTypeAvailabilityAdmin();
+    $inactiveRoomType = RoomType::factory()->create(['hotel_id' => $hotel->id, 'is_active' => false]);
 
-    $response = $this->getJson('/api/room-types', [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    // The admin list keeps inactive types (marked inactive) so they can be
+    // reactivated; availability queries are the ones that must skip them.
+    $response = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($admin, 'sanctum')
+        ->getJson('/api/room-types');
 
     $response->assertStatus(200);
-    $response->assertJsonPath('body.0.is_active', true);
+    $response->assertJsonPath('body.data.0.id', $inactiveRoomType->id);
+    $response->assertJsonPath('body.data.0.is_active', false);
 });
 
 test('test_soft_deleted_room_types_never_in_queries', function () {
-    $hotel = Hotel::factory()->create();
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    [$admin, $hotel] = roomTypeAvailabilityAdmin();
     $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
     $roomType->delete();
 
-    $response = $this->getJson('/api/room-types', [
-        'Authorization' => "Bearer {$user->createToken('test')->plainTextToken}",
-        'X-API-KEY' => 'test-api-key',
-    ]);
+    $response = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($admin, 'sanctum')
+        ->getJson('/api/room-types');
 
     $response->assertStatus(200);
-    $ids = collect($response->json('body'))->pluck('id')->toArray();
-    expect($ids)->not->toContain($roomType->id);
+    expect($response->json('body.data.*.id'))->not->toContain($roomType->id);
 });

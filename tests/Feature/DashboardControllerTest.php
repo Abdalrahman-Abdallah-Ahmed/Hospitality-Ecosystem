@@ -58,8 +58,8 @@ it('no longer returns a field named revenue_today', function () {
 
 it('reports today\'s occupancy from the current room-status snapshot', function () {
     [$admin, $hotel] = userWithOwnHotel();
-    Room::create(['hotel_id' => $hotel->id, 'room_number' => '101', 'status' => 'occupied']);
-    Room::create(['hotel_id' => $hotel->id, 'room_number' => '102', 'status' => 'available']);
+    Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101', 'status' => 'occupied']);
+    Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '102', 'status' => 'available']);
 
     $response = $this->withHeaders(dashboardApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/dashboard');
@@ -76,8 +76,8 @@ it('reports today\'s occupancy from the current room-status snapshot', function 
 
 it('computes occupancy for a non-today date from stay events', function () {
     [$admin, $hotel] = userWithOwnHotel();
-    Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
-    Room::create(['hotel_id' => $hotel->id, 'room_number' => '102']);
+    Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
+    Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '102']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     // In house across the requested date.
@@ -152,7 +152,7 @@ function dashboardGuestWithStay(Hotel $hotel, bool $isVip, string $status, strin
 
 it('lists VIP guests who are in house or arriving today', function () {
     [$admin, $hotel] = userWithOwnHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '101']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
 
     $inHouse = dashboardGuestWithStay($hotel, true, 'in_house', now()->subDay()->toDateString(), $room);
     $arrivingToday = dashboardGuestWithStay($hotel, true, 'expected', now()->toDateString());
