@@ -103,6 +103,7 @@ Every endpoint that returns a reservation returns it in this shape, with `hotel`
       "room_type_id": "019f9b37-c267-7000-a000-00000000dlx1",
       "room_id": "019f9b37-c268-738c-bc46-53281c1763cf",
       "status": "reserved",
+      "cancelled_with_reservation": false,
       "room_type": { "id": "...", "name": "Deluxe", "...": "..." },
       "room": { "id": "...", "room_number": "101", "...": "..." }
     },
@@ -112,6 +113,7 @@ Every endpoint that returns a reservation returns it in this shape, with `hotel`
       "room_type_id": "019f9b37-c267-7000-a000-00000000dlx1",
       "room_id": null,
       "status": "reserved",
+      "cancelled_with_reservation": false,
       "room_type": { "id": "...", "name": "Deluxe", "...": "..." },
       "room": null
     }
@@ -122,7 +124,7 @@ Every endpoint that returns a reservation returns it in this shape, with `hotel`
 }
 ```
 
-**Reservation rooms ("lines").** A reservation books one or more room *units*; each is a line in `rooms`. "2 × Deluxe" is two lines. Each line names the room type booked (`room_type_id`) and, optionally, the physical room (`room_id`, `null` while unassigned). Lines have no dates of their own — they all share the reservation's `arrival_date`/`departure_date`. A line's `status` is `reserved` or `cancelled`; cancelled lines stay in `rooms` for history but hold no room and don't count in `room_summary`. `rooms` is ordered by creation; `room_summary` counts live (non-cancelled) lines per type.
+**Reservation rooms ("lines").** A reservation books one or more room *units*; each is a line in `rooms`. "2 × Deluxe" is two lines. Each line names the room type booked (`room_type_id`) and, optionally, the physical room (`room_id`, `null` while unassigned). Lines have no dates of their own — they all share the reservation's `arrival_date`/`departure_date`. A line's `status` is `reserved` or `cancelled`; cancelled lines stay in `rooms` for history but hold no room and don't count in `room_summary`. `cancelled_with_reservation` is `true` on a line cancelled because its whole reservation was: exactly the lines un-cancelling the reservation brings back. `rooms` is ordered by creation; `room_summary` counts live (non-cancelled) lines per type.
 
 Field notes for the UI:
 

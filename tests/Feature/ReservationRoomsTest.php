@@ -581,7 +581,11 @@ it('restores the rooms a reservation had when it is brought back from cancelled'
 
     // A line staff removed on purpose before the cancellation stays removed.
     rrUpdate($this, $admin, $id, ['rooms' => [['id' => $assigned]]])->assertOk();
-    rrUpdate($this, $admin, $id, ['status' => 'cancelled'])->assertOk();
+
+    // The response says which lines an un-cancel would bring back.
+    $cancelled = collect(rrUpdate($this, $admin, $id, ['status' => 'cancelled'])->assertOk()->json('body.rooms'))->keyBy('id');
+    expect($cancelled[$assigned]['cancelled_with_reservation'])->toBeTrue()
+        ->and($cancelled[$unassigned]['cancelled_with_reservation'])->toBeFalse();
 
     rrUpdate($this, $admin, $id, ['status' => 'checked_in'])->assertOk()
         ->assertJsonPath('body.room_summary.0.quantity', 1);
