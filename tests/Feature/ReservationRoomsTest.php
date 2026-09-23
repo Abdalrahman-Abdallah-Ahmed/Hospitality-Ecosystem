@@ -532,3 +532,138 @@ it('lists reservations without a query per reservation, and books 50 rooms at on
         ->assertCreated()
         ->assertJsonCount(50, 'body.rooms');
 });
+
+// Code review fixes
+
+it('swaps the rooms of two lines in one update', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $room101 = rrRoom($hotel, $deluxe, '101');
+    $room102 = rrRoom($hotel, $deluxe, '102');
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [
+        ['room_type_id' => $deluxe->id, 'room_id' => $room101->id],
+        ['room_type_id' => $deluxe->id, 'room_id' => $room102->id],
+    ]))->assertCreated()->json('body.id');
+    $lineA = ReservationRoom::where('reservation_id', $id)->where('room_id', $room101->id)->value('id');
+    $lineB = ReservationRoom::where('reservation_id', $id)->where('room_id', $room102->id)->value('id');
+
+    rrUpdate($this, $admin, $id, ['rooms' => [
+        ['id' => $lineA, 'room_id' => $room102->id],
+        ['id' => $lineB, 'room_id' => $room101->id],
+    ]])->assertOk();
+
+    expect(ReservationRoom::find($lineA)->room_id)->toBe($room102->id)
+        ->and(ReservationRoom::find($lineB)->room_id)->toBe($room101->id);
+});
+
+it('moves a line into the room of a line removed in the same update', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $room101 = rrRoom($hotel, $deluxe, '101');
+    $room102 = rrRoom($hotel, $deluxe, '102');
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [
+        ['room_type_id' => $deluxe->id, 'room_id' => $room101->id],
+        ['room_type_id' => $deluxe->id, 'room_id' => $room102->id],
+    ]))->json('body.id');
+    $lineA = ReservationRoom::where('reservation_id', $id)->where('room_id', $room101->id)->value('id');
+
+    rrUpdate($this, $admin, $id, ['rooms' => [['id' => $lineA, 'room_id' => $room102->id]]])->assertOk();
+
+    expect(ReservationRoom::find($lineA)->room_id)->toBe($room102->id)
+        ->and(ReservationRoom::where('reservation_id', $id)->active()->count())->toBe(1);
+});
+
+it('restores the rooms a reservation had when it is brought back from cancelled', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $room = rrRoom($hotel, $deluxe, '101');
+    [$id, $assigned, $unassigned] = rrReservationWithTwoDeluxe($this, $admin, $hotel, $guest, $deluxe, $room);
+
+    // A line staff removed on purpose before the cancellation stays removed.
+    rrUpdate($this, $admin, $id, ['rooms' => [['id' => $assigned]]])->assertOk();
+    rrUpdate($this, $admin, $id, ['status' => 'cancelled'])->assertOk();
+
+    rrUpdate($this, $admin, $id, ['status' => 'checked_in'])->assertOk()
+        ->assertJsonPath('body.room_summary.0.quantity', 1);
+
+    expect(ReservationRoom::find($assigned)->status)->toBe(ReservationRoomStatus::RESERVED)
+        ->and(ReservationRoom::find($unassigned)->status)->toBe(ReservationRoomStatus::CANCELLED)
+        ->and($room->fresh()->status)->toBe('occupied');
+});
+
+it('brings a cancelled reservation back with the rooms sent in the same request', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $suite = rrType($hotel, 'Suite');
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $deluxe->id]], ['adults' => 1]))->json('body.id');
+    $line = ReservationRoom::where('reservation_id', $id)->value('id');
+    rrUpdate($this, $admin, $id, ['status' => 'cancelled'])->assertOk();
+
+    rrUpdate($this, $admin, $id, ['status' => 'confirmed', 'rooms' => [['id' => $line], ['room_type_id' => $suite->id]]])
+        ->assertOk();
+
+    expect(ReservationRoom::where('reservation_id', $id)->active()->pluck('room_type_id')->sort()->values()->all())
+        ->toBe(collect([$deluxe->id, $suite->id])->sort()->values()->all());
+});
+
+it('checks capacity when a cancelled reservation is brought back', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $double = rrType($hotel, 'Double');
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $double->id]], ['status' => 'cancelled']))->json('body.id');
+
+    rrUpdate($this, $admin, $id, ['status' => 'confirmed', 'adults' => 3])
+        ->assertStatus(422)->assertJsonValidationErrors(['rooms']);
+
+    expect(Reservation::find($id)->status->value)->toBe('cancelled');
+});
+
+it('still rejects line changes on a cancelled reservation that stays cancelled', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $deluxe->id]], ['status' => 'cancelled']))->json('body.id');
+
+    rrUpdate($this, $admin, $id, ['rooms' => [['room_type_id' => $deluxe->id]]])
+        ->assertStatus(422)->assertJsonFragment(['Rooms cannot be changed on a cancelled reservation.']);
+});
+
+it('accepts ids in upper case', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $room101 = rrRoom($hotel, $deluxe, '101');
+    $room102 = rrRoom($hotel, $deluxe, '102');
+
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [
+        ['room_type_id' => strtoupper($deluxe->id), 'room_id' => strtoupper($room101->id)],
+    ]))->assertCreated()->json('body.id');
+    $line = ReservationRoom::where('reservation_id', $id)->sole();
+
+    expect($line->room_id)->toBe($room101->id);
+
+    rrUpdate($this, $admin, $id, ['rooms' => [[
+        'id' => strtoupper($line->id),
+        'room_type_id' => strtoupper($deluxe->id),
+        'room_id' => strtoupper($room102->id),
+    ]]])->assertOk();
+
+    expect($line->fresh()->room_id)->toBe($room102->id);
+
+    $this->withHeaders(rrHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/reservation?filter[room_id]='.strtoupper($room102->id))
+        ->assertOk()->assertJsonCount(1, 'body.data');
+});
+
+it('treats line filters like the other filters: empty is ignored, a list matches any, junk matches nothing', function () {
+    [$admin, $hotel, $guest] = rrAdmin();
+    $deluxe = rrType($hotel, 'Deluxe');
+    $suite = rrType($hotel, 'Suite');
+    $twin = rrType($hotel, 'Twin');
+    rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $deluxe->id]]));
+    rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $suite->id]]));
+    rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $twin->id]]));
+
+    $get = fn (string $query) => $this->withHeaders(rrHeaders())->actingAs($admin, 'sanctum')->getJson("/api/reservation?{$query}");
+
+    $get('filter[room_id]=')->assertOk()->assertJsonCount(3, 'body.data');
+    $get("filter[room_type_id][]={$deluxe->id}&filter[room_type_id][]={$suite->id}")->assertOk()->assertJsonCount(2, 'body.data');
+    $get('filter[room_type_id]=not-a-uuid')->assertOk()->assertJsonCount(0, 'body.data');
+});

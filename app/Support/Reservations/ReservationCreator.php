@@ -88,19 +88,20 @@ class ReservationCreator
      * tenant scope, and matching on the code alone would restore — and
      * overwrite — another hotel's reservation that happens to share it.
      *
-     * `$skipCapacity` is for the import only: legacy data is recorded as it
-     * is rather than rejected.
+     * `$fromImport` is for the reservation import only: legacy data is
+     * recorded as it is rather than rejected, so the party-capacity check is
+     * skipped and a room type the hotel has since deactivated is accepted.
      *
      * @param  array<int, array<string, mixed>>  $rooms
      */
-    public static function create(array $attributes, array $rooms, bool $capacityOverride = false, bool $skipCapacity = false): Reservation
+    public static function create(array $attributes, array $rooms, bool $capacityOverride = false, bool $fromImport = false): Reservation
     {
         unset($attributes['room_id']);
 
         $units = ReservationRoomSync::expand($rooms);
-        ReservationRoomSync::validateNewUnits($attributes['hotel_id'], $units);
+        ReservationRoomSync::validateNewUnits($attributes['hotel_id'], $units, allowInactive: $fromImport);
 
-        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $skipCapacity) {
+        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport) {
             $reservation = Reservation::onlyTrashed()
                 ->where('hotel_id', $attributes['hotel_id'])
                 ->where('reservation_id', $attributes['reservation_id'])
@@ -121,7 +122,7 @@ class ReservationCreator
                 self::addLine($reservation, $unit);
             }
 
-            if (! $skipCapacity) {
+            if (! $fromImport) {
                 self::checkCapacity($reservation, $capacityOverride);
             }
 
@@ -135,8 +136,12 @@ class ReservationCreator
     /**
      * Updates a reservation and, when `$rooms` is given, its lines, in one
      * transaction. `$rooms` is the desired list of live lines (see
-     * ReservationRoomSync::diff()); null leaves the lines alone. Cancelling
-     * the reservation cancels every line.
+     * ReservationRoomSync::diff()); null leaves the lines alone.
+     *
+     * Cancelling the reservation cancels every live line and marks them as
+     * cancelled with it. Bringing a cancelled reservation back (any other
+     * status) restores those lines, unless `$rooms` says which lines it
+     * should have instead.
      *
      * @param  array<int, array<string, mixed>>|null  $rooms
      */
@@ -144,33 +149,33 @@ class ReservationCreator
     {
         unset($attributes['room_id']);
 
+        $statusBefore = $reservation->status;
+        $statusAfter = isset($attributes['status'])
+            ? ($attributes['status'] instanceof ReservationStatus ? $attributes['status'] : ReservationStatus::from($attributes['status']))
+            : $statusBefore;
+        $reactivating = $statusBefore === ReservationStatus::CANCELLED && $statusAfter !== ReservationStatus::CANCELLED;
+
         $plan = $rooms !== null
-            ? ReservationRoomSync::diff($reservation, $rooms, $reservation->status)
+            ? ReservationRoomSync::diff($reservation, $rooms, $statusBefore, $reactivating)
             : null;
 
-        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride) {
+        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating) {
             $roomIdsBefore = self::roomIdsOf($reservation);
 
             $reservation->update($attributes);
             $partyChanged = $reservation->wasChanged(['adults', 'children']);
 
             if ($plan) {
-                foreach ($plan['moves'] as $lineId => $roomId) {
-                    ReservationRoom::withoutGlobalScope('hotel')->findOrFail($lineId)->update(['room_id' => $roomId]);
-                }
-
-                self::cancelLines($plan['cancel']);
-
-                foreach ($plan['create'] as $unit) {
-                    self::addLine($reservation, $unit);
-                }
+                self::applyPlan($reservation, $plan);
+            } elseif ($reactivating) {
+                self::reinstateLines($reservation->reservationRooms()->where('cancelled_with_reservation', true)->get());
             }
 
             if ($reservation->status === ReservationStatus::CANCELLED) {
-                self::cancelLines($reservation->reservationRooms()->active()->get());
+                self::cancelLines($reservation->reservationRooms()->active()->get(), withReservation: true);
             }
 
-            if (($plan || $partyChanged) && $reservation->status !== ReservationStatus::CANCELLED) {
+            if (($plan || $partyChanged || $reactivating) && $reservation->status !== ReservationStatus::CANCELLED) {
                 self::checkCapacity($reservation, $capacityOverride);
             }
 
@@ -211,14 +216,69 @@ class ReservationCreator
     }
 
     /**
+     * Writes a planned line update in an order the database accepts. One
+     * room may sit on only one live line of a reservation, and the unique
+     * index is checked after every row, so: removed lines give their rooms
+     * up first, every moving line then lets go of its old room, and only
+     * then do moves, reinstated lines and new lines take theirs. Swapping
+     * two lines' rooms, or moving into a room a removed line held, works.
+     *
+     * @param  array{moves: array<string, string|null>, create: array<int, array<string, mixed>>, cancel: iterable<ReservationRoom>, reinstate: array<int, string>}  $plan
+     */
+    private static function applyPlan(Reservation $reservation, array $plan): void
+    {
+        self::cancelLines($plan['cancel']);
+
+        $lines = ReservationRoom::withoutGlobalScope('hotel')
+            ->whereIn('id', [...array_keys($plan['moves']), ...$plan['reinstate']])
+            ->get()
+            ->keyBy('id');
+
+        // Let go of old rooms quietly; the audited change is the final one.
+        foreach (array_keys($plan['moves']) as $lineId) {
+            if ($lines[$lineId]->room_id !== null) {
+                ReservationRoom::withoutGlobalScope('hotel')->whereKey($lineId)->update(['room_id' => null]);
+            }
+        }
+
+        self::reinstateLines($lines->only($plan['reinstate']));
+
+        foreach ($plan['moves'] as $lineId => $roomId) {
+            $lines[$lineId]->update(['room_id' => $roomId]);
+        }
+
+        foreach ($plan['create'] as $unit) {
+            self::addLine($reservation, $unit);
+        }
+    }
+
+    /**
      * Cancelled through the model, one by one, so each is audited.
+     * `$withReservation` marks lines cancelled because the whole
+     * reservation was, so bringing it back can restore them.
      *
      * @param  iterable<ReservationRoom>  $lines
      */
-    private static function cancelLines(iterable $lines): void
+    private static function cancelLines(iterable $lines, bool $withReservation = false): void
     {
         foreach ($lines as $line) {
-            $line->update(['status' => ReservationRoomStatus::CANCELLED]);
+            $line->update([
+                'status' => ReservationRoomStatus::CANCELLED,
+                'cancelled_with_reservation' => $withReservation,
+            ]);
+        }
+    }
+
+    /**
+     * @param  iterable<ReservationRoom>  $lines
+     */
+    private static function reinstateLines(iterable $lines): void
+    {
+        foreach ($lines as $line) {
+            $line->update([
+                'status' => ReservationRoomStatus::RESERVED,
+                'cancelled_with_reservation' => false,
+            ]);
         }
     }
 

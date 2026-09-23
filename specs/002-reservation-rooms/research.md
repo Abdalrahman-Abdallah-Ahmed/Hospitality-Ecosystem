@@ -47,8 +47,8 @@ needed and why, from a read of the current code.
 - **Decision**: Keep `ReservationCreator` as the single domain entry point, add
   `create(attributes, lines, capacityOverride)` and a new `update(...)`, both in one
   `DB::transaction()`. Signature: `create(array $attributes, array $rooms, bool
-  $capacityOverride = false, bool $skipCapacity = false)`; only the import passes
-  `$skipCapacity`. Line expansion, diffing and validation go in a new collaborator
+  $capacityOverride = false, bool $fromImport = false)`; only the import passes
+  `$fromImport` (skips the capacity check, accepts deactivated room types). Line expansion, diffing and validation go in a new collaborator
   `App\Support\Reservations\ReservationRoomSync`.
 - **Rationale**: Constitution II (reuse) and plan §2.4 ("MODIFY, do not duplicate"). The
   controller's `update()` currently writes the model directly; moving it behind

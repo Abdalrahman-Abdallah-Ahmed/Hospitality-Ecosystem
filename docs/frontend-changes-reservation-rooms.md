@@ -119,12 +119,13 @@ Replace the single room picker with a **room-type lines editor**.
 
 - **Checked-in:** replace the lines editor with a **"Move room"** action per line: a room picker filtered to the line's type. It sends `rooms` with every live line's `id` and the new `room_id` on the moved line. The backend frees the old room and marks the new one occupied.
 - Removing the last line isn't allowed. Offer "Cancel reservation" instead (`status: 'cancelled'` cancels every line).
+- **Un-cancelling** (added after the first handoff): changing a `cancelled` reservation back to another status restores the lines it had when it was cancelled, so a plain `{ status: 'confirmed' }` is enough. If the UI lets the user pick rooms while un-cancelling, send `rooms` in the same request: `{ id }` of any of the reservation's lines reinstates it, items without `id` add lines, and omitted lines stay cancelled. Handle the capacity 422 the same way as on create.
 
 ---
 
 ## 5. Reservation list filters: `GET /api/reservation`
 
-- New: `filter[room_type_id]=<uuid>` and `filter[room_id]=<uuid>`. Each matches reservations with **any live line** of that type or room. Add "Room type" and "Room" filter selects.
+- New: `filter[room_type_id]=<uuid>` and `filter[room_id]=<uuid>`. Each matches reservations with **any live line** of that type or room. Add "Room type" and "Room" filter selects. Both also accept a list (`filter[room_type_id][]=a&filter[room_type_id][]=b`, matches either), and an empty value is ignored.
 - They **can't be used for `sort`**. There's no "sort by room" any more; remove it if present.
 - `search` no longer matches room ids.
 
