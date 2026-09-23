@@ -73,7 +73,7 @@ it('automatically creates a stay for a newly created reservation', function () {
         'arrival_date' => '2026-09-01',
         'departure_date' => '2026-09-04',
         'status' => ReservationStatus::PENDING->value,
-    ]);
+    ], [['room_type_id' => roomTypeIdFor($hotel)]]);
 
     $stay = Stay::where('reservation_id', $reservation->id)->first();
 
@@ -96,7 +96,7 @@ it('does not mark a merely pending reservation as a no-show', function () {
         'arrival_date' => now()->addMonth()->toDateString(),
         'departure_date' => now()->addMonth()->addDays(3)->toDateString(),
         'status' => ReservationStatus::PENDING->value,
-    ]);
+    ], [['room_type_id' => roomTypeIdFor($hotel)]]);
 
     expect(Stay::where('reservation_id', $reservation->id)->first()->status)->toBe(StayStatus::EXPECTED);
 });
@@ -112,7 +112,7 @@ it('reverts a checked-in stay back to expected, clearing the stale check-in, whe
         'arrival_date' => '2026-09-01',
         'departure_date' => '2026-09-04',
         'status' => ReservationStatus::CHECKED_IN->value,
-    ]);
+    ], [['room_type_id' => roomTypeIdFor($hotel)]]);
 
     $reservation->update(['status' => ReservationStatus::PENDING->value]);
     ReservationCreator::syncStay($reservation);
@@ -240,24 +240,22 @@ it('carries reservation edits through to its stay without touching what actually
     $reservation = ReservationCreator::create([
         'hotel_id' => $hotel->id,
         'guest_id' => $guest->id,
-        'room_id' => $firstRoom->id,
         'reservation_id' => 'RES-'.Str::random(8),
         'arrival_date' => '2026-09-01',
         'departure_date' => '2026-09-04',
         'adults' => 1,
         'reservation_value' => 300,
         'status' => ReservationStatus::CHECKED_IN->value,
-    ]);
+    ], [['room_type_id' => roomTypeIdFor($hotel), 'room_id' => $firstRoom->id]]);
 
     $checkedInAt = Stay::where('reservation_id', $reservation->id)->first()->checked_in_at;
+    $line = $reservation->reservationRooms()->sole();
 
-    $reservation->update([
-        'room_id' => $secondRoom->id,
+    ReservationCreator::update($reservation, [
         'departure_date' => '2026-09-06',
         'adults' => 2,
         'reservation_value' => 500,
-    ]);
-    ReservationCreator::syncStay($reservation);
+    ], [['id' => $line->id, 'room_id' => $secondRoom->id]]);
 
     $stay = Stay::where('reservation_id', $reservation->id)->first();
 

@@ -71,7 +71,9 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
 
             You can also create records. These write to the hotel's real data, so they follow stricter rules
             than answering a question does:
-            - A tool to create a reservation, matching the guest by phone number.
+            - A tool to create a reservation, matching the guest by phone number. It books room types with a
+              quantity (e.g. 2 × Deluxe); a specific room number is optional and only for a single room. If the
+              admin did not say which room type, ask — never pick one, and never invent a room number.
             - A tool to add a room: room number, type, floor, status. Room numbers are unique per hotel.
             - A tool to add an activity the hotel offers, with its price and category. Anything you create
               here becomes recommendable to guests, so only add activities the hotel actually offers.
@@ -92,7 +94,7 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
 
             You may be sent a photo or screenshot of reservation details (e.g. from a booking platform, ID, or
             handwritten note). Read every visible detail from it and use the create-reservation tool to create
-            the reservation. The guest's phone number, arrival date, and departure date are required — if any
+            the reservation. The guest's phone number, arrival date, departure date and room type are required — if any
             of those is missing or illegible in the image, ask the admin to confirm or provide it rather than
             guessing. Confirm back to the admin what was created, including anything you couldn't read clearly.
             PROMPT;

@@ -10,6 +10,7 @@ use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\Reservation;
 use App\Models\Room;
+use App\Models\RoomType;
 use App\Models\Task;
 use App\Models\User;
 use App\Notifications\AiTaskCreatedNotification;
@@ -143,6 +144,7 @@ it('emails the admins when a reservation is created through whatsapp', function 
 
     (new CreateReservationTool($hotel))->handle(new Request([
         'guest_phone' => '201222333444',
+        'rooms' => [['room_type' => RoomType::resolveFor($hotel->id)->name]],
         'arrival_date' => '2026-10-01',
         'departure_date' => '2026-10-04',
     ]));
@@ -170,6 +172,7 @@ it('does not email admins about a reservation created through the api', function
             'reservation_id' => 'RES-API-1',
             'arrival_date' => '2026-10-01',
             'departure_date' => '2026-10-04',
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel)]],
         ])
         ->assertStatus(201);
 
@@ -215,10 +218,8 @@ it('renders the task and reservation emails', function () {
         'title' => 'Fix the AC',
         'description' => 'It is blowing warm air.',
     ])->fresh();
-    $reservation = Reservation::create([
-        'hotel_id' => $hotel->id,
+    $reservation = createReservationWithRooms($hotel, [['room_id' => $room->id], []], [
         'guest_id' => $guest->id,
-        'room_id' => $room->id,
         'reservation_id' => 'RES-WA-1',
         'arrival_date' => '2026-10-01',
         'departure_date' => '2026-10-04',
@@ -234,5 +235,5 @@ it('renders the task and reservation emails', function () {
 
     expect($assigned)->toContain('Fix the AC', '203', 'Sara', 'It is blowing warm air.')
         ->and($aiTask)->toContain('Nile Hotel', 'Fix the AC')
-        ->and($whatsApp)->toContain('RES-WA-1', 'Nile Hotel', '201222333444', '2026-10-01', '2026-10-04', '203');
+        ->and($whatsApp)->toContain('RES-WA-1', 'Nile Hotel', '201222333444', '2026-10-01', '2026-10-04', '2 × Standard', '203, unassigned');
 });

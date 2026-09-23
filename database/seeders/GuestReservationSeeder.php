@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\ReservationStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\RoomType;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Database\Seeder;
 
@@ -40,6 +41,8 @@ class GuestReservationSeeder extends Seeder
             'source' => 'whatsapp',
             'reservation_value' => 450,
             'currency' => $hotel->currency,
+        ], [
+            ['room_type_id' => RoomType::resolveFor($hotel->id)->id],
         ]);
     }
 }

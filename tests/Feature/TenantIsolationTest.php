@@ -18,6 +18,7 @@ use App\Models\PitchDecision;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
+use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
 use App\Models\Task;
@@ -79,6 +80,8 @@ function tenantOwnedModelFactories(): array
                 'status' => 'confirmed',
             ]);
         },
+        ReservationRoom::class => fn (Hotel $hotel) => createReservationWithRooms($hotel, [[]])
+            ->reservationRooms()->first(),
         Room::class => fn (Hotel $hotel) => Room::create([
             'hotel_id' => $hotel->id,
             'room_type_id' => roomTypeIdFor($hotel),
@@ -345,4 +348,52 @@ it('does not override an explicitly provided hotel_id on create', function () {
 
         expect($room->hotel_id)->toBe($hotelB->id);
     });
+});
+
+// Reservation rooms: lines, line filters and cross-hotel references
+
+it('never shows or accepts another hotel\'s room types and rooms on reservation lines', function () {
+    $hotelA = makeHotel();
+    $hotelB = makeHotel();
+    $adminB = User::where('hotel_id', $hotelB->id)->firstOrFail();
+
+    $typeA = roomTypeIdFor($hotelA);
+    $roomA = Room::create(['hotel_id' => $hotelA->id, 'room_type_id' => $typeA, 'room_number' => '101']);
+    $reservationA = createReservationWithRooms($hotelA, [['room_id' => $roomA->id]]);
+    $guestB = Guest::create(['hotel_id' => $hotelB->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+    // Reading hotel A's reservation (and its lines) is refused.
+    $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
+        ->getJson("/api/reservation/{$reservationA->id}")
+        ->assertStatus(403);
+
+    // Filtering by hotel A's type or room finds nothing.
+    foreach (['room_type_id' => $typeA, 'room_id' => $roomA->id] as $filter => $value) {
+        $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
+            ->getJson("/api/reservation?filter[{$filter}]={$value}")
+            ->assertOk()
+            ->assertJsonCount(0, 'body.data');
+    }
+
+    // Booking hotel A's type or room is rejected, with no hint either exists.
+    $payload = fn (array $line) => [
+        'hotel_id' => $hotelB->id,
+        'guest_id' => $guestB->id,
+        'reservation_id' => 'RES-'.uniqid(),
+        'arrival_date' => '2026-10-01',
+        'departure_date' => '2026-10-04',
+        'rooms' => [$line],
+    ];
+
+    $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
+        ->postJson('/api/reservation', $payload(['room_type_id' => $typeA]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['rooms.0.room_type_id' => 'The selected room type is not available.']);
+
+    $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
+        ->postJson('/api/reservation', $payload(['room_type_id' => roomTypeIdFor($hotelB), 'room_id' => $roomA->id]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['rooms.0.room_id' => 'The selected room is not available.']);
+
+    expect(ReservationRoom::withoutGlobalScope('hotel')->where('hotel_id', $hotelB->id)->count())->toBe(0);
 });

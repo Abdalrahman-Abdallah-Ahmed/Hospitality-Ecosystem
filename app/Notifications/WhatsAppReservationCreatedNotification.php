@@ -50,9 +50,13 @@ class WhatsAppReservationCreatedNotification extends Notification implements Sho
             ->line("**Guests:** {$reservation->adults} adults, {$reservation->children} children")
             ->line('**Status:** '.ucfirst($reservation->status->value));
 
-        if ($reservation->room) {
-            $mail->line("**Room:** {$reservation->room->room_number}");
-        }
+        // One line per room type: "2 × Deluxe — 101, unassigned".
+        $reservation->reservationRooms()->active()->with(['roomType', 'room'])->get()
+            ->groupBy('room_type_id')
+            ->each(function ($lines) use ($mail) {
+                $rooms = $lines->map(fn ($line) => $line->room?->room_number ?? 'unassigned')->implode(', ');
+                $mail->line("**Rooms:** {$lines->count()} × {$lines->first()->roomType?->name} — {$rooms}");
+            });
 
         if ($reservation->special_requests) {
             $mail->line("**Special requests:** {$reservation->special_requests}");

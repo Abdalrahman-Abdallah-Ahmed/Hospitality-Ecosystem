@@ -10,6 +10,8 @@ use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
+use App\Models\ReservationRoom;
+use App\Models\Room;
 use App\Models\RoomType;
 use App\Models\Transaction;
 use App\Models\User;
@@ -184,4 +186,47 @@ function wp5Outcome(Recommendation $recommendation): ?RecommendationOutcome
 function roomTypeIdFor(Hotel $hotel): string
 {
     return RoomType::resolveFor($hotel->id)->id;
+}
+
+/**
+ * A reservation with the given lines, written straight to the models (the
+ * fixture path; it skips ReservationCreator's validation and occupancy sync).
+ * Each line is ['room_type_id' => …, 'room_id' => ?, 'status' => ?]; a line
+ * with a room but no type is filed under that room's type.
+ *
+ * @param  array<int, array<string, mixed>>  $lines
+ * @param  array<string, mixed>  $attributes
+ */
+function createReservationWithRooms(Hotel $hotel, array $lines, array $attributes = []): Reservation
+{
+    $reservation = Reservation::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $attributes['guest_id'] ?? Guest::create([
+            'hotel_id' => $hotel->id,
+            'external_id' => 'ext-'.Str::random(8),
+            'channel' => 'booking_com',
+        ])->id,
+        'reservation_id' => 'RES-'.Str::random(8),
+        'arrival_date' => now()->toDateString(),
+        'departure_date' => now()->addDays(2)->toDateString(),
+        'status' => 'confirmed',
+        'adults' => 1,
+        'children' => 0,
+        ...$attributes,
+    ]);
+
+    foreach ($lines as $line) {
+        $roomTypeId = $line['room_type_id']
+            ?? (isset($line['room_id']) ? Room::withoutGlobalScope('hotel')->findOrFail($line['room_id'])->room_type_id : roomTypeIdFor($hotel));
+
+        ReservationRoom::create([
+            'hotel_id' => $hotel->id,
+            'reservation_id' => $reservation->id,
+            'room_type_id' => $roomTypeId,
+            'room_id' => $line['room_id'] ?? null,
+            'status' => $line['status'] ?? 'reserved',
+        ]);
+    }
+
+    return $reservation;
 }

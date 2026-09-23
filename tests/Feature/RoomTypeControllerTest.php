@@ -153,6 +153,47 @@ test('test_delete_blocked_by_active_rooms', function () {
         ->assertJsonPath('body.error', 'deletion_blocked_by_rooms');
 });
 
+test('test_delete_blocked_by_current_or_upcoming_reservations', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+    $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
+    createReservationWithRooms($hotel, [['room_type_id' => $roomType->id]], [
+        'arrival_date' => now()->addDays(5)->toDateString(),
+        'departure_date' => now()->addDays(8)->toDateString(),
+    ]);
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->deleteJson("/api/room-types/{$roomType->id}")
+        ->assertStatus(422)
+        ->assertJsonPath('body.error', 'deletion_blocked_by_reservations')
+        ->assertJsonPath('body.reservations', 1);
+
+    expect($roomType->fresh()->trashed())->toBeFalse();
+});
+
+test('test_delete_allowed_when_only_past_or_cancelled_reservations_use_it', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+    $roomType = RoomType::factory()->create(['hotel_id' => $hotel->id]);
+    createReservationWithRooms($hotel, [['room_type_id' => $roomType->id]], [
+        'arrival_date' => now()->subDays(8)->toDateString(),
+        'departure_date' => now()->subDays(5)->toDateString(),
+    ]);
+    createReservationWithRooms($hotel, [['room_type_id' => $roomType->id, 'status' => 'cancelled']], [
+        'arrival_date' => now()->addDays(5)->toDateString(),
+        'departure_date' => now()->addDays(8)->toDateString(),
+    ]);
+    createReservationWithRooms($hotel, [['room_type_id' => $roomType->id]], [
+        'status' => 'cancelled',
+        'arrival_date' => now()->addDays(5)->toDateString(),
+        'departure_date' => now()->addDays(8)->toDateString(),
+    ]);
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->deleteJson("/api/room-types/{$roomType->id}")
+        ->assertOk();
+
+    expect(RoomType::withTrashed()->find($roomType->id)->trashed())->toBeTrue();
+});
+
 test('test_create_rejects_a_name_already_used_in_the_hotel', function () {
     [$admin, $hotel] = roomTypeAdmin();
     RoomType::factory()->create(['hotel_id' => $hotel->id, 'name' => 'Deluxe']);

@@ -20,7 +20,7 @@ class GetReservationsTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return "Retrieve today's reservations (arriving today) for the current hotel, including guest name, room number, and status.";
+        return "Retrieve today's reservations (arriving today) for the current hotel, including guest name, the rooms booked (room type and room number, if assigned), and status.";
     }
 
     /**
@@ -28,7 +28,7 @@ class GetReservationsTool implements Tool
      */
     public function handle(Request $request): Stringable|string
     {
-        $reservations = Reservation::with(['guest', 'room'])
+        $reservations = Reservation::with(['guest', 'reservationRooms.roomType', 'reservationRooms.room'])
             ->where('hotel_id', $this->hotel->id)
             ->whereDate('arrival_date', now()->toDateString())
             ->get()
@@ -36,7 +36,7 @@ class GetReservationsTool implements Tool
                 'id' => $reservation->id,
                 'reservation_id' => $reservation->reservation_id,
                 'guest_name' => trim($reservation->guest->first_name.' '.$reservation->guest->last_name),
-                'room_number' => $reservation->room?->room_number,
+                ...$reservation->roomsForAi(),
                 'status' => $reservation->status->value,
                 'adults' => $reservation->adults,
                 'children' => $reservation->children,

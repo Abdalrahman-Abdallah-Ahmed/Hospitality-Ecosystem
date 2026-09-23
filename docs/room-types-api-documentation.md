@@ -174,7 +174,20 @@ The Room Types API provides endpoints for hotel staff to manage room type invent
 }
 ```
 
-**Business Rule**: Deletion is blocked if active rooms reference the room type (returns 422).
+**Business Rules** — deletion is blocked (422) when:
+
+1. Rooms still reference the room type → `body.error = "deletion_blocked_by_rooms"`.
+2. A current or upcoming reservation still books it — a live (non-cancelled) reservation line of this type on a reservation that is not `cancelled` and whose `departure_date` is today or later → `body.error = "deletion_blocked_by_reservations"`:
+
+```json
+{
+  "message": "Cannot delete room type: 3 current or upcoming reservations still use it. Deactivate it instead.",
+  "code": 422,
+  "body": { "error": "deletion_blocked_by_reservations", "reservations": 3 }
+}
+```
+
+Past or cancelled bookings don't block deletion; their lines keep pointing at the deleted type for history. To retire a type that is still booked, set `is_active` to `false` instead — inactive types can't be put on new reservation lines, but existing lines keep them.
 
 ---
 
@@ -243,7 +256,7 @@ The controller then applies the rules the schema cannot express, each returning 
 |--------|----------|
 | 403 | User lacks required permission or cross-hotel access |
 | 404 | Room type not found or soft-deleted |
-| 422 | Validation failure (field errors under `errors`), a room type rule above (reason in `message`), or deletion blocked by rooms (`body.error = deletion_blocked_by_rooms`) |
+| 422 | Validation failure (field errors under `errors`), a room type rule above (reason in `message`), or deletion blocked by rooms (`body.error = deletion_blocked_by_rooms`) or by current/upcoming reservations (`body.error = deletion_blocked_by_reservations`) |
 
 ---
 
