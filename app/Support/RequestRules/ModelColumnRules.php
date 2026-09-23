@@ -3,6 +3,7 @@
 namespace App\Support\RequestRules;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
@@ -211,10 +212,23 @@ class ModelColumnRules
         return ['string'];
     }
 
+    /**
+     * Columns that are unique on their own. Schema::getIndexes() leaves the
+     * expression parts out of an index's column list, so a composite index
+     * like (hotel_id, lower(name)) would otherwise read as "hotel_id is
+     * unique" and let a hotel have only one row. Postgres' own count of key
+     * columns (expressions included) decides instead.
+     */
     protected static function uniqueColumns(string $table): array
     {
+        $singleKeyIndexes = collect(DB::select(
+            'select c.relname from pg_index i join pg_class c on c.oid = i.indexrelid '
+            .'where i.indrelid = ?::regclass and i.indnkeyatts = 1 and i.indexprs is null',
+            [$table],
+        ))->pluck('relname')->all();
+
         return collect(Schema::getIndexes($table))
-            ->filter(fn ($index) => $index['unique'] && ! $index['primary'] && count($index['columns']) === 1)
+            ->filter(fn ($index) => $index['unique'] && ! $index['primary'] && in_array($index['name'], $singleKeyIndexes, true))
             ->mapWithKeys(fn ($index) => [$index['columns'][0] => true])
             ->all();
     }

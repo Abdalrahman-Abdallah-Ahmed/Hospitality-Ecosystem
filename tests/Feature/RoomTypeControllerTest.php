@@ -296,3 +296,24 @@ test('test_update_checks_capacity_against_the_stored_values', function () {
         ->putJson("/api/room-types/{$roomType->id}", ['name' => $roomType->name, 'max_occupancy' => 4])
         ->assertStatus(200);
 });
+
+test('test_create_a_second_room_type_in_the_same_hotel', function () {
+    [$admin, $hotel] = roomTypeAdmin();
+    RoomType::factory()->create(['hotel_id' => $hotel->id, 'name' => 'Standard']);
+
+    $this->withHeaders(roomTypeHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room-types', [
+            'hotel_id' => $hotel->id,
+            'name' => 'Deluxe',
+            'description' => null,
+            'max_occupancy' => 4,
+            'adult_capacity' => 4,
+            'child_capacity' => 0,
+            'amenities' => null,
+            'base_price' => 1800,
+            'bed_configuration' => ['beds' => [['type' => 'king', 'count' => 2]]],
+            'is_active' => true,
+        ])
+        ->assertStatus(201)
+        ->assertJsonPath('body.name', 'Deluxe');
+});
