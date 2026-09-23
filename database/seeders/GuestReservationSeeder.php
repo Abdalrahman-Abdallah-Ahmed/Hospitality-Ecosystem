@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\ReservationStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\Room;
 use App\Models\RoomType;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Database\Seeder;
@@ -27,8 +28,17 @@ class GuestReservationSeeder extends Seeder
             'is_vip' => true,
         ]);
 
+        // The guest needs a real room: bookings are checked against the rooms
+        // a type actually has (SPEC-020), and a type with none is sold out.
+        $roomType = RoomType::resolveFor($hotel->id);
+        $room = Room::firstOrCreate(
+            ['hotel_id' => $hotel->id, 'room_number' => '101'],
+            ['room_type_id' => $roomType->id, 'floor' => 1],
+        );
+
         // Via ReservationCreator, not Reservation::create(), so this seeded
-        // reservation gets a stay (checked in) the same way a real one would.
+        // reservation gets a stay (checked in) and occupies its room the same
+        // way a real one would.
         ReservationCreator::create([
             'hotel_id' => $hotel->id,
             'guest_id' => $guest->id,
@@ -42,7 +52,7 @@ class GuestReservationSeeder extends Seeder
             'reservation_value' => 450,
             'currency' => $hotel->currency,
         ], [
-            ['room_type_id' => RoomType::resolveFor($hotel->id)->id],
+            ['room_type_id' => $roomType->id, 'room_id' => $room->id],
         ]);
     }
 }
