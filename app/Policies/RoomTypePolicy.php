@@ -41,6 +41,15 @@ class RoomTypePolicy
         return $this->allows($user, Permission::ROOM_TYPES_DELETE, $roomType);
     }
 
+    /**
+     * Looking up how many rooms of each type are free. Availability has no
+     * model of its own; it is about room types, so the ability lives here.
+     */
+    public function viewAvailability(User $user): bool
+    {
+        return $this->allows($user, Permission::AVAILABILITY_VIEW);
+    }
+
     public function restore(User $user, RoomType $roomType): bool
     {
         return false;

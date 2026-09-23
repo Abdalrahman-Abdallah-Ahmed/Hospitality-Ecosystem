@@ -8,6 +8,7 @@ use App\Ai\Tools\CreateReservationTool;
 use App\Ai\Tools\CreateRoomTool;
 use App\Ai\Tools\CreateTaskTool;
 use App\Ai\Tools\GetActivitiesTool;
+use App\Ai\Tools\GetAvailabilityTool;
 use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetGuestsTool;
 use App\Ai\Tools\GetReservationsTool;
@@ -62,6 +63,10 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             - A tool to fetch this hotel's tasks.
             - A tool to fetch this hotel's recent guest messages.
             - A tool to fetch this hotel's rooms, including room number, type, floor, and status.
+            - A tool to check live room availability: for each room type and night, how many rooms can still
+              be sold. Room availability comes only from this tool — never guess it, never work it out from
+              the rooms or reservations lists, and never take it from knowledge-base documents. Check it
+              before creating a reservation; if a type is short, tell the admin rather than booking anyway.
             - A tool to fetch this hotel's activities, including category and price.
             - A tool to fetch this hotel's task categories and the team each belongs to.
 
@@ -115,6 +120,7 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             new GetTaskCategoriesTool($this->user->hotel),
             new GetGuestMessagesTool($this->user->hotel),
             new GetRoomsTool($this->user->hotel),
+            new GetAvailabilityTool($this->user->hotel, $this->user),
             new GetActivitiesTool($this->user->hotel),
             new GetGuestsTool($this->user->hotel),
 

@@ -125,7 +125,7 @@ it('keeps a room occupied when a future reservation is booked into it', function
         ->postJson('/api/reservation', [
             'hotel_id' => $hotel->id,
             'guest_id' => $tonight->id,
-            'rooms' => [['room_type_id' => roomTypeIdFor($hotel), 'room_id' => $room->id]],
+            'rooms' => [['room_type_id' => bookableTypeIdFor($hotel), 'room_id' => $room->id]],
             'reservation_id' => 'RES-TONIGHT-01',
             'arrival_date' => '2026-09-01',
             'departure_date' => '2026-09-04',
@@ -136,7 +136,7 @@ it('keeps a room occupied when a future reservation is booked into it', function
         ->postJson('/api/reservation', [
             'hotel_id' => $hotel->id,
             'guest_id' => $nextWeek->id,
-            'rooms' => [['room_type_id' => roomTypeIdFor($hotel), 'room_id' => $room->id]],
+            'rooms' => [['room_type_id' => bookableTypeIdFor($hotel), 'room_id' => $room->id]],
             'reservation_id' => 'RES-NEXTWEEK-01',
             'arrival_date' => '2026-09-10',
             'departure_date' => '2026-09-12',
@@ -183,7 +183,7 @@ it('leaves a room under maintenance alone when a future reservation is booked in
         ->postJson('/api/reservation', [
             'hotel_id' => $hotel->id,
             'guest_id' => $guest->id,
-            'rooms' => [['room_type_id' => roomTypeIdFor($hotel), 'room_id' => $room->id]],
+            'rooms' => [['room_type_id' => bookableTypeIdFor($hotel), 'room_id' => $room->id]],
             'reservation_id' => 'RES-REPAIR-01',
             'arrival_date' => '2026-09-10',
             'departure_date' => '2026-09-12',

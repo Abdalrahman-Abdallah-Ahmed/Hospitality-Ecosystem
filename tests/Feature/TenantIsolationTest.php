@@ -1,5 +1,7 @@
 <?php
 
+use App\Ai\Tools\GetAvailabilityTool;
+use App\Ai\Tools\GetGuestAvailabilityTool;
 use App\Enums\AttributionMethod;
 use App\Enums\OutcomeType;
 use App\Enums\UserRole;
@@ -31,6 +33,7 @@ use App\Services\BookingService;
 use App\Services\RecommendationOutcomeService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Ai\Tools\Request;
 
 uses(RefreshDatabase::class);
 
@@ -396,4 +399,49 @@ it('never shows or accepts another hotel\'s room types and rooms on reservation 
         ->assertJsonValidationErrors(['rooms.0.room_id' => 'The selected room is not available.']);
 
     expect(ReservationRoom::withoutGlobalScope('hotel')->where('hotel_id', $hotelB->id)->count())->toBe(0);
+});
+
+it('never counts or reveals another hotel\'s rooms and bookings in availability', function () {
+    $hotelA = avHotel();
+    $hotelB = avHotel();
+    $typeA = avType($hotelA, 'Deluxe');
+    avRooms($hotelA, $typeA, 2);
+    $typeB = avType($hotelB, 'Deluxe');
+    avRooms($hotelB, $typeB, 9);
+    $arrival = now()->addDays(5)->toDateString();
+    $departure = now()->addDays(6)->toDateString();
+    avBook($hotelB, $typeB, $arrival, $departure, units: 4);
+
+    $lookup = fn (array $extra = []) => $this->withHeaders(wp5Headers())->actingAs($hotelA->owner, 'sanctum')
+        ->getJson('/api/availability?'.http_build_query(['arrival_date' => $arrival, 'departure_date' => $departure, ...$extra]));
+
+    $lookup()->assertOk()
+        ->assertJsonCount(1, 'body.room_types')
+        ->assertJsonPath('body.room_types.0.room_type.id', $typeA->id)
+        ->assertJsonPath('body.room_types.0.nights.0.total', 2)
+        ->assertJsonPath('body.room_types.0.nights.0.booked', 0);
+
+    // Naming hotel B's type is rejected like any unknown id.
+    $lookup(['room_type_ids' => [$typeB->id]])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'One or more of the selected room types are invalid.');
+});
+
+it('never lets an availability AI tool built for one hotel see another hotel\'s room types or bookings', function () {
+    $hotelA = avHotel();
+    $hotelB = avHotel();
+    avRooms($hotelA, avType($hotelA, 'Deluxe'), 1);
+    $typeB = avType($hotelB, 'Penthouse');
+    avRooms($hotelB, $typeB, 4);
+    avBook($hotelB, $typeB, now()->addDays(3)->toDateString(), now()->addDays(4)->toDateString(), units: 2);
+    $dates = ['arrival_date' => now()->addDays(3)->toDateString(), 'departure_date' => now()->addDays(4)->toDateString()];
+
+    $admin = (string) (new GetAvailabilityTool($hotelA, $hotelA->owner))->handle(new Request($dates));
+    $named = (string) (new GetAvailabilityTool($hotelA, $hotelA->owner))->handle(new Request([...$dates, 'room_type' => 'Penthouse']));
+    $guest = (string) (new GetGuestAvailabilityTool($hotelA))->handle(new Request([...$dates, 'room_type' => 'Penthouse']));
+
+    expect($admin)->not->toContain('Penthouse')->not->toContain($typeB->id)
+        ->and(collect(json_decode($admin, true)['room_types'])->pluck('room_type.name')->all())->toBe(['Deluxe'])
+        ->and($named)->toBe('This hotel has no room type called "Penthouse".')
+        ->and(collect(json_decode($guest, true)['room_types'])->pluck('name')->all())->toBe(['Deluxe']);
 });

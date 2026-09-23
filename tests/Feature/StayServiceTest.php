@@ -73,7 +73,7 @@ it('automatically creates a stay for a newly created reservation', function () {
         'arrival_date' => '2026-09-01',
         'departure_date' => '2026-09-04',
         'status' => ReservationStatus::PENDING->value,
-    ], [['room_type_id' => roomTypeIdFor($hotel)]]);
+    ], [['room_type_id' => bookableTypeIdFor($hotel)]]);
 
     $stay = Stay::where('reservation_id', $reservation->id)->first();
 
@@ -96,7 +96,7 @@ it('does not mark a merely pending reservation as a no-show', function () {
         'arrival_date' => now()->addMonth()->toDateString(),
         'departure_date' => now()->addMonth()->addDays(3)->toDateString(),
         'status' => ReservationStatus::PENDING->value,
-    ], [['room_type_id' => roomTypeIdFor($hotel)]]);
+    ], [['room_type_id' => bookableTypeIdFor($hotel)]]);
 
     expect(Stay::where('reservation_id', $reservation->id)->first()->status)->toBe(StayStatus::EXPECTED);
 });
@@ -112,7 +112,7 @@ it('reverts a checked-in stay back to expected, clearing the stale check-in, whe
         'arrival_date' => '2026-09-01',
         'departure_date' => '2026-09-04',
         'status' => ReservationStatus::CHECKED_IN->value,
-    ], [['room_type_id' => roomTypeIdFor($hotel)]]);
+    ], [['room_type_id' => bookableTypeIdFor($hotel)]]);
 
     $reservation->update(['status' => ReservationStatus::PENDING->value]);
     ReservationCreator::syncStay($reservation);

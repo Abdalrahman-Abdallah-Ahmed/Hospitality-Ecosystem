@@ -52,6 +52,16 @@ class ReservationPolicy
     }
 
     /**
+     * Determine whether the user can save a reservation that sells more rooms
+     * of a type than are free (overbook_override). Checked on top of create
+     * or update, and only when the override is asked for.
+     */
+    public function overbook(User $user): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_OVERBOOK);
+    }
+
+    /**
      * Determine whether the user can update the model.
      */
     public function update(User $user, Reservation $reservation): bool

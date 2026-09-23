@@ -46,9 +46,14 @@ function rrAdmin(): array
     return [$admin->fresh(), $hotel, $guest];
 }
 
-function rrType(Hotel $hotel, string $name, int $maxOccupancy = 2, int $adults = 2, bool $active = true): RoomType
+/**
+ * A room type with `$stock` rooms of its own, so bookings of it pass the
+ * availability guard (SPEC-020). Stock rooms are numbered "{name}-S{n}" and
+ * never collide with the rooms a test names.
+ */
+function rrType(Hotel $hotel, string $name, int $maxOccupancy = 2, int $adults = 2, bool $active = true, int $stock = 5): RoomType
 {
-    return RoomType::create([
+    $type = RoomType::create([
         'hotel_id' => $hotel->id,
         'name' => $name,
         'max_occupancy' => $maxOccupancy,
@@ -57,6 +62,12 @@ function rrType(Hotel $hotel, string $name, int $maxOccupancy = 2, int $adults =
         'base_price' => 100,
         'is_active' => $active,
     ]);
+
+    for ($i = 1; $i <= $stock; $i++) {
+        rrRoom($hotel, $type, "{$name}-S{$i}");
+    }
+
+    return $type;
 }
 
 function rrRoom(Hotel $hotel, RoomType $type, string $number): Room
@@ -508,7 +519,7 @@ it('rejects the same room on two lines, and the database refuses it too', functi
 
 it('lists reservations without a query per reservation, and books 50 rooms at once', function () {
     [$admin, $hotel, $guest] = rrAdmin();
-    $double = rrType($hotel, 'Double');
+    $double = rrType($hotel, 'Double', stock: 50);
 
     $count = function () use ($admin) {
         DB::flushQueryLog();

@@ -260,7 +260,8 @@ HTTP `422`:
     { "room_type_id": "<deluxe type id>", "quantity": 2 },
     { "room_type_id": "<suite type id>", "room_id": "<room 501 id>" }
   ],
-  "capacity_override": false
+  "capacity_override": false,
+  "overbook_override": false
 }
 ```
 
@@ -277,6 +278,7 @@ This books three rooms: two unassigned Deluxe rooms and Suite room 501.
 | `rooms.*.quantity` | optional integer 1–50, default 1. Expanded into that many lines. |
 | `rooms.*.room_id` | optional uuid. A room of this hotel whose type equals `room_type_id`; only allowed when `quantity` is 1. The same room can't appear on two lines. |
 | `capacity_override` | optional boolean, default `false`. See capacity below. |
+| `overbook_override` | optional boolean, default `false`. Save even if a room type is short. Needs `reservations.overbook`. See [Overbooking](#overbooking). |
 | `room_id` (top level) | **no longer accepted** — `422` "Use rooms[] instead." |
 | `reservation_id` | **required**, string, max 255, must be unique **within the hotel** (two hotels may use the same code). A duplicate returns `422` on `reservation_id` ("The reservation id has already been taken."); a code held by a soft-deleted reservation of the same hotel restores that reservation instead. The UI should generate/let the user type a human-readable code (e.g. `RES-XXXXXXXX`) — the API does not auto-generate one on this endpoint (it does on the WhatsApp ingestion endpoint, but not here). |
 | `arrival_date` | **required**, date. |
@@ -290,6 +292,50 @@ This books three rooms: two unassigned Deluxe rooms and Suite room 501.
 | `currency` | optional, string, exactly 3 characters (e.g. `USD`). |
 
 **Capacity.** The party must fit the booked rooms as a whole: `adults + children` ≤ the sum of the lines' room-type `max_occupancy`, and `adults` ≤ the sum of their `adult_capacity`. Otherwise `422` on `rooms`, e.g. "The party (5 adults, 0 children) is larger than the booked rooms hold (4 guests, 4 adults). Add rooms, or send capacity_override to save it anyway." Staff can resend with `capacity_override: true` to save it anyway; each override is recorded in the audit log (`reservation.capacity_overridden`). The AI can never override.
+
+### Overbooking
+
+A reservation cannot sell more rooms of a type than the hotel has free on any night (see
+[availability-api-documentation.md](availability-api-documentation.md)). Every booked line
+uses one room of its type on each night from `arrival_date` up to, but not including,
+`departure_date`, whether or not it has a physical room.
+
+Only what the request **adds** is checked: new reservations (including a deleted one
+re-created with the same `reservation_id`), added lines, moved or extended dates, and
+bringing a cancelled reservation back (its lines return). The
+reservation's own current lines never count against it. Changes that only free rooms
+(removing lines, shortening the stay, cancelling) and changes that add nothing (special
+requests, party size, `pending` → `confirmed`) are never checked, even on a night that is
+already overbooked.
+
+When a room type is short, the request fails with `422` and nothing is saved:
+
+```json
+{
+  "message": "Not enough rooms available: Deluxe is short by 1 on 2026-03-13.",
+  "errors": {
+    "rooms": ["Not enough rooms available: Deluxe is short by 1 on 2026-03-13."]
+  },
+  "shortfalls": [
+    {
+      "room_type_id": "9f1c2d7e-…",
+      "room_type_name": "Deluxe",
+      "nights": [ { "date": "2026-03-13", "short": 1 } ]
+    }
+  ]
+}
+```
+
+`shortfalls` lists only room types from this request. To save anyway, resend with
+`overbook_override: true`. This needs the `reservations.overbook` permission on top of
+`reservations.create` / `reservations.update`. Admins have it. Sending
+`overbook_override: true` without it returns `403` before anything is written, even if the
+booking would have fitted. Each override that was actually needed is recorded in the audit
+log (`reservation.overbooking_overridden`, with the actor and the shortfalls). The AI can
+never override.
+
+Two bookings for the last room of a type are handled one at a time: the second one sees
+the first and gets the `422`.
 
 **Important — hotel scoping:** `hotel_id` must be an id the logged-in admin actually owns. The API does not silently substitute the user's own hotel here — you must pass it explicitly, and it must match the hotel of the reservation's `guest_id` and of every room type and room in `rooms`. In practice, for an admin managing only their own hotel, the frontend should hard-code `hotel_id` to that admin's own hotel (fetched once, e.g. from `GET /api/user` → the hotel relationship) rather than exposing a hotel picker, since attempting to use any other hotel id will be rejected (see below).
 
@@ -426,6 +472,7 @@ Same field-level rules as [create](#validation-rules), except every field is opt
 - An item **without `id`** is a new line, with the same rules as create (`room_type_id`, `quantity`, `room_id`).
 - A live line **left out of the list** is cancelled (kept for history) and its room is released.
 - `capacity_override` works as on create; the capacity check re-runs whenever lines, `adults` or `children` change.
+- `overbook_override` works as on create. Only added lines and new or longer dates are checked against availability; see [Overbooking](#overbooking).
 
 What can change depends on the reservation's status **before** the update:
 
@@ -557,7 +604,7 @@ The **first row must be a header row** naming these columns (order doesn't matte
 ### Behavior Notes
 
 - **This endpoint does not use the same validation as manual create** (`POST /api/reservation`) — it bypasses `GenericStoreRequest`/enum casting for everything except `status` (which still throws because `Reservation.status` is a native PHP enum cast) and the numeric fields listed above. Garbage `currency`/`source`/`special_requests` values are written to the database as-is.
-- Every imported reservation gets exactly **one room line** (see `room_number`/`room_type` above). The party-capacity check is **not** run on imports, and a room type the hotel has since deactivated is accepted: legacy data is recorded as it is. Each row is written in its own transaction, so a row that fails part-way (e.g. an invalid `status`) leaves no guest, room or reservation behind.
+- Every imported reservation gets exactly **one room line** (see `room_number`/`room_type` above). The party-capacity check and the availability check are **not** run on imports, and a room type the hotel has since deactivated is accepted: legacy data is recorded as it is. Rows beyond availability are saved and show up as overbooked nights in `GET /api/availability`. Each row is written in its own transaction, so a row that fails part-way (e.g. an invalid `status`) leaves no guest, room or reservation behind.
 - A row is processed **independently** — one bad row (missing phone, invalid status, duplicate `reservation_id`, etc.) is caught and skipped; it does not fail the whole import.
 - `room_number` with no existing match **creates the room** rather than rejecting the row. If your UI wants to warn the user before this happens, you'd need to cross-check `room_number` values against `GET /api/room` client-side before upload — the API gives no dry-run/preview mode.
 - Guests are matched by `phone_number` scoped to the hotel; a soft-deleted guest with a matching phone number is restored rather than duplicated.
@@ -679,6 +726,7 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - `guest_id` must belong to the same hotel as `hotel_id`, or you'll get a `422` with a plain-language `message` (not a field-level `errors` entry).
 - **Rooms are lines (since 2026-09-23).** Create with `rooms: [{ room_type_id, quantity?, room_id? }]` (1–50 rooms, room types must be active); read `rooms[]` and `room_summary`. There is no top-level `room_id`/`room` any more. On update, `rooms` is the full desired list of live lines (`{ id }` keeps a line, no `id` adds one, omitted lines are cancelled); leave it out to keep the lines. A checked-in reservation only allows room moves. See [Changing the Rooms](#changing-the-rooms).
 - An over-capacity party is rejected unless staff send `capacity_override: true` (audited).
+- A booking that would oversell a room type on any night gets `422` with `shortfalls[]` (type, nights, how many short). Staff with `reservations.overbook` can resend with `overbook_override: true` (audited); without it that flag returns `403`. Check `GET /api/availability` first to avoid it. See [Overbooking](#overbooking).
 - `filter[room_type_id]` / `filter[room_id]` match any live line; they can't be used to sort.
 - The API does **not** enforce `departure_date >= arrival_date` yet — validate that client-side.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."

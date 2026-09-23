@@ -15,6 +15,7 @@ use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
@@ -77,7 +78,9 @@ class ReservationController extends Controller
             return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
-        $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override']);
+        $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
+
+        $overbook = $this->overbookOverride($request);
 
         if ($error = $this->guardHotelScopedReferences($validated, $hotel->id)) {
             return $error;
@@ -91,6 +94,7 @@ class ReservationController extends Controller
             [...$validated, 'hotel_id' => $hotel->id],
             $request->input('rooms', []),
             $request->boolean('capacity_override'),
+            overbookOverride: $overbook,
         );
 
         return apiResponse('Reservation created successfully.', 201, ReservationResource::make($reservation->load(self::RELATIONS)));
@@ -117,7 +121,9 @@ class ReservationController extends Controller
     {
         $this->authorize('update', $reservation);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id', 'rooms', 'capacity_override']);
+        $validated = unsetAttributes($request->validated(), ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
+
+        $overbook = $this->overbookOverride($request);
 
         if ($error = $this->guardHotelScopedReferences($validated, $reservation->hotel_id)) {
             return $error;
@@ -132,9 +138,26 @@ class ReservationController extends Controller
             $validated,
             $request->has('rooms') ? $request->input('rooms') : null,
             $request->boolean('capacity_override'),
+            $overbook,
         );
 
         return apiResponse('Reservation updated successfully.', 200, ReservationResource::make($reservation->load(self::RELATIONS)));
+    }
+
+    /**
+     * Whether the request asks to save even if it oversells a room type. Asking
+     * without reservations.overbook is refused before anything is written,
+     * whether or not the booking would actually have oversold.
+     */
+    private function overbookOverride(Request $request): bool
+    {
+        if (! $request->boolean('overbook_override')) {
+            return false;
+        }
+
+        $this->authorize('overbook', Reservation::class);
+
+        return true;
     }
 
     /**

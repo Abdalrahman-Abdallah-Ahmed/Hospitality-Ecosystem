@@ -21,7 +21,9 @@ use Throwable;
  * being entered into the system. Reuses the same guest-matching and
  * reservation-persistence rules as CreateReservationTool/ReservationController
  * so imported data behaves identically to any other entry point, except that
- * the party-capacity check is skipped: legacy data is recorded as it is.
+ * the party-capacity check and the availability guard are skipped: legacy
+ * data is recorded as it is, and any overbooking it brings shows up as
+ * overbooked nights in the availability grid.
  */
 class ReservationsImport implements ToCollection, WithHeadingRow
 {

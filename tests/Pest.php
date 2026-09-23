@@ -230,3 +230,93 @@ function createReservationWithRooms(Hotel $hotel, array $lines, array $attribute
 
     return $reservation;
 }
+
+/*
+| Availability fixtures (SPEC-020), shared by the service, controller, guard,
+| concurrency and AI tool tests.
+*/
+
+/**
+ * A hotel whose owner is its admin (`$hotel->owner`).
+ */
+function avHotel(string $timezone = 'UTC'): Hotel
+{
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create([
+        'owner_id' => $admin->id,
+        'name' => 'Availability Hotel',
+        'slug' => 'availability-hotel-'.$admin->id,
+        'currency' => 'USD',
+        'timezone' => $timezone,
+    ]);
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    return $hotel;
+}
+
+function avType(Hotel $hotel, string $name, bool $active = true): RoomType
+{
+    return RoomType::create([
+        'hotel_id' => $hotel->id,
+        'name' => $name,
+        'max_occupancy' => 3,
+        'adult_capacity' => 2,
+        'child_capacity' => 1,
+        'base_price' => 100,
+        'is_active' => $active,
+    ]);
+}
+
+/**
+ * @return list<Room>
+ */
+function avRooms(Hotel $hotel, RoomType $type, int $count, ?string $status = null): array
+{
+    $rooms = [];
+
+    for ($i = 0; $i < $count; $i++) {
+        $rooms[] = Room::create([
+            'hotel_id' => $hotel->id,
+            'room_type_id' => $type->id,
+            'room_number' => $type->name.'-'.uniqid(),
+            'status' => $status ?? 'available',
+        ]);
+    }
+
+    return $rooms;
+}
+
+/**
+ * A reservation holding `$units` lines of one type, written straight to the
+ * models (no availability guard).
+ */
+function avBook(Hotel $hotel, RoomType $type, string $arrival, string $departure, string $status = 'confirmed', int $units = 1, string $lineStatus = 'reserved'): Reservation
+{
+    return createReservationWithRooms(
+        $hotel,
+        array_fill(0, $units, ['room_type_id' => $type->id, 'status' => $lineStatus]),
+        ['arrival_date' => $arrival, 'departure_date' => $departure, 'status' => $status],
+    );
+}
+
+/**
+ * The hotel's default room type with at least `$stock` rooms in it, for tests
+ * that book through ReservationCreator and do not care about availability:
+ * the guard (SPEC-020) rejects a booking of a type with no free room. Stock
+ * rooms are numbered "STOCK-{n}" so they never collide with rooms a test names.
+ */
+function bookableTypeIdFor(Hotel $hotel, int $stock = 5): string
+{
+    $typeId = roomTypeIdFor($hotel);
+    $have = Room::withoutGlobalScope('hotel')
+        ->where('hotel_id', $hotel->id)
+        ->where('room_type_id', $typeId)
+        ->where('room_number', 'like', 'STOCK-%')
+        ->count();
+
+    for ($i = $have + 1; $i <= $stock; $i++) {
+        Room::create(['hotel_id' => $hotel->id, 'room_type_id' => $typeId, 'room_number' => "STOCK-{$i}"]);
+    }
+
+    return $typeId;
+}

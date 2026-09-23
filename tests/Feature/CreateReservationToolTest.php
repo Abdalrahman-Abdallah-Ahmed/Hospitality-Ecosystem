@@ -26,9 +26,13 @@ function hotelForReservationTool(): Hotel
     ]);
 }
 
-function toolRoomType(Hotel $hotel, string $name, bool $active = true): RoomType
+/**
+ * A room type with `$stock` rooms, so the tool's bookings pass the
+ * availability guard (SPEC-020). Stock rooms are numbered "{name}-S{n}".
+ */
+function toolRoomType(Hotel $hotel, string $name, bool $active = true, int $stock = 5): RoomType
 {
-    return RoomType::create([
+    $type = RoomType::create([
         'hotel_id' => $hotel->id,
         'name' => $name,
         'max_occupancy' => 2,
@@ -37,6 +41,12 @@ function toolRoomType(Hotel $hotel, string $name, bool $active = true): RoomType
         'base_price' => 100,
         'is_active' => $active,
     ]);
+
+    for ($i = 1; $i <= $stock; $i++) {
+        Room::create(['hotel_id' => $hotel->id, 'room_type_id' => $type->id, 'room_number' => "{$name}-S{$i}"]);
+    }
+
+    return $type;
 }
 
 it('creates a guest and reservation from admin-provided details', function () {

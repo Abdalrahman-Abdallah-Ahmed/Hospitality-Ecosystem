@@ -8,6 +8,7 @@ use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
+use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestController;
@@ -51,6 +52,7 @@ Route::middleware('api.key')->group(function () {
 
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
         Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
+        Route::get('/availability', [AvailabilityController::class, 'index']);
         Route::get('/available-channels', [ReservationController::class, 'availableChannels']);
         Route::post('/reservation/import', [ReservationController::class, 'import']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
