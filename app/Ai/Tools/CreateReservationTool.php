@@ -19,7 +19,8 @@ use Stringable;
 /**
  * Books a reservation by room type and quantity for the Admin AI, through the
  * same ReservationCreator as the staff API, with its writes audited as the AI
- * agent. It cannot override the party-capacity check.
+ * agent. It cannot override the party-capacity check or the availability
+ * guard: a shortfall comes back to the model as the readable message.
  *
  * It has no permission check of its own: it relies on AdminAdvisorAgent being
  * admin-only. Any future agent that is not admin-only must check

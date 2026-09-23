@@ -6,6 +6,7 @@ use App\Ai\Tools\CreateBookingTool;
 use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
 use App\Ai\Tools\GetActivitiesTool;
+use App\Ai\Tools\GetGuestAvailabilityTool;
 use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\GetRecommendationsTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
@@ -64,6 +65,10 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               to do or about a specific activity.
             - A tool to check the guest's own reservation, including party composition (adults/children), room
               tier, and reservation value.
+            - A tool to check whether this hotel's room types can be booked for given dates. Room availability
+              comes only from this tool — never guess it or take it from knowledge-base documents. Tell the
+              guest only whether a room type is available, never how many rooms are left. If the type they
+              asked for is not available, offer the other room types that are.
             - A tool to look up recommendations already generated for this guest's reservation, with the
               reason each was made, predicted confidence, and current status.
             - A tool to update one of those recommendations with the guest's reaction (accepted/rejected/
@@ -136,6 +141,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new GetActivitiesTool($this->hotel),
             new KnowledgeSearchTool($this->hotel),
             new GetOwnReservationTool($this->reservation),
+            new GetGuestAvailabilityTool($this->hotel),
             new GetRecommendationsTool($this->reservation),
             new UpdateRecommendationTool($this->reservation),
             new CreateBookingTool($this->hotel, $this->guest, $this->reservation),

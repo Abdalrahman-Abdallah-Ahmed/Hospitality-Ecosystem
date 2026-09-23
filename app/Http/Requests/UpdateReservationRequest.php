@@ -31,6 +31,7 @@ class UpdateReservationRequest extends GenericUpdateRequest
             'rooms.*.quantity' => ['nullable', 'integer', 'min:1', "max:{$max}"],
             'rooms.*.room_id' => ['nullable', 'uuid'],
             'capacity_override' => ['sometimes', 'boolean'],
+            'overbook_override' => ['sometimes', 'boolean'],
         ];
     }
 

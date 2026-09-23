@@ -28,7 +28,9 @@ Rules that apply whatever a role grants:
 
 An employee with no staff role has:
 
-`activities.view`, `bookings.view`, `bookings.create`, `bookings.update_status`, `dashboard.view`, `guests.view`, `recommendations.record_outcome`
+`activities.view`, `availability.view`, `bookings.view`, `bookings.create`, `bookings.update_status`, `dashboard.view`, `guests.view`, `recommendations.record_outcome`
+
+`availability.view` was added on purpose: it is read-only, shows staff nothing sensitive, and anyone taking a booking needs it to avoid overselling. `reservations.overbook` is never a default.
 
 `GET /api/permissions` returns this list as `employee_defaults`, so the UI does not need to hard-code it.
 
@@ -46,6 +48,7 @@ An employee with no staff role has:
 | `activity_categories.delete` | `DELETE /api/activity-category/{id}` |
 | `ai_insights.view` | `GET /api/ai-insights` |
 | `ai_insights.generate` | `POST /api/ai-insights` |
+| `availability.view` | `GET /api/availability` (an employee default) |
 | `bookings.view` | `GET /api/booking`, `GET /api/booking/{id}` |
 | `bookings.create` | `POST /api/booking` |
 | `bookings.update_status` | `POST /api/booking/{id}/status` |
@@ -73,6 +76,7 @@ An employee with no staff role has:
 | `reservations.update` | `PUT /api/reservation/{id}` |
 | `reservations.delete` | `DELETE /api/reservation/{id}` |
 | `reservations.import` | `POST /api/reservation/import` |
+| `reservations.overbook` | `overbook_override: true` on `POST /api/reservation` and `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
 | `rooms.view` | `GET /api/room`, `GET /api/room/{id}` |
 | `rooms.create` | `POST /api/room` |
 | `rooms.update` | `PUT /api/room/{id}` |
@@ -174,7 +178,7 @@ HTTP `200`:
         ]
       }
     ],
-    "employee_defaults": ["activities.view", "bookings.view", "bookings.create", "bookings.update_status", "dashboard.view", "guests.view", "recommendations.record_outcome"]
+    "employee_defaults": ["activities.view", "availability.view", "bookings.view", "bookings.create", "bookings.update_status", "dashboard.view", "guests.view", "recommendations.record_outcome"]
   }
 }
 ```

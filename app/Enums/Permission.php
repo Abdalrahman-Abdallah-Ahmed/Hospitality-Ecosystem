@@ -24,6 +24,8 @@ enum Permission: string
     case AI_INSIGHTS_VIEW = 'ai_insights.view';
     case AI_INSIGHTS_GENERATE = 'ai_insights.generate';
 
+    case AVAILABILITY_VIEW = 'availability.view';
+
     case BOOKINGS_VIEW = 'bookings.view';
     case BOOKINGS_CREATE = 'bookings.create';
     case BOOKINGS_UPDATE_STATUS = 'bookings.update_status';
@@ -58,6 +60,7 @@ enum Permission: string
     case RESERVATIONS_UPDATE = 'reservations.update';
     case RESERVATIONS_DELETE = 'reservations.delete';
     case RESERVATIONS_IMPORT = 'reservations.import';
+    case RESERVATIONS_OVERBOOK = 'reservations.overbook';
 
     case ROOMS_VIEW = 'rooms.view';
     case ROOMS_CREATE = 'rooms.create';
@@ -100,6 +103,9 @@ enum Permission: string
      * - Recommendation outcomes are recorded by the people at the desk when a
      *   guest says no; a refusal-capture tool only admins can use captures
      *   nothing.
+     * - Availability is readable because it is read-only, shows staff nothing
+     *   sensitive, and anyone taking a booking needs it to avoid overselling.
+     *   Overbooking on purpose (reservations.overbook) is never a default.
      *
      * @return list<self>
      */
@@ -107,6 +113,7 @@ enum Permission: string
     {
         return [
             self::ACTIVITIES_VIEW,
+            self::AVAILABILITY_VIEW,
             self::BOOKINGS_VIEW,
             self::BOOKINGS_CREATE,
             self::BOOKINGS_UPDATE_STATUS,

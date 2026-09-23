@@ -63,6 +63,24 @@ function guestForPermissions(Hotel $hotel): Guest
     ]);
 }
 
+/**
+ * A valid availability lookup a month out, so a run that crosses midnight
+ * cannot turn its arrival date into "the past".
+ */
+function availabilityProbeUrl(): string
+{
+    return '/api/availability?'.http_build_query([
+        'arrival_date' => now()->addDays(30)->toDateString(),
+        'departure_date' => now()->addDays(31)->toDateString(),
+    ]);
+}
+
+it('lets employees without a role read availability but never overbook by default', function () {
+    expect(Permission::employeeDefaults())
+        ->toContain(Permission::AVAILABILITY_VIEW)
+        ->not->toContain(Permission::RESERVATIONS_OVERBOOK);
+});
+
 it('gives an employee without a staff role exactly the default permissions', function () {
     $hotel = hotelForPermissions();
     $employee = employeeWithPermissions($hotel);
@@ -76,7 +94,7 @@ it('gives an employee without a staff role exactly the default permissions', fun
             Permission::employeeDefaults(),
         ));
 
-    foreach (['/api/guest', '/api/activity', '/api/booking', '/api/dashboard'] as $allowed) {
+    foreach (['/api/guest', '/api/activity', '/api/booking', '/api/dashboard', availabilityProbeUrl()] as $allowed) {
         $this->withHeaders(permissionApiHeaders())->actingAs($employee, 'sanctum')
             ->getJson($allowed)->assertOk();
     }
@@ -110,6 +128,7 @@ it('lets an employee read a resource only when their role grants it', function (
 })->with([
     'activities' => ['/api/activity', Permission::ACTIVITIES_VIEW],
     'activity categories' => ['/api/activity-category', Permission::ACTIVITY_CATEGORIES_VIEW],
+    'availability' => [availabilityProbeUrl(), Permission::AVAILABILITY_VIEW],
     'ai insights' => ['/api/ai-insights', Permission::AI_INSIGHTS_VIEW],
     'bookings' => ['/api/booking', Permission::BOOKINGS_VIEW],
     'dashboard' => ['/api/dashboard', Permission::DASHBOARD_VIEW],

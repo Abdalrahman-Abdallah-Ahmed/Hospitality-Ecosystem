@@ -144,7 +144,7 @@ it('emails the admins when a reservation is created through whatsapp', function 
 
     (new CreateReservationTool($hotel))->handle(new Request([
         'guest_phone' => '201222333444',
-        'rooms' => [['room_type' => RoomType::resolveFor($hotel->id)->name]],
+        'rooms' => [['room_type' => RoomType::withoutGlobalScope('hotel')->findOrFail(bookableTypeIdFor($hotel))->name]],
         'arrival_date' => '2026-10-01',
         'departure_date' => '2026-10-04',
     ]));
@@ -172,7 +172,7 @@ it('does not email admins about a reservation created through the api', function
             'reservation_id' => 'RES-API-1',
             'arrival_date' => '2026-10-01',
             'departure_date' => '2026-10-04',
-            'rooms' => [['room_type_id' => roomTypeIdFor($hotel)]],
+            'rooms' => [['room_type_id' => bookableTypeIdFor($hotel)]],
         ])
         ->assertStatus(201);
 

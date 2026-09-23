@@ -10,6 +10,7 @@ use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Services\AvailabilityService;
 use App\Services\GuestIdentityService;
 use App\Services\StayService;
 use App\Support\Audit\EventLogger;
@@ -88,19 +89,28 @@ class ReservationCreator
      * tenant scope, and matching on the code alone would restore — and
      * overwrite — another hotel's reservation that happens to share it.
      *
-     * `$skipCapacity` is for the import only: legacy data is recorded as it
-     * is rather than rejected.
+     * `$recordAsIs` is for the import only: legacy data is recorded as it is
+     * rather than rejected, so neither the capacity check nor the
+     * availability guard runs.
+     *
+     * The booked room types are locked first (AvailabilityService::lockTypes()),
+     * so two bookings for the last room of a type are checked one after the
+     * other. `$overbookOverride` saves a booking that oversells anyway; the
+     * caller has already checked the actor may.
      *
      * @param  array<int, array<string, mixed>>  $rooms
      */
-    public static function create(array $attributes, array $rooms, bool $capacityOverride = false, bool $skipCapacity = false): Reservation
+    public static function create(array $attributes, array $rooms, bool $capacityOverride = false, bool $recordAsIs = false, bool $overbookOverride = false): Reservation
     {
         unset($attributes['room_id']);
 
         $units = ReservationRoomSync::expand($rooms);
         ReservationRoomSync::validateNewUnits($attributes['hotel_id'], $units);
 
-        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $skipCapacity) {
+        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $recordAsIs, $overbookOverride) {
+            $availability = app(AvailabilityService::class);
+            $availability->lockTypes($attributes['hotel_id'], array_column($units, 'room_type_id'));
+
             $reservation = Reservation::onlyTrashed()
                 ->where('hotel_id', $attributes['hotel_id'])
                 ->where('reservation_id', $attributes['reservation_id'])
@@ -121,8 +131,12 @@ class ReservationCreator
                 self::addLine($reservation, $unit);
             }
 
-            if (! $skipCapacity) {
+            if (! $recordAsIs) {
                 self::checkCapacity($reservation, $capacityOverride);
+
+                // A restored reservation's old lines were just cancelled, so
+                // everything it holds now is new: nothing to subtract.
+                $availability->guard($reservation, [], $overbookOverride);
             }
 
             self::syncStay($reservation);
@@ -138,9 +152,13 @@ class ReservationCreator
      * ReservationRoomSync::diff()); null leaves the lines alone. Cancelling
      * the reservation cancels every line.
      *
+     * Only what the change adds (more lines, new or longer dates) is checked
+     * against availability: the reservation's footprint from before the
+     * change is subtracted, so its own lines never count against it.
+     *
      * @param  array<int, array<string, mixed>>|null  $rooms
      */
-    public static function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false): Reservation
+    public static function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false, bool $overbookOverride = false): Reservation
     {
         unset($attributes['room_id']);
 
@@ -148,7 +166,14 @@ class ReservationCreator
             ? ReservationRoomSync::diff($reservation, $rooms, $reservation->status)
             : null;
 
-        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride) {
+        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $overbookOverride) {
+            $availability = app(AvailabilityService::class);
+            $availability->lockTypes($reservation->hotel_id, [
+                ...$reservation->reservationRooms()->active()->pluck('room_type_id')->all(),
+                ...array_column($plan['create'] ?? [], 'room_type_id'),
+            ]);
+            $footprintBefore = $availability->footprint($reservation);
+
             $roomIdsBefore = self::roomIdsOf($reservation);
 
             $reservation->update($attributes);
@@ -173,6 +198,8 @@ class ReservationCreator
             if (($plan || $partyChanged) && $reservation->status !== ReservationStatus::CANCELLED) {
                 self::checkCapacity($reservation, $capacityOverride);
             }
+
+            $availability->guard($reservation, $footprintBefore, $overbookOverride);
 
             self::syncStay($reservation);
             self::syncRoomOccupancy([...$roomIdsBefore, ...self::roomIdsOf($reservation)]);
