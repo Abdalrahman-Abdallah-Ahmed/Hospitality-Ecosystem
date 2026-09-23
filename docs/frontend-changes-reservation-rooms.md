@@ -25,6 +25,7 @@ type ReservationRoomLine = {
   room_type_id: string;
   room_id: string | null;          // null = unassigned
   status: 'reserved' | 'cancelled';
+  cancelled_with_reservation: boolean; // true = cancelled with its reservation; un-cancel restores it
   room_type: RoomType;             // always loaded
   room: Room | null;               // always loaded, null when unassigned
   created_at: string;
