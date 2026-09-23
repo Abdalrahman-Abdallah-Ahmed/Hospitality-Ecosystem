@@ -259,7 +259,9 @@ import; confirm identical room lines and identical rejections for invalid input.
   recorded in the audit log. The old room's housekeeping status is not changed by this
   spec (Phase 5).
 - **FR-012**: Cancelling a reservation MUST cancel all of its lines and release their
-  physical rooms.
+  physical rooms. Bringing a cancelled reservation back to any other status MUST restore
+  the lines it had when it was cancelled (lines staff had removed before stay removed),
+  unless the same request sends the lines it should have; the capacity check applies.
 - **FR-013**: A reservation, its lines and any occupancy change MUST be saved together or
   not at all; a failure MUST NOT leave a reservation with missing or partial lines.
 
@@ -285,8 +287,9 @@ import; confirm identical room lines and identical rejections for invalid input.
   line of the reservation.
 - **FR-019**: The staff API, the Admin AI reservation tools, and the reservation import
   MUST all create and read reservations through the same domain operation and rules. The
-  import differs only in that it skips the capacity check (FR-009) and, as today, creates
-  missing room types and rooms instead of rejecting them.
+  import differs only in that it skips the capacity check (FR-009), accepts a room type
+  the hotel has since deactivated, and, as today, creates missing room types and rooms
+  instead of rejecting them. A row rejected part-way writes nothing.
 - **FR-020**: The guest-facing reservation lookup MUST show only the requesting guest's own
   reservation, including its room types and assigned room numbers.
 

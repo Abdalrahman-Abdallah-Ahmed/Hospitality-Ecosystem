@@ -168,8 +168,8 @@ All optional:
 | Param | Type | Example | Behavior |
 | --- | --- | --- | --- |
 | `filter[<column>]` | string, or array for multiple values | `filter[status]=checked_in` | Exact match on any real `reservations` column. `filter[status][]=confirmed&filter[status][]=pending` matches either. |
-| `filter[room_type_id]` | uuid | `filter[room_type_id]=019f…` | Reservations with **any live line** of this room type. Cancelled lines don't match. Filter only — cannot be used with `sort`. |
-| `filter[room_id]` | uuid | `filter[room_id]=019f…` | Reservations with **any live line** on this physical room. Filter only — cannot be used with `sort`. |
+| `filter[room_type_id]` | uuid, or array for multiple values | `filter[room_type_id]=019f…` | Reservations with **any live line** of this room type (or of any listed type). Cancelled lines don't match. An empty value is ignored; a value that isn't a uuid matches nothing. Filter only — cannot be used with `sort`. |
+| `filter[room_id]` | uuid, or array for multiple values | `filter[room_id]=019f…` | Reservations with **any live line** on this physical room (or any listed room). Same value rules. Filter only — cannot be used with `sort`. |
 | `search` | string | `search=RES-ABC` | Partial (`LIKE %term%`) match across the reservation's string-typed columns: `hotel_id`, `guest_id`, `reservation_id`, `status`, `source`, `special_requests`, `currency`. This does **not** search the joined guest's name or room numbers — see note below. |
 | `sort` | string | `sort=-arrival_date` | Sort by a real column. Prefix with `-` for descending (e.g. `-arrival_date` = newest arrival first). |
 | `page` | integer | `page=2` | Page number, 1-indexed. |
@@ -435,6 +435,10 @@ What can change depends on the reservation's status **before** the update:
 
 Setting `status` to `cancelled` cancels every line and releases their rooms.
 
+**Bringing a cancelled reservation back.** Changing a `cancelled` reservation to any other status restores the lines it had when it was cancelled; lines staff had removed before the cancellation stay removed. To choose different lines instead, send `rooms` in the same request: an item with `id` may name any of the reservation's lines (it is reinstated, optionally with a new `room_id`), items without `id` add lines, and lines left out stay cancelled. The capacity check runs either way.
+
+Line ids, `room_type_id` and `room_id` are accepted in any letter case.
+
 Errors (standard validation shape): an unknown or already-cancelled line `id` → `rooms.{i}.id`; an empty list → `rooms` "A reservation needs at least one room; cancel the reservation instead."; a disallowed change for the status → `rooms`, e.g. "Rooms cannot be changed on a checked_out reservation." or "Rooms cannot be added to a checked-in reservation; only room moves are allowed."; clearing a checked-in guest's room → `rooms.{i}.room_id` "A checked-in guest's room can be changed but not cleared."; plus every [room line error](#errors-room-lines) from create.
 
 ### Success Response
@@ -551,7 +555,7 @@ The **first row must be a header row** naming these columns (order doesn't matte
 ### Behavior Notes
 
 - **This endpoint does not use the same validation as manual create** (`POST /api/reservation`) — it bypasses `GenericStoreRequest`/enum casting for everything except `status` (which still throws because `Reservation.status` is a native PHP enum cast) and the numeric fields listed above. Garbage `currency`/`source`/`special_requests` values are written to the database as-is.
-- Every imported reservation gets exactly **one room line** (see `room_number`/`room_type` above). The party-capacity check is **not** run on imports — legacy data is recorded as it is.
+- Every imported reservation gets exactly **one room line** (see `room_number`/`room_type` above). The party-capacity check is **not** run on imports, and a room type the hotel has since deactivated is accepted: legacy data is recorded as it is. Each row is written in its own transaction, so a row that fails part-way (e.g. an invalid `status`) leaves no guest, room or reservation behind.
 - A row is processed **independently** — one bad row (missing phone, invalid status, duplicate `reservation_id`, etc.) is caught and skipped; it does not fail the whole import.
 - `room_number` with no existing match **creates the room** rather than rejecting the row. If your UI wants to warn the user before this happens, you'd need to cross-check `room_number` values against `GET /api/room` client-side before upload — the API gives no dry-run/preview mode.
 - Guests are matched by `phone_number` scoped to the hotel; a soft-deleted guest with a matching phone number is restored rather than duplicated.

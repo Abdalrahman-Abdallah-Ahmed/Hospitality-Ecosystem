@@ -40,7 +40,7 @@ class ReservationRoomSync
     {
         $units = [];
 
-        foreach (array_values($items) as $index => $item) {
+        foreach (self::normalize($items) as $index => $item) {
             $quantity = $item['quantity'] ?? 1;
 
             if (! is_int($quantity) && ! ctype_digit((string) $quantity) || (int) $quantity < 1 || (int) $quantity > self::MAX_UNITS) {
@@ -64,11 +64,13 @@ class ReservationRoomSync
 
     /**
      * New lines may only use an active, live room type of the hotel, and a
-     * room of that hotel and that type.
+     * room of that hotel and that type. The import passes `$allowInactive`:
+     * a legacy row is recorded against the type its room already has, even
+     * one the hotel has since deactivated.
      *
      * @param  array<int, array{index: int, room_type_id: mixed, room_id: mixed}>  $units
      */
-    public static function validateNewUnits(string $hotelId, array $units): void
+    public static function validateNewUnits(string $hotelId, array $units, bool $allowInactive = false): void
     {
         if ($units === []) {
             self::fail('rooms', 'A reservation needs at least one room.');
@@ -79,7 +81,7 @@ class ReservationRoomSync
         $typeIds = collect($units)->pluck('room_type_id')->filter(fn ($id) => self::isUuid($id))->unique();
         $types = RoomType::withoutGlobalScope('hotel')
             ->where('hotel_id', $hotelId)
-            ->where('is_active', true)
+            ->when(! $allowInactive, fn ($query) => $query->where('is_active', true))
             ->whereIn('id', $typeIds)
             ->pluck('id')
             ->all();
@@ -103,23 +105,30 @@ class ReservationRoomSync
      * without are new lines; live lines left out are cancelled. What is
      * allowed depends on the reservation's status before this update.
      *
+     * `$reactivating` is a cancelled reservation brought back in the same
+     * request. All its lines are cancelled then, so an item with `id` may
+     * name any of the reservation's lines and reinstates it, items without
+     * `id` are new lines, and lines left out simply stay cancelled.
+     *
      * @param  array<int, array<string, mixed>>  $items
-     * @return array{moves: array<string, string|null>, create: array<int, array{index: int, room_type_id: mixed, room_id: mixed}>, cancel: Collection<int, ReservationRoom>}
+     * @return array{moves: array<string, string|null>, create: array<int, array{index: int, room_type_id: mixed, room_id: mixed}>, cancel: Collection<int, ReservationRoom>, reinstate: array<int, string>}
      */
-    public static function diff(Reservation $reservation, array $items, ReservationStatus $statusBefore): array
+    public static function diff(Reservation $reservation, array $items, ReservationStatus $statusBefore, bool $reactivating = false): array
     {
-        if (in_array($statusBefore, [ReservationStatus::CHECKED_OUT, ReservationStatus::CANCELLED], true)) {
+        if (! $reactivating && in_array($statusBefore, [ReservationStatus::CHECKED_OUT, ReservationStatus::CANCELLED], true)) {
             self::fail('rooms', "Rooms cannot be changed on a {$statusBefore->value} reservation.");
         }
 
-        $checkedIn = $statusBefore === ReservationStatus::CHECKED_IN;
-        $live = $reservation->reservationRooms()->active()->get()->keyBy('id');
+        $checkedIn = ! $reactivating && $statusBefore === ReservationStatus::CHECKED_IN;
+        $live = $reactivating
+            ? $reservation->reservationRooms()->get()->keyBy('id')
+            : $reservation->reservationRooms()->active()->get()->keyBy('id');
 
         $moves = [];
         $kept = [];
         $newItems = [];
 
-        foreach (array_values($items) as $index => $item) {
+        foreach (self::normalize($items) as $index => $item) {
             $lineId = $item['id'] ?? null;
 
             if ($lineId === null) {
@@ -159,7 +168,9 @@ class ReservationRoomSync
             $moves[$lineId] = $item['room_id'];
         }
 
-        $cancel = $live->reject(fn (ReservationRoom $line) => isset($kept[$line->id]))->values();
+        $cancel = $reactivating
+            ? collect()
+            : $live->reject(fn (ReservationRoom $line) => isset($kept[$line->id]))->values();
 
         if ($checkedIn && $cancel->isNotEmpty()) {
             self::fail('rooms', 'Rooms cannot be removed from a checked-in reservation; only room moves are allowed.');
@@ -195,7 +206,12 @@ class ReservationRoomSync
         }
         self::assertNoDuplicateRooms($finalRooms);
 
-        return ['moves' => $moves, 'create' => $create, 'cancel' => $cancel];
+        return [
+            'moves' => $moves,
+            'create' => $create,
+            'cancel' => $cancel,
+            'reinstate' => $reactivating ? array_keys($kept) : [],
+        ];
     }
 
     /**
@@ -263,6 +279,29 @@ class ReservationRoomSync
 
             $seen[$roomId] = true;
         }
+    }
+
+    /**
+     * Request items with their ids lowercased. Postgres hands uuids back in
+     * lowercase and lines, types and rooms are compared as strings, so a
+     * valid uppercase id from a client would otherwise never match.
+     *
+     * @param  array<int, mixed>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    private static function normalize(array $items): array
+    {
+        return array_map(function ($item) {
+            $item = (array) $item;
+
+            foreach (['id', 'room_type_id', 'room_id'] as $key) {
+                if (isset($item[$key]) && is_string($item[$key])) {
+                    $item[$key] = strtolower($item[$key]);
+                }
+            }
+
+            return $item;
+        }, array_values($items));
     }
 
     private static function isUuid(mixed $value): bool

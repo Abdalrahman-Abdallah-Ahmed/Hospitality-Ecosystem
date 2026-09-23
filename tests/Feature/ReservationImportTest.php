@@ -193,3 +193,32 @@ it('adds no duplicate lines when the same file is imported twice', function () {
     expect(Reservation::count())->toBe(1)
         ->and(ReservationRoom::count())->toBe(1);
 });
+
+it('imports a row whose room type the hotel has since deactivated', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $retired = RoomType::resolveFor($hotel->id, 'Retired');
+    $retired->update(['is_active' => false]);
+    Room::create(['hotel_id' => $hotel->id, 'room_type_id' => $retired->id, 'room_number' => '301']);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation/import', ['file' => importCsv([['555-0100', 'Ann', 'Lee', '301', '2026-09-01', '2026-09-04']])])
+        ->assertOk()
+        ->assertJsonPath('body.imported', 1);
+
+    expect(ReservationRoom::sole()->room_type_id)->toBe($retired->id);
+});
+
+it('writes nothing for a row that fails part-way', function () {
+    [$admin, $hotel] = adminWithHotel();
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation/import', ['file' => importRawCsv(
+            "guest_phone,arrival_date,departure_date,room_number,status\n555-0199,2026-09-01,2026-09-04,777,typo"
+        )])
+        ->assertOk()
+        ->assertJsonPath('body.imported', 0)
+        ->assertJsonCount(1, 'body.skipped');
+
+    expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0199')->exists())->toBeFalse()
+        ->and(Room::where('hotel_id', $hotel->id)->where('room_number', '777')->exists())->toBeFalse();
+});

@@ -34,14 +34,26 @@ class ReservationController extends Controller
 
         // Room type and room live on the lines, not the reservation: match any
         // live line, then hand the rest of the filters to the generic query.
+        // Values behave like Filterable's: empty is ignored, a list matches
+        // any of its ids. Ids are compared lowercased, and a value that is not
+        // a uuid matches nothing rather than reaching Postgres.
         $filters = (array) $request->input('filter', []);
 
         foreach (ReservationIndexRequest::LINE_FILTERS as $column) {
-            if (array_key_exists($column, $filters)) {
-                $value = $filters[$column];
-                $query->whereHas('reservationRooms', fn ($lines) => $lines->active()->where($column, $value));
-                unset($filters[$column]);
+            $value = $filters[$column] ?? null;
+            unset($filters[$column]);
+
+            if ($value === null || $value === '' || $value === []) {
+                continue;
             }
+
+            $ids = collect((array) $value)
+                ->filter(fn ($id) => is_string($id) && Str::isUuid($id))
+                ->map(fn (string $id) => strtolower($id))
+                ->values()
+                ->all();
+
+            $query->whereHas('reservationRooms', fn ($lines) => $lines->active()->whereIn($column, $ids));
         }
 
         $request->merge(['filter' => $filters]);

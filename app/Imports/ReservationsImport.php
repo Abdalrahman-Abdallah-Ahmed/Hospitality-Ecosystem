@@ -8,6 +8,7 @@ use App\Models\Room;
 use App\Models\RoomType;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
@@ -75,6 +76,15 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             return;
         }
 
+        // All of a row's writes — room, guest, reservation — or none: a row
+        // rejected part-way leaves no stray guest or room behind.
+        DB::transaction(fn () => $this->writeRow($row, $reservationId, $phone, $arrivalDate, $departureDate));
+
+        $this->imported++;
+    }
+
+    private function writeRow(Collection $row, string $reservationId, string $phone, string $arrivalDate, string $departureDate): void
+    {
         $room = null;
         $roomNumber = trim((string) ($row['room_number'] ?? ''));
 
@@ -119,8 +129,6 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             'currency' => trim((string) ($row['currency'] ?? '')) ?: $this->hotel->currency,
         ], [
             ['room_type_id' => $roomTypeId, 'room_id' => $room?->id],
-        ], skipCapacity: true);
-
-        $this->imported++;
+        ], fromImport: true);
     }
 }

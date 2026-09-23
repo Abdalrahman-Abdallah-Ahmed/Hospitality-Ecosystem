@@ -29,6 +29,7 @@ class ReservationRoom extends Model
 
     protected $attributes = [
         'status' => 'reserved',
+        'cancelled_with_reservation' => false,
     ];
 
     protected $fillable = [
@@ -37,10 +38,14 @@ class ReservationRoom extends Model
         'room_type_id',
         'room_id',
         'status',
+        // True when the line was cancelled because its whole reservation was,
+        // so bringing the reservation back restores it.
+        'cancelled_with_reservation',
     ];
 
     protected $casts = [
         'status' => ReservationRoomStatus::class,
+        'cancelled_with_reservation' => 'boolean',
     ];
 
     /**
