@@ -52,17 +52,25 @@ HTTP `200 OK`:
       {
         "id": "019fc000-3333-7000-9000-abcdef123456",
         "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
-        "room_id": "019f9b37-c268-738c-bc46-53281c1763cf",
+        "guest_id": "019fabcd-1234-7000-9000-123456789abc",
+        "reservation_id": "RES-1001",
         "arrival_date": "2026-08-08",
         "departure_date": "2026-08-11",
         "status": "confirmed",
-        "room": {
-          "id": "019f9b37-c268-738c-bc46-53281c1763cf",
-          "room_number": "101",
-          "room_type": "double",
-          "floor": "1",
-          "status": "occupied"
-        }
+        "...": "the other reservation fields, as in the Reservations API doc",
+        "rooms": [
+          {
+            "id": "019fc000-4444-7000-9000-000000000001",
+            "room_type_id": "019f9b37-c267-7000-a000-00000000dlx1",
+            "room_id": "019f9b37-c268-738c-bc46-53281c1763cf",
+            "status": "reserved",
+            "room_type": { "id": "019f9b37-c267-7000-a000-00000000dlx1", "name": "Deluxe", "...": "..." },
+            "room": { "id": "019f9b37-c268-738c-bc46-53281c1763cf", "room_number": "101", "floor": "1", "status": "occupied", "...": "..." }
+          }
+        ],
+        "room_summary": [
+          { "room_type_id": "019f9b37-c267-7000-a000-00000000dlx1", "room_type_name": "Deluxe", "quantity": 1 }
+        ]
       }
     ],
     "today_departures_count": 1,
@@ -113,7 +121,7 @@ HTTP `200 OK`:
 | `pending_tasks` | Count of the caller's hotel's tasks with `status: pending`. |
 | `in_progress_tasks` | Count of the caller's hotel's tasks with `status: in_progress`. |
 | `today_arrivals_count` | Count of reservations in the caller's hotel with `arrival_date` equal to today (server date). |
-| `today_arrivals` | The **full reservation objects** for the same set — not just ids. Each has `room` eager-loaded (see [Room Object](#room_number-caveat) below), but **not** `guest` — resolve guest names from data you already have if needed. |
+| `today_arrivals` | The **full reservation objects** for the same set (the `ReservationResource` shape), not just ids. Each has `rooms` (every room line, with its `room_type` and `room`) and `room_summary` loaded (see [Rooms on arrivals and departures](#rooms-on-arrivals-and-departures) below), but **not** `guest` or `hotel`; resolve guest names from data you already have if needed. There is no `room_id` / `room` field any more (removed 2026-09-23). |
 | `today_departures_count` | Same as `today_arrivals_count`, but for `departure_date`. |
 | `today_departures` | Same shape as `today_arrivals`, filtered by `departure_date` instead of `arrival_date`. |
 | `vip_guests_count` | Number of entries in `vip_guests`. |
@@ -138,13 +146,13 @@ HTTP `200 OK`:
 
 - `GET /api/dashboard` accepts an optional `?date=YYYY-MM-DD` query parameter.
 - **When `date` is omitted, or equals today:** `occupied_rooms` and `percentage` reflect the live `rooms.status` snapshot — `basis: "room_status_snapshot"`. `percentage` is `occupied rooms / total rooms * 100`, rounded to 2 decimals, or `0` if the hotel has no rooms at all (not `null`, not an error). This stays a real-time snapshot on purpose (e.g. a room marked under maintenance shows up immediately, with no dependency on stay data).
-- **When `date` is any other value (past or future):** occupancy is now computed from `stays` — `basis: "stay_events"`. A room counts as occupied on that date when a stay's status is `in_house` or `departed` and the date falls within its *planned* arrival/departure window (`arrival_date <= date < departure_date` — departure day itself doesn't count, since a guest leaving on the 5th didn't sleep there that night). `occupied_rooms`/`percentage` are real numbers now, not `null` — **breaking change** from the WP-0/WP-1 behavior, which returned `null` for any non-today date because there was no historical data source yet.
+- **When `date` is any other value (past or future):** occupancy is now computed from `stays` — `basis: "stay_events"`. A stay counts on that date when its status is `in_house` or `departed` and the date falls within its *planned* arrival/departure window (`arrival_date <= date < departure_date` — departure day itself doesn't count, since a guest leaving on the 5th didn't sleep there that night). Each counting stay adds as many rooms as its reservation has live room lines (a 3-room reservation counts 3), and at least 1. `occupied_rooms`/`percentage` are real numbers now, not `null` — **breaking change** from the WP-0/WP-1 behavior, which returned `null` for any non-today date because there was no historical data source yet.
 - `date` always echoes back the date the occupancy figures apply to (today's date if the param was omitted).
 - `historical_supported` is now always `true`.
 
-#### `room_number` caveat
+#### Rooms on arrivals and departures
 
-`today_arrivals[].room` / `today_departures[].room` can be **`null`** — a reservation isn't required to have a room assigned. Always null-check before reading `room.room_number` in the UI (e.g. an arrivals-board widget).
+A reservation can book several rooms, so each entry has a `rooms` array (one line per booked room, cancelled lines included for history) and a `room_summary` (live lines counted per room type, e.g. `2 × Deluxe`). A line's `room` is **`null`** until a physical room is assigned, so always null-check before reading `rooms[i].room.room_number` in the UI (e.g. an arrivals-board widget), and skip lines whose `status` is `cancelled`.
 
 #### Reservation counts are **not** further filtered by status
 
@@ -183,9 +191,9 @@ curl -X GET http://your-domain.com/api/dashboard \
 
 - `GET /api/dashboard` — always returns the caller's own hotel's summary — plus an optional `?date=YYYY-MM-DD` that currently only affects the `occupancy` object (see below).
 - Open to **any authenticated hotel user**, not just admins — unlike most of this API, there's no role gate here.
-- `today_arrivals`/`today_departures` are full reservation objects (with `room`, not `guest`), not just counts — use the paired `*_count` fields for KPI tiles and the arrays for a table/list widget.
+- `today_arrivals`/`today_departures` are full reservation objects (with `rooms` and `room_summary`, not `guest`), not just counts — use the paired `*_count` fields for KPI tiles and the arrays for a table/list widget.
 - These arrival/departure lists are **not** status-filtered — cancelled reservations for today still show up; filter client-side if that matters for the widget.
-- `room` on a reservation can be `null` — null-check before reading `room.room_number`.
+- Rooms on a reservation are in `rooms[]`; a line's `room` can be `null` (unassigned) — null-check before reading `rooms[i].room.room_number`.
 - **New:** `vip_guests` / `vip_guests_count` list VIP guests checked in now or arriving today, with their current stay and room, for a VIP widget. They carry no contact details.
 - **Breaking change:** the old flat `occupancy_percentage` and `revenue_today` fields are gone. `occupancy_percentage` is now `occupancy.percentage`. `revenue_today` is renamed `booking_value_today` (same value, honest name) — the old name implied stay revenue, which is what `room_revenue_today` is for.
 - `booking_value_today` sums `reservation_value` for reservations **created** today (not arriving today), includes cancelled ones, and switches type between a numeric string and plain `0` depending on whether any rows matched — coerce with `Number(...)` rather than assuming one type.

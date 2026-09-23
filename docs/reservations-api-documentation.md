@@ -187,33 +187,37 @@ GET /api/reservation?filter[status]=checked_in&search=RES-ABC&sort=-arrival_date
 
 ### Success Response
 
-HTTP `200 OK`. `body` is a Laravel paginator object:
+HTTP `200 OK`. The list goes through `ReservationResource::collection()`, so `body` is Laravel's **paginated resource** shape: `data`, `links` and `meta`. It is **not** the raw paginator; there is no `body.current_page`.
 
 ```json
 {
   "message": "Reservations fetched successfully.",
   "code": 200,
   "body": {
-    "current_page": 1,
     "data": [
       { "...": "one reservation object, shape as above, with hotel/guest/rooms/room_summary" }
     ],
-    "first_page_url": "http://your-domain.com/api/reservation?page=1",
-    "from": 1,
-    "last_page": 1,
-    "last_page_url": "http://your-domain.com/api/reservation?page=1",
-    "links": [ { "url": null, "label": "&laquo; Previous", "page": null, "active": false } ],
-    "next_page_url": null,
-    "path": "http://your-domain.com/api/reservation",
-    "per_page": 15,
-    "prev_page_url": null,
-    "to": 1,
-    "total": 1
+    "links": {
+      "first": "http://your-domain.com/api/reservation?page=1",
+      "last": "http://your-domain.com/api/reservation?page=1",
+      "prev": null,
+      "next": null
+    },
+    "meta": {
+      "current_page": 1,
+      "from": 1,
+      "last_page": 1,
+      "links": [ { "url": null, "label": "&laquo; Previous", "page": null, "active": false } ],
+      "path": "http://your-domain.com/api/reservation",
+      "per_page": 15,
+      "to": 1,
+      "total": 1
+    }
   }
 }
 ```
 
-For the UI: read the list from `body.data`, and drive pagination controls from `body.current_page`, `body.last_page`, and `body.total` (don't parse `links[].label` — it's server-rendered HTML for Blade views, not meant for a JS pagination widget).
+For the UI: read the list from `body.data`, and drive pagination controls from `body.meta.current_page`, `body.meta.last_page` and `body.meta.total` (or `body.links.next` / `body.links.prev`). Don't parse `meta.links[].label`: it's server-rendered HTML for Blade views, not meant for a JS pagination widget.
 
 ### Error: Unknown Filter/Sort Column
 
@@ -663,7 +667,7 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - List with `GET /api/reservation`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column` / `sort=-column`, paginate with `page`/`per_page`.
-- Read the list from `body.data`; drive pagination UI from `body.current_page` / `body.last_page` / `body.total`.
+- Read the list from `body.data`; drive pagination UI from `body.meta.current_page` / `body.meta.last_page` / `body.meta.total` (the list is a paginated resource: `{ data, links, meta }`).
 - `reservation_value` comes back as a **string** — parse before doing math with it.
 - `hotel_id` can be set on create but **never** changed on update — don't put it in the edit form.
 - `guest_id` must belong to the same hotel as `hotel_id`, or you'll get a `422` with a plain-language `message` (not a field-level `errors` entry).
