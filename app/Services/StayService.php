@@ -30,7 +30,9 @@ class StayService
     {
         $planned = [
             'guest_id' => $reservation->guest_id,
-            'room_id' => $reservation->room_id,
+            // One stay per reservation until SPEC-023 gives every room line
+            // its own; until then it points at the first line's room.
+            'room_id' => $reservation->primaryRoomId(),
             'planned_arrival_date' => $reservation->arrival_date,
             'planned_departure_date' => $reservation->departure_date,
             'adults' => $reservation->adults ?? 1,

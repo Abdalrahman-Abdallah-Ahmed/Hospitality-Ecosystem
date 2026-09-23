@@ -42,9 +42,10 @@ class GenericIndexRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             $columns = $this->availableColumns();
+            $filterColumns = $this->filterColumns();
 
             foreach (array_keys($this->input('filter', [])) as $column) {
-                if (! in_array($column, $columns, true)) {
+                if (! in_array($column, $filterColumns, true)) {
                     $validator->errors()->add("filter.{$column}", "Unknown filter column [{$column}].");
                 }
             }
@@ -55,6 +56,18 @@ class GenericIndexRequest extends FormRequest
                 $validator->errors()->add('sort', "Unknown sort column [{$sort}].");
             }
         });
+    }
+
+    /**
+     * The keys `filter` accepts. The table's columns by default; a subclass
+     * adds virtual filters its controller applies itself (they stay unusable
+     * for sort).
+     *
+     * @return array<int, string>
+     */
+    protected function filterColumns(): array
+    {
+        return $this->availableColumns();
     }
 
     /**

@@ -3,9 +3,8 @@
 namespace App\Jobs;
 
 use App\Enums\HousekeepingStatusesEnum;
-use App\Enums\StayStatus;
+use App\Models\ReservationRoom;
 use App\Models\Room;
-use App\Models\Stay;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
@@ -37,10 +36,8 @@ class MakeRoomDirtyOvernightJob implements ShouldQueue
 
     public function handle(): void
     {
-        $sleptInRoomIds = Stay::withoutGlobalScope('hotel')
-            ->whereNotNull('room_id')
-            ->where('status', StayStatus::IN_HOUSE)
-            ->select('room_id');
+        // Every room of a multi-room reservation, not just the one its stay names.
+        $sleptInRoomIds = ReservationRoom::inHouseRoomIds();
 
         Room::withoutGlobalScope('hotel')
             ->whereIn('id', $sleptInRoomIds)

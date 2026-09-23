@@ -2,20 +2,24 @@
 
 namespace App\Support\Reservations;
 
+use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\RoomStatusesEnum;
-use App\Enums\StayStatus;
 use App\Models\Guest;
 use App\Models\Reservation;
+use App\Models\ReservationRoom;
 use App\Models\Room;
-use App\Models\Stay;
+use App\Models\RoomType;
 use App\Services\GuestIdentityService;
 use App\Services\StayService;
+use App\Support\Audit\EventLogger;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Shared reservation-persistence logic used by both the authenticated
- * ReservationController::store() and CreateReservationTool, so the
- * soft-delete-restore and room-occupancy rules stay in one place.
+ * The one domain operation that writes reservations and their room lines,
+ * used by ReservationController, CreateReservationTool and
+ * ReservationsImport, so the line rules (ReservationRoomSync), the
+ * soft-delete-restore and the room-occupancy rules stay in one place.
  */
 class ReservationCreator
 {
@@ -71,33 +75,186 @@ class ReservationCreator
     }
 
     /**
+     * Creates a reservation with its room lines — one per booked unit, see
+     * ReservationRoomSync::expand() for the `$rooms` shape — in one
+     * transaction, so a failure never leaves a reservation without its rooms.
+     *
      * A trashed reservation is not visible through normal queries, but its
      * (hotel_id, reservation_id) row still exists, so blindly creating would
-     * throw a duplicate-key error. Restore and update it instead.
+     * throw a duplicate-key error. Restore and update it instead; its old
+     * lines are cancelled and replaced by the new ones.
      *
      * The lookup names the hotel explicitly. Queued callers run with no
      * tenant scope, and matching on the code alone would restore — and
      * overwrite — another hotel's reservation that happens to share it.
+     *
+     * `$skipCapacity` is for the import only: legacy data is recorded as it
+     * is rather than rejected.
+     *
+     * @param  array<int, array<string, mixed>>  $rooms
      */
-    public static function create(array $attributes): Reservation
+    public static function create(array $attributes, array $rooms, bool $capacityOverride = false, bool $skipCapacity = false): Reservation
     {
-        $trashed = Reservation::onlyTrashed()
-            ->where('hotel_id', $attributes['hotel_id'])
-            ->where('reservation_id', $attributes['reservation_id'])
-            ->first();
+        unset($attributes['room_id']);
 
-        if ($trashed) {
-            $trashed->restore();
-            $trashed->update($attributes);
-            self::syncStay($trashed);
+        $units = ReservationRoomSync::expand($rooms);
+        ReservationRoomSync::validateNewUnits($attributes['hotel_id'], $units);
 
-            return $trashed;
+        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $skipCapacity) {
+            $reservation = Reservation::onlyTrashed()
+                ->where('hotel_id', $attributes['hotel_id'])
+                ->where('reservation_id', $attributes['reservation_id'])
+                ->first();
+
+            $previousRoomIds = [];
+
+            if ($reservation) {
+                $previousRoomIds = self::roomIdsOf($reservation);
+                $reservation->restore();
+                $reservation->update($attributes);
+                self::cancelLines($reservation->reservationRooms()->active()->get());
+            } else {
+                $reservation = Reservation::create($attributes);
+            }
+
+            foreach ($units as $unit) {
+                self::addLine($reservation, $unit);
+            }
+
+            if (! $skipCapacity) {
+                self::checkCapacity($reservation, $capacityOverride);
+            }
+
+            self::syncStay($reservation);
+            self::syncRoomOccupancy([...$previousRoomIds, ...self::roomIdsOf($reservation)]);
+
+            return $reservation;
+        });
+    }
+
+    /**
+     * Updates a reservation and, when `$rooms` is given, its lines, in one
+     * transaction. `$rooms` is the desired list of live lines (see
+     * ReservationRoomSync::diff()); null leaves the lines alone. Cancelling
+     * the reservation cancels every line.
+     *
+     * @param  array<int, array<string, mixed>>|null  $rooms
+     */
+    public static function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false): Reservation
+    {
+        unset($attributes['room_id']);
+
+        $plan = $rooms !== null
+            ? ReservationRoomSync::diff($reservation, $rooms, $reservation->status)
+            : null;
+
+        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride) {
+            $roomIdsBefore = self::roomIdsOf($reservation);
+
+            $reservation->update($attributes);
+            $partyChanged = $reservation->wasChanged(['adults', 'children']);
+
+            if ($plan) {
+                foreach ($plan['moves'] as $lineId => $roomId) {
+                    ReservationRoom::withoutGlobalScope('hotel')->findOrFail($lineId)->update(['room_id' => $roomId]);
+                }
+
+                self::cancelLines($plan['cancel']);
+
+                foreach ($plan['create'] as $unit) {
+                    self::addLine($reservation, $unit);
+                }
+            }
+
+            if ($reservation->status === ReservationStatus::CANCELLED) {
+                self::cancelLines($reservation->reservationRooms()->active()->get());
+            }
+
+            if (($plan || $partyChanged) && $reservation->status !== ReservationStatus::CANCELLED) {
+                self::checkCapacity($reservation, $capacityOverride);
+            }
+
+            self::syncStay($reservation);
+            self::syncRoomOccupancy([...$roomIdsBefore, ...self::roomIdsOf($reservation)]);
+
+            return $reservation;
+        });
+    }
+
+    /**
+     * Every room ever put on this reservation's lines, cancelled ones included,
+     * so an occupancy sync after a change also reaches the rooms it released.
+     *
+     * @return array<int, string>
+     */
+    public static function roomIdsOf(Reservation $reservation): array
+    {
+        return ReservationRoom::withoutGlobalScope('hotel')
+            ->where('reservation_id', $reservation->id)
+            ->whereNotNull('room_id')
+            ->pluck('room_id')
+            ->all();
+    }
+
+    /**
+     * @param  array{room_type_id: mixed, room_id: mixed}  $unit
+     */
+    private static function addLine(Reservation $reservation, array $unit): ReservationRoom
+    {
+        return ReservationRoom::create([
+            'hotel_id' => $reservation->hotel_id,
+            'reservation_id' => $reservation->id,
+            'room_type_id' => $unit['room_type_id'],
+            'room_id' => $unit['room_id'],
+            'status' => ReservationRoomStatus::RESERVED,
+        ]);
+    }
+
+    /**
+     * Cancelled through the model, one by one, so each is audited.
+     *
+     * @param  iterable<ReservationRoom>  $lines
+     */
+    private static function cancelLines(iterable $lines): void
+    {
+        foreach ($lines as $line) {
+            $line->update(['status' => ReservationRoomStatus::CANCELLED]);
+        }
+    }
+
+    /**
+     * Skipped for a reservation with no live lines: only legacy rows written
+     * outside this class can be in that state, and there is nothing to
+     * measure the party against.
+     */
+    private static function checkCapacity(Reservation $reservation, bool $override): void
+    {
+        $typeIds = ReservationRoom::withoutGlobalScope('hotel')
+            ->where('reservation_id', $reservation->id)
+            ->active()
+            ->pluck('room_type_id');
+
+        if ($typeIds->isEmpty()) {
+            return;
         }
 
-        $reservation = Reservation::create($attributes);
-        self::syncStay($reservation);
+        $types = RoomType::withoutGlobalScope('hotel')->withTrashed()
+            ->whereIn('id', $typeIds->unique())
+            ->get()
+            ->keyBy('id');
 
-        return $reservation;
+        $lineTypes = $typeIds->map(fn (string $id) => $types[$id]);
+        $adults = (int) ($reservation->adults ?? 1);
+        $children = (int) ($reservation->children ?? 0);
+
+        if (ReservationRoomSync::assertCapacity($adults, $children, $lineTypes, $override)) {
+            EventLogger::record($reservation, 'capacity_overridden', changes: [
+                'adults' => $adults,
+                'children' => $children,
+                'max_occupancy' => $lineTypes->sum('max_occupancy'),
+                'adult_capacity' => $lineTypes->sum('adult_capacity'),
+            ]);
+        }
     }
 
     /**
@@ -130,24 +287,23 @@ class ReservationCreator
     }
 
     /**
-     * Keeps the status of this reservation's room — and of the room it just
-     * moved out of, if the last save changed room_id — in step with who is
-     * physically there. Call after syncStay(), which it reads.
+     * Keeps the status of each given room in step with who is physically
+     * there. Pass every room an operation touched — the rooms its lines hold
+     * now and the ones it just released or moved out of. Call after
+     * syncStay(), which it reads.
+     *
+     * @param  array<int, string|null>  $roomIds
      */
-    public static function syncRoomOccupancy(Reservation $reservation): void
+    public static function syncRoomOccupancy(array $roomIds): void
     {
-        $previousRoomId = $reservation->wasChanged('room_id')
-            ? ($reservation->getPrevious()['room_id'] ?? null)
-            : null;
-
-        foreach (array_unique(array_filter([$reservation->room_id, $previousRoomId])) as $roomId) {
+        foreach (array_unique(array_filter($roomIds)) as $roomId) {
             self::syncRoomStatus($roomId);
         }
     }
 
     /**
-     * A room is occupied while any stay in it is IN_HOUSE, and released back
-     * to available once none is. Derived from every stay in the room rather
+     * A room is occupied while any in-house guest is in it, and released back
+     * to available once none is. Derived from everyone in the room rather
      * than from one reservation, so booking a room for next week cannot
      * release it while tonight's guest is still in it.
      *
@@ -156,9 +312,9 @@ class ReservationCreator
      */
     private static function syncRoomStatus(string $roomId): void
     {
-        $someoneInHouse = Stay::withoutGlobalScope('hotel')
+        $someoneInHouse = DB::query()
+            ->fromSub(ReservationRoom::inHouseRoomIds(), 'in_house')
             ->where('room_id', $roomId)
-            ->where('status', StayStatus::IN_HOUSE)
             ->exists();
 
         $room = Room::withoutGlobalScope('hotel')->whereKey($roomId);

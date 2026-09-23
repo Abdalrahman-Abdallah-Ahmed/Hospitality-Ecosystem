@@ -97,9 +97,13 @@ it('creates a reservation for the admin hotel with valid data', function () {
             'reservation_id' => 'RES-ABC12345',
             'arrival_date' => '2026-09-01',
             'departure_date' => '2026-09-04',
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel)]],
         ]);
 
-    $response->assertStatus(201)->assertJsonPath('body.hotel_id', $hotel->id);
+    $response->assertStatus(201)
+        ->assertJsonPath('body.hotel_id', $hotel->id)
+        ->assertJsonCount(1, 'body.rooms')
+        ->assertJsonPath('body.room_summary.0.quantity', 1);
     expect(Reservation::where('reservation_id', 'RES-ABC12345')->exists())->toBeTrue();
 });
 
@@ -144,6 +148,7 @@ it('rejects creating a reservation with a guest from a different hotel', functio
             'reservation_id' => 'RES-ABC99999',
             'arrival_date' => '2026-09-01',
             'departure_date' => '2026-09-04',
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel)]],
         ]);
 
     $response->assertStatus(422)->assertJsonPath('message', 'The selected guest does not belong to this hotel.');
@@ -160,13 +165,14 @@ it('rejects creating a reservation with a room from a different hotel', function
         ->postJson('/api/reservation', [
             'hotel_id' => $hotel->id,
             'guest_id' => $guest->id,
-            'room_id' => $foreignRoom->id,
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel), 'room_id' => $foreignRoom->id]],
             'reservation_id' => 'RES-ABC88888',
             'arrival_date' => '2026-09-01',
             'departure_date' => '2026-09-04',
         ]);
 
-    $response->assertStatus(422)->assertJsonPath('message', 'The selected room does not belong to this hotel.');
+    // No hint that the other hotel's room exists.
+    $response->assertStatus(422)->assertJsonValidationErrors(['rooms.0.room_id' => 'The selected room is not available.']);
     expect(Reservation::where('reservation_id', 'RES-ABC88888')->exists())->toBeFalse();
 });
 
@@ -186,6 +192,7 @@ it('restores a soft-deleted reservation instead of throwing a duplicate-key erro
             'arrival_date' => '2026-10-01',
             'departure_date' => '2026-10-04',
             'adults' => 4,
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel), 'quantity' => 2]],
         ]);
 
     $response->assertStatus(201)
@@ -210,6 +217,7 @@ it('lets two hotels use the same reservation id', function () {
             'reservation_id' => 'RES-SHARED01',
             'arrival_date' => '2026-10-01',
             'departure_date' => '2026-10-04',
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel)]],
         ])
         ->assertCreated();
 
@@ -227,6 +235,7 @@ it('rejects a reservation id the same hotel already uses', function () {
             'reservation_id' => 'RES-TAKEN01',
             'arrival_date' => '2026-10-01',
             'departure_date' => '2026-10-04',
+            'rooms' => [['room_type_id' => roomTypeIdFor($hotel)]],
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['reservation_id']);
@@ -269,7 +278,7 @@ it('never restores another hotel soft-deleted reservation that shares its id', f
         'arrival_date' => '2026-10-01',
         'departure_date' => '2026-10-04',
         'adults' => 3,
-    ]);
+    ], [['room_type_id' => roomTypeIdFor($hotel), 'quantity' => 2]]);
 
     $theirsNow = Reservation::withoutGlobalScope('hotel')->withTrashed()->find($theirs->id);
 

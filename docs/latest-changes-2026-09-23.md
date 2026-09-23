@@ -98,3 +98,51 @@ Complete test coverage for:
 ---
 
 **Ready for**: Phase 2 (Reservations), Phase 3 (Availability), Phase 4 (Room Assignment)
+
+---
+
+## Reservation Rooms (Phase 2 — SPEC-010) — BREAKING
+
+### Summary
+
+A reservation no longer points at one physical room. It now books one or more **room units ("lines")**, each naming the room type booked and, optionally, the physical room. "2 × Deluxe + 1 × Suite" is one reservation with three lines, all sharing the reservation's dates. This is the base for availability, room assignment and per-room stays in the next specs.
+
+### Breaking Changes — Reservations API (`/api/reservation`)
+
+- **Removed**: the top-level `room_id` request field and the `room_id` / `room` response fields. Sending `room_id` now returns `422` "Use rooms[] instead."
+- **Create** requires `rooms`: `[{ room_type_id, quantity?, room_id? }]`, 1–50 rooms in total. Room types must be active and belong to the hotel; `room_id` must be a room of that type and only goes on a line with quantity 1.
+- **Responses** carry `rooms[]` (every line with `room_type`, `room`, `status` — `reserved` or `cancelled`) and `room_summary` (`[{ room_type_id, room_type_name, quantity }]` of live lines).
+- **Update**: `rooms` is optional. When sent it is the **full desired list of live lines** — `{ id }` keeps a line (optionally changing/clearing its `room_id`), an item without `id` adds lines, a live line left out is cancelled. Omit `rooms` to keep the lines as they are. Allowed changes depend on status: `pending`/`confirmed` — anything; `checked_in` — room moves only (same type); `checked_out`/`cancelled` — none. Cancelling the reservation cancels every line.
+- **Capacity**: the party must fit the booked rooms (`adults + children` ≤ Σ max occupancy, `adults` ≤ Σ adult capacity). Staff can save anyway with `capacity_override: true`; each override is audited as `reservation.capacity_overridden`. The AI can never override.
+- **List filters**: `filter[room_type_id]` and `filter[room_id]` match any live line. They cannot be used for `sort`. `search` no longer covers `room_id`.
+
+### Other Changes
+
+- **Room types**: `DELETE /api/room-types/{id}` is also blocked (`422`, `body.error = deletion_blocked_by_reservations`) while a current or upcoming reservation still books the type. Deactivate it instead.
+- **Occupancy**: a checked-in multi-room reservation occupies every one of its rooms; the overnight "mark dirty" job and the dashboard's date-based occupancy count every room too. Single-room behavior is unchanged.
+- **Stay**: still one stay per reservation until per-room stays ship; its `room_id` is the first live line's room.
+- **Dashboard**: `today_arrivals` / `today_departures` entries carry `rooms[]` / `room_summary` instead of `room`.
+- **Import**: each imported row becomes one line (`room_number` → that room and its type; `room_type` alone → an unassigned line of that type, created if missing; neither → the hotel's default type). Imports skip the capacity check.
+- **Admin AI**: the create-reservation tool books by room type name and quantity (active types only; unknown names get the list of available types) and asks for the room type if none is given. Its writes are audited as the AI agent. The reservation read tools return `rooms` and `room_summary` instead of one `room_number`.
+- **WhatsApp reservation email**: lists rooms per type ("2 × Deluxe — 101, unassigned").
+
+### Data Migration
+
+1. Create `reservation_rooms` (with a partial unique index so one room can't sit on two live lines of the same reservation).
+2. Backfill one line per existing reservation, including soft-deleted and cancelled ones, from its room and that room's type. Reservations with no room, or with a room of another hotel, get an inactive per-hotel **"Unspecified (migrated)"** room type (created only where needed; counts per hotel are logged). Re-running adds nothing; room statuses are not touched.
+3. Drop `reservations.room_id` (rollback restores it from the first live line).
+
+### Frontend Slice (`ecosystem-frontend`)
+
+Ship together with this backend change — there is no compatibility shim:
+
+- Reservation form: room-type lines × quantity, with an optional room per single line; show the capacity error and offer an explicit "save anyway" (`capacity_override`).
+- Reservation view/list: render `rooms[]` / `room_summary` instead of `room`; filters by room type / room use `filter[room_type_id]` / `filter[room_id]`.
+- Edit: send the full `rooms` list with `id`s for kept lines; on a checked-in reservation offer only "move room" (same type).
+- Dashboard arrivals/departures: read rooms from `rooms[]`.
+
+### Documentation
+
+- `docs/reservations-api-documentation.md` (object, create/update, filters, errors, import)
+- `docs/room-types-api-documentation.md` (new deletion rule)
+- `specs/002-reservation-rooms/` (spec, plan, contract, quickstart)

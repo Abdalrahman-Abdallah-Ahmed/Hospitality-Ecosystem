@@ -19,7 +19,8 @@ use Throwable;
  * rather than rejected, since imported data commonly predates the room
  * being entered into the system. Reuses the same guest-matching and
  * reservation-persistence rules as CreateReservationTool/ReservationController
- * so imported data behaves identically to any other entry point.
+ * so imported data behaves identically to any other entry point, except that
+ * the party-capacity check is skipped: legacy data is recorded as it is.
  */
 class ReservationsImport implements ToCollection, WithHeadingRow
 {
@@ -97,10 +98,15 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             'email' => trim((string) ($row['guest_email'] ?? '')) ?: null,
         ]);
 
-        $reservation = ReservationCreator::create([
+        // One line per row: the room's own type when a room is named,
+        // otherwise the named type (created when missing, like rooms are),
+        // otherwise the hotel's default type.
+        $roomTypeId = $room?->room_type_id
+            ?? RoomType::resolveFor($this->hotel->id, $row['room_type'] ?? null)->id;
+
+        ReservationCreator::create([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $guest->id,
-            'room_id' => $room?->id,
             'reservation_id' => $reservationId,
             'arrival_date' => $arrivalDate,
             'departure_date' => $departureDate,
@@ -111,9 +117,9 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             'special_requests' => trim((string) ($row['special_requests'] ?? '')) ?: null,
             'reservation_value' => (float) ($row['reservation_value'] ?? 0),
             'currency' => trim((string) ($row['currency'] ?? '')) ?: $this->hotel->currency,
-        ]);
-
-        ReservationCreator::syncRoomOccupancy($reservation);
+        ], [
+            ['room_type_id' => $roomTypeId, 'room_id' => $room?->id],
+        ], skipCapacity: true);
 
         $this->imported++;
     }

@@ -116,14 +116,25 @@ class Stay extends Model
      * Departure day itself does not count: a guest leaving on the 5th did
      * not sleep there on the night of the 5th, so the comparison is a
      * strict `<` on planned_departure_date, not `<=`.
+     *
+     * Each stay counts as many rooms as its reservation has live room lines,
+     * and at least one — a stay with no reservation, or one whose single room
+     * is not assigned yet, still counts as the one room it always did.
      */
     public static function occupiedRoomsOn(Hotel $hotel, CarbonInterface $date): int
     {
-        return static::query()
+        $liveLines = ReservationRoom::withoutGlobalScope('hotel')
+            ->selectRaw('count(*)')
+            ->whereColumn('reservation_rooms.reservation_id', 'stays.reservation_id')
+            ->active()
+            ->toBase();
+
+        return (int) static::query()
             ->where('hotel_id', $hotel->id)
             ->whereIn('status', [StayStatus::IN_HOUSE, StayStatus::DEPARTED])
             ->whereDate('planned_arrival_date', '<=', $date)
             ->whereDate('planned_departure_date', '>', $date)
-            ->count();
+            ->selectRaw('coalesce(sum(greatest(1, ('.$liveLines->toSql().'))), 0) as rooms', $liveLines->getBindings())
+            ->value('rooms');
     }
 }

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ReservationStatus;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\RoomTypeResource;
+use App\Models\ReservationRoom;
 use App\Models\RoomType;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
@@ -83,6 +85,24 @@ class RoomTypeController extends Controller
                 'Cannot delete room type: active rooms still reference this type. Deactivate the room type instead, or delete/reassign the rooms first.',
                 422,
                 ['error' => 'deletion_blocked_by_rooms']
+            );
+        }
+
+        // A type still booked by guests who have not left yet stays; past and
+        // cancelled bookings keep pointing at it for history either way.
+        $reservations = ReservationRoom::where('room_type_id', $roomType->id)
+            ->active()
+            ->whereHas('reservation', fn ($reservation) => $reservation
+                ->where('status', '!=', ReservationStatus::CANCELLED)
+                ->whereDate('departure_date', '>=', now()->toDateString()))
+            ->distinct()
+            ->count('reservation_id');
+
+        if ($reservations > 0) {
+            return apiResponse(
+                "Cannot delete room type: {$reservations} current or upcoming reservations still use it. Deactivate it instead.",
+                422,
+                ['error' => 'deletion_blocked_by_reservations', 'reservations' => $reservations]
             );
         }
 

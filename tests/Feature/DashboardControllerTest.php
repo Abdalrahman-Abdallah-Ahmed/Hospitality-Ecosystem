@@ -3,7 +3,6 @@
 use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Hotel;
-use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\RoomType;
 use App\Models\Stay;
@@ -180,10 +179,8 @@ it('embeds the room type on today\'s arrivals and departures', function () {
     $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Ann']);
 
-    $reservation = fn (string $id, $arrival, $departure) => Reservation::create([
-        'hotel_id' => $hotel->id,
+    $reservation = fn (string $id, $arrival, $departure) => createReservationWithRooms($hotel, [['room_id' => $room->id]], [
         'guest_id' => $guest->id,
-        'room_id' => $room->id,
         'reservation_id' => $id,
         'arrival_date' => $arrival->toDateString(),
         'departure_date' => $departure->toDateString(),
@@ -195,8 +192,9 @@ it('embeds the room type on today\'s arrivals and departures', function () {
         ->getJson('/api/dashboard')
         ->assertOk();
 
-    expect($response->json('body.today_arrivals.0.room.room_type.name'))->toBe(RoomType::DEFAULT_NAME)
-        ->and($response->json('body.today_departures.0.room.room_type.name'))->toBe(RoomType::DEFAULT_NAME);
+    expect($response->json('body.today_arrivals.0.rooms.0.room_type.name'))->toBe(RoomType::DEFAULT_NAME)
+        ->and($response->json('body.today_arrivals.0.rooms.0.room.room_number'))->toBe('101')
+        ->and($response->json('body.today_departures.0.rooms.0.room_type.name'))->toBe(RoomType::DEFAULT_NAME);
 });
 
 it('leaves guest contact details out of the dashboard VIP list', function () {

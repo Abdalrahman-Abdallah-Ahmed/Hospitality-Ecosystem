@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ReservationChannels;
-use App\Http\Requests\Generic\GenericIndexRequest;
-use App\Http\Requests\Generic\GenericStoreRequest;
-use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Requests\ImportReservationsRequest;
+use App\Http\Requests\ReservationIndexRequest;
+use App\Http\Requests\StoreReservationRequest;
+use App\Http\Requests\UpdateReservationRequest;
 use App\Http\Resources\ReservationResource;
 use App\Imports\ReservationsImport;
 use App\Models\Hotel;
@@ -21,14 +21,30 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ReservationController extends Controller
 {
+    private const RELATIONS = ['hotel', 'guest', 'reservationRooms.roomType', 'reservationRooms.room'];
+
     /**
      * Display a listing of the resource.
      */
-    public function index(GenericIndexRequest $request)
+    public function index(ReservationIndexRequest $request)
     {
         $this->authorize('viewAny', Reservation::class);
 
-        $query = Reservation::with(['hotel', 'guest', 'room']);
+        $query = Reservation::with(self::RELATIONS);
+
+        // Room type and room live on the lines, not the reservation: match any
+        // live line, then hand the rest of the filters to the generic query.
+        $filters = (array) $request->input('filter', []);
+
+        foreach (ReservationIndexRequest::LINE_FILTERS as $column) {
+            if (array_key_exists($column, $filters)) {
+                $value = $filters[$column];
+                $query->whereHas('reservationRooms', fn ($lines) => $lines->active()->where($column, $value));
+                unset($filters[$column]);
+            }
+        }
+
+        $request->merge(['filter' => $filters]);
 
         $reservations = GenericQuery::apply($query, $request);
 
@@ -38,7 +54,7 @@ class ReservationController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(GenericStoreRequest $request): JsonResponse
+    public function store(StoreReservationRequest $request): JsonResponse
     {
         $this->authorize('create', Reservation::class);
 
@@ -49,7 +65,7 @@ class ReservationController extends Controller
             return apiResponse('You must belong to, or specify, a valid hotel.', 403);
         }
 
-        $validated = unsetAttributes($validated, ['hotel_id']);
+        $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override']);
 
         if ($error = $this->guardHotelScopedReferences($validated, $hotel->id)) {
             return $error;
@@ -59,11 +75,13 @@ class ReservationController extends Controller
             throw $this->reservationIdTaken();
         }
 
-        $reservation = ReservationCreator::create([...$validated, 'hotel_id' => $hotel->id]);
+        $reservation = ReservationCreator::create(
+            [...$validated, 'hotel_id' => $hotel->id],
+            $request->input('rooms', []),
+            $request->boolean('capacity_override'),
+        );
 
-        ReservationCreator::syncRoomOccupancy($reservation);
-
-        return apiResponse('Reservation created successfully.', 201, ReservationResource::make($reservation->load(['hotel', 'guest', 'room'])));
+        return apiResponse('Reservation created successfully.', 201, ReservationResource::make($reservation->load(self::RELATIONS)));
     }
 
     /**
@@ -73,19 +91,21 @@ class ReservationController extends Controller
     {
         $this->authorize('view', $reservation);
 
-        $reservation->load(['hotel', 'guest', 'room']);
+        $reservation->load(self::RELATIONS);
 
         return apiResponse('Reservation fetched successfully.', 200, ReservationResource::make($reservation));
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update the specified resource in storage. `rooms`, when sent, is the
+     * full desired list of live lines; the raw input is passed on so an
+     * explicit `room_id: null` (clear) stays distinct from a missing one.
      */
-    public function update(GenericUpdateRequest $request, Reservation $reservation): JsonResponse
+    public function update(UpdateReservationRequest $request, Reservation $reservation): JsonResponse
     {
         $this->authorize('update', $reservation);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
+        $validated = unsetAttributes($request->validated(), ['hotel_id', 'rooms', 'capacity_override']);
 
         if ($error = $this->guardHotelScopedReferences($validated, $reservation->hotel_id)) {
             return $error;
@@ -95,15 +115,14 @@ class ReservationController extends Controller
             throw $this->reservationIdTaken();
         }
 
-        $reservation->update($validated);
+        ReservationCreator::update(
+            $reservation,
+            $validated,
+            $request->has('rooms') ? $request->input('rooms') : null,
+            $request->boolean('capacity_override'),
+        );
 
-        // Order matters: syncRoomOccupancy() reads the stay's current
-        // status, so the stay must already reflect this update before the
-        // room is synced against it.
-        ReservationCreator::syncStay($reservation);
-        ReservationCreator::syncRoomOccupancy($reservation);
-
-        return apiResponse('Reservation updated successfully.', 200, ReservationResource::make($reservation->load(['hotel', 'guest', 'room'])));
+        return apiResponse('Reservation updated successfully.', 200, ReservationResource::make($reservation->load(self::RELATIONS)));
     }
 
     /**
@@ -165,15 +184,15 @@ class ReservationController extends Controller
     }
 
     /**
-     * Ensure any guest_id/room_id present in a validated payload actually
-     * belongs to the given hotel, since exists:guests,id / exists:rooms,id
-     * alone only confirm the row exists somewhere, not that it's in scope.
+     * Ensure a guest_id present in a validated payload actually belongs to
+     * the given hotel, since exists:guests,id alone only confirms the row
+     * exists somewhere, not that it's in scope. Room types and rooms on the
+     * lines are checked by ReservationRoomSync.
      */
     private function guardHotelScopedReferences(array $validated, string $hotelId): ?JsonResponse
     {
         $invalidRelation = invalidRelation(Hotel::findOrFail($hotelId), [
             'guests' => $validated['guest_id'] ?? null,
-            'rooms' => $validated['room_id'] ?? null,
         ]);
 
         if ($invalidRelation) {

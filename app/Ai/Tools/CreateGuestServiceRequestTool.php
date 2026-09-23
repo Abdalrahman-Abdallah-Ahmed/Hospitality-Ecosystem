@@ -45,7 +45,7 @@ class CreateGuestServiceRequestTool implements Tool
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
             'reservation_id' => $this->reservation?->id,
-            'room_id' => $this->reservation?->room?->id,
+            'room_id' => $this->reservation?->primaryRoomId(),
             'task_category_id' => $this->taskCategoryId($request),
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
