@@ -2,6 +2,7 @@
 
 use App\Enums\BookingOrigin;
 use App\Enums\ChargeModel;
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\Booking;
@@ -13,14 +14,18 @@ use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Models\StaffRole;
+use App\Models\Stay;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Services\BookingService;
 use App\Services\TransactionService;
+use App\Support\Reservations\ReservationCreator;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /*
@@ -319,4 +324,85 @@ function bookableTypeIdFor(Hotel $hotel, int $stock = 5): string
     }
 
     return $typeId;
+}
+
+/*
+| Front-desk fixtures (SPEC-023/024/025), shared by the check-in, check-out,
+| list, deprecation, AI tool and task tests.
+*/
+
+/**
+ * A hotel (its owner is the admin) with a Deluxe type and `$rooms` rooms.
+ *
+ * @return array{0: Hotel, 1: RoomType, 2: list<Room>}
+ */
+function fdHotel(int $rooms = 3, string $timezone = 'UTC'): array
+{
+    $hotel = avHotel($timezone);
+    $type = avType($hotel, 'Deluxe');
+
+    return [$hotel, $type, avRooms($hotel, $type, $rooms)];
+}
+
+/**
+ * A reservation booked through ReservationCreator, arriving today (hotel
+ * time) for two nights, one line per entry of `$roomIds` (null: unassigned).
+ *
+ * @param  list<?string>  $roomIds
+ * @param  array<string, mixed>  $attributes
+ */
+function fdBook(Hotel $hotel, RoomType $type, array $roomIds, array $attributes = []): Reservation
+{
+    $today = now($hotel->timezone)->toDateString();
+
+    return ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.Str::random(8), 'channel' => 'booking_com', 'first_name' => 'Guest', 'last_name' => Str::random(5)])->id,
+        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
+        'arrival_date' => $today,
+        'departure_date' => now($hotel->timezone)->addDays(2)->toDateString(),
+        'status' => 'confirmed',
+        'adults' => 1,
+        'children' => 0,
+        'reservation_value' => 200,
+        ...$attributes,
+    ], array_map(fn (?string $roomId) => ['room_type_id' => $type->id, 'room_id' => $roomId], $roomIds));
+}
+
+/**
+ * The reservation's stays in line order.
+ *
+ * @return list<Stay>
+ */
+function fdStays(Reservation $reservation): array
+{
+    return $reservation->reservationRooms()->get()
+        ->map(fn (ReservationRoom $line) => Stay::withoutGlobalScope('hotel')->where('reservation_room_id', $line->id)->first())
+        ->filter()
+        ->values()
+        ->all();
+}
+
+/**
+ * @param  list<Permission>  $permissions
+ */
+function fdEmployee(Hotel $hotel, array $permissions): User
+{
+    $role = StaffRole::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Role '.uniqid(),
+        'permissions' => array_map(fn (Permission $permission) => $permission->value, $permissions),
+    ]);
+
+    return User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id, 'staff_role_id' => $role->id]);
+}
+
+function fdPost($test, User $user, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->postJson($uri, $payload);
+}
+
+function fdGet($test, User $user, string $uri): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->getJson($uri);
 }

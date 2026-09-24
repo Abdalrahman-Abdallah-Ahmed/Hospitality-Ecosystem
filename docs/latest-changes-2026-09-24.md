@@ -70,3 +70,106 @@ Both appear in `GET /api/permissions` automatically.
 
 - Availability grid: room types × nights, with sold-out and overbooked nights highlighted.
 - Reservation form: handle the `shortfalls` 422, with an override prompt for permitted users.
+
+---
+
+## Stay Lifecycle and Check-in/out (SPEC-023, SPEC-024, SPEC-025, Phase 4)
+
+### Summary
+
+Guests are now checked in and out per room with dedicated endpoints that check the rules,
+set room and reservation statuses, and hand the room to housekeeping. Every room line of a
+reservation has its own stay. **This changes reservation writes:** checking in or out by
+setting the reservation's `status` still works but is deprecated and now follows the
+check-in and check-out rules, and a reservation with a guest in the house can no longer
+be cancelled, deleted or lose that guest's room. See
+[stays-api-documentation.md](stays-api-documentation.md).
+
+### What's New
+
+#### Endpoints
+
+- `GET /api/stays/arrivals`, `/api/stays/departures`, `/api/stays/in-house` (`?date=`,
+  default today in hotel time) — the front desk's daily lists, with `is_late`,
+  `is_past_departure` and `is_overdue` flags.
+- `GET /api/stays`, `GET /api/stays/{id}` — the stays index (filters, search by guest or
+  reservation code) and one stay.
+- `POST /api/stays/{id}/check-in`, `POST /api/reservation/{id}/check-in` — one room or
+  every room waiting. Optional `room_id` / `rooms[]` put the guest in a named room when
+  the line has none. Optional `checked_in_at` for an earlier time today. All-or-nothing
+  for a whole reservation; repeats do nothing. A room that isn't clean is checked in with
+  a warning.
+- `POST /api/stays/{id}/check-out`, `POST /api/reservation/{id}/check-out` — one room or
+  every room in the house. The room becomes `available` and `dirty`, and a cleaning task
+  is created for it. The reservation becomes `checked_out` when its last room is out.
+  Optional `checked_out_at`.
+
+#### Stays
+
+- **One stay per room line** (was one per reservation). A migration links each existing
+  stay to its reservation's first line and creates stays for the other lines. The
+  reservation's value is split evenly across its stays, and its party stays on the first
+  room's stay.
+- A room can have only one guest in the house at a time (enforced by the database).
+- Stay responses gain `reservation_room_id` and `room_type`.
+
+#### Hotels and tasks
+
+- Hotels gain `housekeeping_team_id` and `cleaning_task_category_id` (admins set them with
+  `PUT /api/hotel/{id}`). **Set them**, or cleaning tasks are created unassigned.
+- Tasks gain `stay_id` (filterable). A task linked to a stay takes its room, reservation
+  and guest.
+
+#### Permissions
+
+- `stays.view`, `stays.check_in`, `stays.check_out` — **none is an employee default**.
+  Grant them to front-desk roles. They appear in `GET /api/permissions` automatically.
+
+#### AI
+
+- Admin Advisor: new tools to list arrivals/departures/in-house and to check guests in
+  and out, with the same rules and permissions as the endpoints, audited as the AI.
+- Admin Advisor's reservation tool only creates `pending` or `confirmed` reservations.
+- Guest Concierge: cannot check guests in or out, and sends guests to the front desk. A
+  guest's service request is linked to their room's stay when the Concierge knows which
+  room it is.
+
+#### Database
+
+- `stays.reservation_room_id` (with a partial unique index), a partial unique index
+  allowing one in-house stay per room, `tasks.stay_id`, and the two hotel columns. The old
+  unique index on `stays.reservation_id` is dropped.
+- **Before deploying**, run the migrations on a copy of production: the uniqueness
+  migration stops, listing the rooms, if any room already has two guests in the house.
+
+### Breaking Changes
+
+- **Deprecated: `status: checked_in` / `checked_out` on `PUT /api/reservation/{id}`**
+  (and `checked_in` on `POST /api/reservation`). It now runs the real check-in or
+  check-out: it needs `stays.check_in` / `stays.check_out` as well as
+  `reservations.update` (`403` otherwise), and it can return `422` when a rule fails. In
+  particular, **every line needs an assigned room** (a room can't be named on this path),
+  the reservation must be `confirmed`, and today must be within its dates. Responses carry
+  `Deprecation: true` and a `Link` to the new endpoint. **A later release will reject it.**
+- `POST /api/reservation` with `status: checked_out` → `422` (only the import records
+  past stays).
+- **While a guest is in the house**, `PUT /api/reservation/{id}` rejects `status:
+  cancelled` (or any change away from `checked_in`), and removing that guest's room line;
+  `DELETE /api/reservation/{id}` is rejected too. Check the guest out first.
+- A checked-in reservation **may now drop a room whose guest never arrived** (it could not
+  before). The last room can't check out until such rooms are dropped.
+- The dashboard's occupied-room count and the `stays` usage counter now count one stay per
+  room, so multi-room reservations count each room.
+- A room's status and housekeeping status changes are now written to the audit history
+  (`room.updated`).
+
+### Frontend Slice (`ecosystem-frontend`)
+
+- Arrivals / departures / in-house board with late, past-departure and overdue flags.
+- Check-in dialog: per room or whole reservation, with a room picker for unassigned
+  lines, the not-clean warning, and the per-room errors from a `422`.
+- Check-out action per room or whole reservation, with the "cancel rooms that didn't
+  arrive first" message.
+- Move off `status: checked_in` / `checked_out` on the reservation form to the new
+  endpoints before it is removed.
+- Hotel settings: pick the housekeeping team and cleaning category.

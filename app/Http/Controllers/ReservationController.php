@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ReservationChannels;
+use App\Enums\ReservationStatus;
 use App\Http\Requests\ImportReservationsRequest;
 use App\Http\Requests\ReservationIndexRequest;
 use App\Http\Requests\StoreReservationRequest;
@@ -11,11 +12,14 @@ use App\Http\Resources\ReservationResource;
 use App\Imports\ReservationsImport;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\Stay;
+use App\Services\StayLifecycleService;
 use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
@@ -23,6 +27,8 @@ use Maatwebsite\Excel\Facades\Excel;
 class ReservationController extends Controller
 {
     private const RELATIONS = ['hotel', 'guest', 'reservationRooms.roomType', 'reservationRooms.room'];
+
+    public function __construct(private readonly StayLifecycleService $lifecycle) {}
 
     /**
      * Display a listing of the resource.
@@ -90,14 +96,37 @@ class ReservationController extends Controller
             throw $this->reservationIdTaken();
         }
 
-        $reservation = ReservationCreator::create(
-            [...$validated, 'hotel_id' => $hotel->id],
-            $request->input('rooms', []),
-            $request->boolean('capacity_override'),
-            overbookOverride: $overbook,
-        );
+        $lifecycle = $this->lifecycleStatus($validated['status'] ?? null);
 
-        return apiResponse('Reservation created successfully.', 201, ReservationResource::make($reservation->load(self::RELATIONS)));
+        if ($lifecycle === ReservationStatus::CHECKED_OUT) {
+            throw ValidationException::withMessages(['status' => 'Only the reservation import can record a checked-out reservation.']);
+        }
+
+        if ($lifecycle === ReservationStatus::CHECKED_IN) {
+            $this->authorize('checkIn', [Stay::class, new Reservation(['hotel_id' => $hotel->id])]);
+            $validated['status'] = ReservationStatus::CONFIRMED->value;
+        }
+
+        $reservation = DB::transaction(function () use ($validated, $hotel, $request, $overbook, $lifecycle) {
+            $reservation = ReservationCreator::create(
+                [...$validated, 'hotel_id' => $hotel->id],
+                $request->input('rooms', []),
+                $request->boolean('capacity_override'),
+                overbookOverride: $overbook,
+            );
+
+            if ($lifecycle === ReservationStatus::CHECKED_IN) {
+                $this->lifecycle->checkInReservation($reservation);
+            }
+
+            return $reservation->fresh();
+        });
+
+        return $this->deprecated(
+            apiResponse('Reservation created successfully.'.$this->deprecationNote($reservation, $lifecycle), 201, ReservationResource::make($reservation->load(self::RELATIONS))),
+            $reservation,
+            $lifecycle,
+        );
     }
 
     /**
@@ -133,15 +162,80 @@ class ReservationController extends Controller
             throw $this->reservationIdTaken();
         }
 
-        ReservationCreator::update(
-            $reservation,
-            $validated,
-            $request->has('rooms') ? $request->input('rooms') : null,
-            $request->boolean('capacity_override'),
-            $overbook,
-        );
+        // Deprecated (D4, FR-020): checking in or out by setting the status.
+        // It runs the real check-in or check-out, with its rules and audit.
+        $lifecycle = $this->lifecycleStatus($validated['status'] ?? null);
+        $lifecycle = $lifecycle !== $reservation->status ? $lifecycle : null;
 
-        return apiResponse('Reservation updated successfully.', 200, ReservationResource::make($reservation->load(self::RELATIONS)));
+        if ($lifecycle !== null) {
+            $this->authorize($lifecycle === ReservationStatus::CHECKED_IN ? 'checkIn' : 'checkOut', [Stay::class, $reservation]);
+        }
+
+        if ($lifecycle !== null || $this->lifecycleStatus($validated['status'] ?? null) === $reservation->status) {
+            unset($validated['status']);
+        }
+
+        DB::transaction(function () use ($reservation, $validated, $request, $overbook, $lifecycle) {
+            ReservationCreator::update(
+                $reservation,
+                $validated,
+                $request->has('rooms') ? $request->input('rooms') : null,
+                $request->boolean('capacity_override'),
+                $overbook,
+            );
+
+            match ($lifecycle) {
+                ReservationStatus::CHECKED_IN => $this->lifecycle->checkInReservation($reservation),
+                ReservationStatus::CHECKED_OUT => $this->lifecycle->checkOutReservation($reservation),
+                default => null,
+            };
+        });
+
+        $reservation->refresh();
+
+        return $this->deprecated(
+            apiResponse('Reservation updated successfully.'.$this->deprecationNote($reservation, $lifecycle), 200, ReservationResource::make($reservation->load(self::RELATIONS))),
+            $reservation,
+            $lifecycle,
+        );
+    }
+
+    /**
+     * The check-in or check-out a status value asks for, if any.
+     */
+    private function lifecycleStatus(mixed $status): ?ReservationStatus
+    {
+        $status = $status instanceof ReservationStatus ? $status : ReservationStatus::tryFrom((string) $status);
+
+        return in_array($status, [ReservationStatus::CHECKED_IN, ReservationStatus::CHECKED_OUT], true) ? $status : null;
+    }
+
+    private function deprecationNote(Reservation $reservation, ?ReservationStatus $lifecycle): string
+    {
+        if ($lifecycle === null) {
+            return '';
+        }
+
+        $action = $lifecycle === ReservationStatus::CHECKED_IN ? 'check-in' : 'check-out';
+
+        return " Setting status to {$lifecycle->value} here is deprecated; use POST /reservation/{$reservation->id}/{$action}.";
+    }
+
+    /**
+     * Marks a response that used the deprecated status path (RFC 9745), with
+     * a link to the endpoint that replaces it.
+     */
+    private function deprecated(JsonResponse $response, Reservation $reservation, ?ReservationStatus $lifecycle): JsonResponse
+    {
+        if ($lifecycle === null) {
+            return $response;
+        }
+
+        $action = $lifecycle === ReservationStatus::CHECKED_IN ? 'check-in' : 'check-out';
+
+        return $response
+            ->header('Deprecation', 'true')
+            ->header('Link', "</api/reservation/{$reservation->id}/{$action}>; rel=\"successor-version\"");
     }
 
     /**
@@ -166,7 +260,7 @@ class ReservationController extends Controller
     public function destroy(Reservation $reservation)
     {
         $this->authorize('delete', $reservation);
-        $reservation->delete();
+        ReservationCreator::delete($reservation);
 
         return apiResponse('Reservation deleted successfully.', 200);
     }

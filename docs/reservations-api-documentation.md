@@ -141,21 +141,42 @@ Field notes for the UI:
 | --- | --- |
 | `pending` | Default status for a new reservation. |
 | `confirmed` | Confirmed by the hotel. |
-| `checked_in` | Guest has checked in. |
-| `checked_out` | Guest has checked out. |
+| `checked_in` | At least one of its rooms has checked in (set by check-in). |
+| `checked_out` | All of its rooms have checked out (set by check-out). |
 | `cancelled` | Reservation cancelled. |
 
 Any other string is rejected by the API with a `422` on `status`.
 
-**Side effect: room status follows the guest's actual stay, not the reservation's `status` field.** On create (`POST /api/reservation`, plus the WhatsApp ingestion endpoint) and update (`PUT /api/reservation/{id}`), the backend keeps the `status` of every physical room on the reservation's lines (`GET /api/room` will reflect this on the next fetch) in step with the underlying stay:
+**Checking in and out.** Use the check-in and check-out endpoints in
+[stays-api-documentation.md](stays-api-documentation.md): `POST /api/reservation/{id}/check-in`,
+`POST /api/reservation/{id}/check-out`, and the per-room forms under `/api/stays/{id}`.
+They set `checked_in` / `checked_out` for you.
 
-- A room is `occupied` while **any** checked-in reservation has it on a live line. Merely `confirmed` or `pending` does **not** occupy it, and booking a room for a future date does not free it while another guest is checked in.
-- A checked-in reservation with several lines occupies **every** room on them.
-- Once no guest is checked into the room (`checked_out`, `cancelled`, the line cancelled or moved), an `occupied` room is **freed back to `available`** automatically.
+**Deprecated: setting `checked_in` / `checked_out` here.** It still works in this release,
+but it now runs the real whole-reservation check-in or check-out, with all of its rules
+(confirmed reservation, arrival date reached, every room assigned and free, …) and needs
+`stays.check_in` / `stays.check_out` on top of `reservations.update` (`403` otherwise). A
+room cannot be named on this path, so every line must already have a room. The response
+carries `Deprecation: true`, a `Link` header to the replacement endpoint, and a sentence
+in `message`. **A later release will reject it: move to the check-in/out endpoints.**
+
+- `POST /api/reservation` with `status: checked_in` creates the reservation `confirmed`
+  and checks it in, the same way (deprecated, same headers).
+- `POST /api/reservation` with `status: checked_out` → `422`: only the import records
+  past stays.
+- While any room is in the house, `status` can't be changed to anything but
+  `checked_out` (through check-out): `422` "Check out the in-house rooms first." on
+  `status`. This includes `cancelled`.
+
+**Side effect: room status follows the guests' actual stays.** Every line has its own stay (see [stays-api-documentation.md](stays-api-documentation.md)), and the backend keeps the `status` of every physical room in step with them (`GET /api/room` will reflect this on the next fetch):
+
+- A room is `occupied` while a guest is checked into it (its stay is `in_house`). Merely `confirmed` or `pending` does **not** occupy it, and booking a room for a future date does not free it while another guest is in it.
+- Each room of a multi-room reservation is occupied when **its** guest checks in.
+- Once nobody is in the room (checked out, or the guest moved rooms), an `occupied` room is **freed back to `available`** automatically. A room a guest moved out of is also marked housekeeping `dirty`.
 - A room in `maintenance` is left alone unless a guest actually checks into it.
 - A room move (changing a line's `room_id`) re-syncs **both** rooms: the old one is freed if nobody else is checked into it.
 - Lines with no room have nothing to sync.
-- Edits to a reservation's dates, party size, value, currency or source are carried through to its stay. The reservation still has **one** stay (per-room stays arrive later); its `room_id` is the room of the first live line that has one.
+- Edits to a reservation's dates, party size, value, currency or source, and a line's room, are carried through to the lines' stays. Check-in and check-out times are never changed by an edit.
 
 ## 1. List Reservations
 
@@ -479,10 +500,10 @@ What can change depends on the reservation's status **before** the update:
 | Status | Add line | Remove line | Set / change / clear a line's room |
 | --- | --- | --- | --- |
 | `pending`, `confirmed` | yes | yes (not the last one) | yes (room must match the line's type) |
-| `checked_in` | no | no | **room move only**: change to another room of the same type; can't clear |
+| `checked_in` | no | only a line whose guest never checked in (to close the reservation, see [check-out](stays-api-documentation.md#check-out)) | **room move only**: change to another room of the same type; can't clear |
 | `checked_out`, `cancelled` | no | no | no |
 
-Setting `status` to `cancelled` cancels every line and releases their rooms.
+Setting `status` to `cancelled` cancels every line and releases their rooms. It is refused while any guest is in the house, and so is removing a line whose guest is in: `422` "Check out the in-house rooms first." / "Room 204 is checked in; check it out first."
 
 **Bringing a cancelled reservation back.** Changing a `cancelled` reservation to any other status restores the lines it had when it was cancelled; lines staff had removed before the cancellation stay removed. To choose different lines instead, send `rooms` in the same request: an item with `id` may name any of the reservation's lines (it is reinstated, optionally with a new `room_id`), items without `id` add lines, and lines left out stay cancelled. The capacity check runs either way.
 
@@ -533,7 +554,9 @@ Same as [show](#3-get-a-single-reservation): `404` if the id doesn't exist, `403
 
 `DELETE /api/reservation/{id}`
 
-This is a **soft delete** — the record is retained in the database (the model uses `SoftDeletes`) but excluded from all normal queries, including `index` and `show`.
+This is a **soft delete** — the record is retained in the database (the model uses `SoftDeletes`) but excluded from all normal queries, including `index` and `show`. Its stays are soft-deleted with it and leave every stays list.
+
+A reservation with a guest in the house can't be deleted: `422` on `reservation`, "Check out the in-house rooms first."
 
 ### Success Response
 

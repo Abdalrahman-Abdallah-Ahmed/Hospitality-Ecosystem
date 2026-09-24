@@ -247,6 +247,7 @@ Hard delete. Tasks referencing this category have `task_category_id` set to `NUL
   "hotel_id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
   "room_id": null,
   "reservation_id": null,
+  "stay_id": null,
   "guest_id": null,
   "assigned_to_team_id": "019fc000-1111-7000-9000-abcdef123456",
   "assigned_to_user_id": null,
@@ -269,6 +270,7 @@ Field notes:
 
 - `created_by` is a fixed enum: `ai`, `system`, `guest`, `maintenance_schedule`, `manual`. Defaults to `ai` if omitted.
 - `guest_signal` (read-only, *added 2026-09-19*) says why a guest-related task exists: `escalation` (the concierge handed the guest to a human), `service_request` (the guest needs something or something is broken), `booking_follow_up` (staff should help an interested guest book an activity), or `null` (a task not raised by the concierge). Only the WhatsApp concierge sets it; create and update ignore it. While a guest has an escalation this stay, or a `service_request` from the last 24 hours that is still `pending` or `in_progress`, the concierge does not suggest activities to them. Completing or cancelling a service request lifts that block. An escalation keeps it in place until the guest leaves, whatever the task's status.
+- `stay_id` (*added 2026-09-24*) links the task to one guest stay (one room of a reservation; see [stays-api-documentation.md](stays-api-documentation.md)). A check-out creates a cleaning task with it set, and the WhatsApp concierge sets it on a guest's request when it knows which room the guest is in.
 - `status` is a fixed enum: `pending`, `in_progress`, `completed`, `cancelled`. Defaults to `pending`.
 - `priority` is a fixed enum: `low`, `normal`, `high`. Defaults to `normal`. A service request the WhatsApp concierge creates for a VIP guest (`guest.is_vip`) is always `high`.
 - Unlike `category` on hotel-policy or `status` on room, **these three fields are real, server-enforced enums** — sending any other string returns a `422`.
@@ -277,7 +279,7 @@ Field notes:
 
 ### 3.1 List Tasks — `GET /api/task`
 
-Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `guest_signal`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`.
+Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `stay_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `guest_signal`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`.
 
 **Breaking change — response shape:** `body` is no longer the paginator directly. It's now:
 
@@ -329,6 +331,7 @@ The intended flow, per product: **title + description → choose team → choose
 | `title` | required, string, max 255. |
 | `description` | optional, string. |
 | `room_id`, `reservation_id` | optional, uuid, must `exist` in their respective tables **and** belong to the caller's hotel. |
+| `stay_id` | optional, uuid, a stay of the caller's hotel (`403` "The selected stays does not belong to you." otherwise). A `room_id` or `reservation_id` sent with it must be the stay's (`422` "The task's room_id does not match its stay."); if left out they are filled in from the stay, and so is `guest_id`. The same rules apply on update, against the task's values after the update. |
 | `guest_id` | **Do not send this — it's not a client-settable field.** It's always resolved server-side from `reservation_id`: if you send a `reservation_id`, `guest_id` is silently overwritten with that reservation's own `guest_id` (so if the reservation has no guest, the task won't either). If you don't send `reservation_id`, `guest_id` is `null`. This applies to both `store` and `update` — the frontend never chooses which guest a task is assigned to; it's implied entirely by the reservation. |
 | `assigned_to_team_id` | optional, uuid, must be a team belonging to the caller's hotel. |
 | `assigned_to_user_id` | optional, uuid, must be a user belonging to the caller's hotel (any role with `hotel_id` set — not restricted to `employee`, unlike team membership). |
@@ -359,7 +362,7 @@ Failure: `403`, custom wrapper: `{"message": "The selected task category does no
 }
 ```
 
-The word plugged in is one of: `rooms`, `guests`, `reservations`, `teams`, `users`, `taskCategories` — depending on which field failed. It's a relation name, not a field name (e.g. a bad `assigned_to_user_id` *and* a bad `created_by_user_id` both surface as `"users"`) — don't try to map this string back to a specific form field; treat it as a generic "one of your selections belongs to a different hotel" banner rather than a per-input error.
+The word plugged in is one of: `rooms`, `guests`, `reservations`, `stays`, `teams`, `users`, `taskCategories` — depending on which field failed. It's a relation name, not a field name (e.g. a bad `assigned_to_user_id` *and* a bad `created_by_user_id` both surface as `"users"`) — don't try to map this string back to a specific form field; treat it as a generic "one of your selections belongs to a different hotel" banner rather than a per-input error.
 
 Success: `201`, `body` is the created [task object](#the-task-object).
 

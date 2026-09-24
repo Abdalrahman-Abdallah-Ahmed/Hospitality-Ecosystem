@@ -2,6 +2,7 @@
 
 use App\Models\RoomType;
 use App\Services\AvailabilityService;
+use App\Services\StayLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -256,4 +257,31 @@ it('accepts ninety nights starting today in the hotel\'s time zone', function ()
     avService()->assertRange($hotel, $today, date('Y-m-d', strtotime("{$today} +90 days")));
 
     expect(true)->toBeTrue();
+});
+
+it('frees the rest of a departed room\'s nights while its reservation\'s other room is still in the house', function () {
+    [$hotel, $deluxe, [$a, $b]] = fdHotel(2);
+    $reservation = fdBook($hotel, $deluxe, [$a->id, $b->id], ['departure_date' => now()->addDays(3)->toDateString()]);
+    [$first] = fdStays($reservation);
+    $lifecycle = app(StayLifecycleService::class);
+    $lifecycle->checkInReservation($reservation);
+
+    $lifecycle->checkOut($first);
+
+    $row = avRow(avService()->forHotel($hotel, now()->toDateString(), now()->addDays(3)->toDateString()), $deluxe);
+    expect(collect($row['nights'])->pluck('booked')->unique()->all())->toBe([1]);
+});
+
+it('holds tonight past the departure date only for a room still in the house, not one that never arrived', function () {
+    [$hotel, $deluxe, [$a, $b]] = fdHotel(2);
+    $this->travelTo(now()->subDays(2));
+    $reservation = fdBook($hotel, $deluxe, [$a->id, $b->id], ['departure_date' => now()->addDay()->toDateString()]);
+    [$first] = fdStays($reservation);
+    app(StayLifecycleService::class)->checkIn($first);
+    $this->travelBack();
+
+    $today = avService()->today($hotel);
+    $row = avRow(avService()->forHotel($hotel, $today, now()->addDay()->toDateString()), $deluxe);
+
+    expect($row['nights'][$today]['booked'])->toBe(1);
 });

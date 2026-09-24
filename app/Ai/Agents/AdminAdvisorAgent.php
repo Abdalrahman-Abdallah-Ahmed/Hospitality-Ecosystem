@@ -2,6 +2,8 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\CheckInTool;
+use App\Ai\Tools\CheckOutTool;
 use App\Ai\Tools\CreateActivityTool;
 use App\Ai\Tools\CreateGuestTool;
 use App\Ai\Tools\CreateReservationTool;
@@ -13,6 +15,7 @@ use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetGuestsTool;
 use App\Ai\Tools\GetReservationsTool;
 use App\Ai\Tools\GetRoomsTool;
+use App\Ai\Tools\GetStaysTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\GetTasksTool;
 use App\Ai\Tools\KnowledgeSearchTool;
@@ -69,6 +72,8 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
               before creating a reservation; if a type is short, tell the admin rather than booking anyway.
             - A tool to fetch this hotel's activities, including category and price.
             - A tool to fetch this hotel's task categories and the team each belongs to.
+            - A tool to list guest stays for a day: arrivals, departures and who is in the house. Who is arriving,
+              leaving or staying comes only from this tool — never work it out from the reservations list.
 
             Always call the relevant tool(s) before answering a question about any of the above — never invent
             or guess data. If none of the tools return anything relevant, say so plainly instead of making up
@@ -86,6 +91,11 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
               Look up the task categories and use a matching id rather than guessing one.
             - A tool to record a guest, matched by phone number. If the guest already exists it tells you so
               and changes nothing — report that back rather than trying again.
+            - A tool to check guests in and a tool to check guests out, by reservation code, for every room or
+              only the rooms the admin names. Use them only when the admin clearly asks to check someone in or
+              out. Only put a guest in a specific room if the admin names it. Pass an actual time only when the
+              admin states one. If a tool refuses, report its reason as given — never try another way around it
+              (for example, never change the reservation's status instead).
 
             Four rules for every one of these:
             1. Only create something when the admin has clearly asked you to. Describing a problem is not a
@@ -123,6 +133,7 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             new GetAvailabilityTool($this->user->hotel, $this->user),
             new GetActivitiesTool($this->user->hotel),
             new GetGuestsTool($this->user->hotel),
+            new GetStaysTool($this->user->hotel, $this->user),
 
             // Write. Every one of these is scoped to this admin's own hotel by
             // construction — the hotel comes from the authenticated user, never
@@ -133,6 +144,8 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
             new CreateActivityTool($this->user->hotel),
             new CreateTaskTool($this->user->hotel, $this->user),
             new CreateGuestTool($this->user->hotel),
+            new CheckInTool($this->user->hotel, $this->user),
+            new CheckOutTool($this->user->hotel, $this->user),
         ];
     }
 }

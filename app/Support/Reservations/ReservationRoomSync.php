@@ -4,10 +4,12 @@ namespace App\Support\Reservations;
 
 use App\Enums\ActorKind;
 use App\Enums\ReservationStatus;
+use App\Enums\StayStatus;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Models\Stay;
 use App\Support\Audit\EventLogger;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -172,8 +174,11 @@ class ReservationRoomSync
             ? collect()
             : $live->reject(fn (ReservationRoom $line) => isset($kept[$line->id]))->values();
 
-        if ($checkedIn && $cancel->isNotEmpty()) {
-            self::fail('rooms', 'Rooms cannot be removed from a checked-in reservation; only room moves are allowed.');
+        // A checked-in reservation may drop a room whose guest never arrived
+        // (FR-012a asks staff to, before the last room checks out); a room
+        // someone has checked into stays on it (FR-021).
+        if ($checkedIn && $cancel->contains(fn (ReservationRoom $line) => self::hasArrived($line))) {
+            self::fail('rooms', 'Rooms cannot be removed from a checked-in reservation once their guests have checked in; only room moves are allowed.');
         }
 
         // Expand the new items with their original request indexes.
@@ -244,6 +249,14 @@ class ReservationRoomSync
         if ($count > self::MAX_UNITS) {
             self::fail('rooms', 'A reservation can hold at most '.self::MAX_UNITS.' rooms.');
         }
+    }
+
+    private static function hasArrived(ReservationRoom $line): bool
+    {
+        return Stay::withoutGlobalScope('hotel')
+            ->where('reservation_room_id', $line->id)
+            ->whereIn('status', [StayStatus::IN_HOUSE, StayStatus::DEPARTED])
+            ->exists();
     }
 
     private static function assertRoomFits(string $hotelId, mixed $roomId, mixed $roomTypeId, string $key): void

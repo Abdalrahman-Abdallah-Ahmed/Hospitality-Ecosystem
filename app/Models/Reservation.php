@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\BelongsToHotel;
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
+use App\Enums\StayStatus;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -73,9 +74,8 @@ class Reservation extends Model
     }
 
     /**
-     * The physical room the reservation's single stay points at until
-     * SPEC-023 gives every line its own stay: the room of the first live line
-     * that has one.
+     * The room of the first live line that has one. The Concierge's guest
+     * requests fall back to it when the guest is not in the house yet.
      */
     public function primaryRoomId(): ?string
     {
@@ -118,9 +118,28 @@ class Reservation extends Model
         return $this->hasMany(Recommendation::class);
     }
 
+    /**
+     * One stay per line (SPEC-023), cancelled ones included (history).
+     */
+    public function stays(): HasMany
+    {
+        return $this->hasMany(Stay::class);
+    }
+
+    /**
+     * The reservation's primary stay: its earliest non-cancelled one. Kept for
+     * the callers that ask about the guest rather than a room — pitching,
+     * booking and outcome attribution, contact timestamps — for which any
+     * live stay of the reservation is the right answer.
+     */
     public function stay(): HasOne
     {
-        return $this->hasOne(Stay::class);
+        // Ordered rather than ofMany(): Postgres has no min() for uuid, and a
+        // HasOne keeps the first row of its ordered query, eager-loaded or not.
+        return $this->hasOne(Stay::class)
+            ->where('status', '!=', StayStatus::CANCELLED->value)
+            ->orderBy('created_at')
+            ->orderBy('id');
     }
 
     public function scopeConfirmed($query)

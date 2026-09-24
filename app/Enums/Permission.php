@@ -72,6 +72,10 @@ enum Permission: string
     case ROOM_TYPES_UPDATE = 'room_types.update';
     case ROOM_TYPES_DELETE = 'room_types.delete';
 
+    case STAYS_VIEW = 'stays.view';
+    case STAYS_CHECK_IN = 'stays.check_in';
+    case STAYS_CHECK_OUT = 'stays.check_out';
+
     case TASK_CATEGORIES_VIEW = 'task_categories.view';
     case TASK_CATEGORIES_CREATE = 'task_categories.create';
     case TASK_CATEGORIES_UPDATE = 'task_categories.update';
@@ -106,6 +110,9 @@ enum Permission: string
      * - Availability is readable because it is read-only, shows staff nothing
      *   sensitive, and anyone taking a booking needs it to avoid overselling.
      *   Overbooking on purpose (reservations.overbook) is never a default.
+     * - Stays are never a default: the lists expose guest names, rooms and
+     *   dates, and check-in/out change room status and occupancy, so a hotel
+     *   grants them on purpose to its front-desk roles.
      *
      * @return list<self>
      */

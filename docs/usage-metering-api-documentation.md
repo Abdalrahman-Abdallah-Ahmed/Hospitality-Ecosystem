@@ -65,6 +65,10 @@ bookings?" pricing question has evidence behind it.
 `hotels` table and is **published as `hotels`** — see
 [Reading the response](#reading-the-response).
 
+`stays` counts guest stays, and since 2026-09-24 there is **one stay per booked room**
+(SPEC-023): a reservation for 3 rooms is 3 stays. Accounts with multi-room reservations
+see a higher `stays` count than before; nothing about their usage changed.
+
 **Seats are recounted, never incremented.** They are read back from the tables
 that own them, so a deleted hotel actually leaves the count. Calling
 `record()` with a seat feature throws.

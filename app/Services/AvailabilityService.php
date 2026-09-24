@@ -6,6 +6,7 @@ use App\Enums\ActorKind;
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\RoomStatusesEnum;
+use App\Enums\StayStatus;
 use App\Exceptions\InsufficientAvailabilityException;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -322,33 +323,46 @@ class AvailabilityService
     /**
      * Every holding line of the hotel on each of its nights within
      * [from, to), one row per line and night, expanded by Postgres so the
-     * cost follows the number of lines, not rooms × nights. A checked-in
-     * guest whose departure date has passed still holds tonight; one who is
-     * due out today does not, so tonight can be sold to the next arrival.
+     * cost follows the number of lines, not rooms × nights. A guest still in
+     * the house after their departure date holds tonight; one who is due out
+     * today does not, so tonight can be sold to the next arrival.
+     *
+     * A line whose stay has departed (or never came) holds nothing, even
+     * while other rooms of its reservation are still in the house: an early
+     * departure frees the rest of its nights (FR-015). Cancellation is read
+     * from the line, not its stay, since the guard runs before the stays
+     * catch up with a change. A line with no stay (legacy rows) falls back
+     * to its reservation's status for the overstay rule.
      */
     private function holdingNights(Hotel $hotel, string $from, string $to): Builder
     {
         $today = $this->today($hotel);
         $tomorrow = CarbonImmutable::parse($today)->addDay()->toDateString();
         $holding = array_map(fn (ReservationStatus $status) => $status->value, ReservationStatus::holdingInventory());
-        $endExclusive = 'least(case when reservations.status = ? and reservations.departure_date < ?::date then ?::date '
+        $endExclusive = 'least(case when (stays.status = ? or (stays.id is null and reservations.status = ?)) '
+            .'and reservations.departure_date < ?::date then ?::date '
             .'else reservations.departure_date end, ?::date)';
 
         return DB::table('reservation_rooms')
             ->join('reservations', 'reservations.id', '=', 'reservation_rooms.reservation_id')
+            ->leftJoin('stays', function ($join) {
+                $join->on('stays.reservation_room_id', '=', 'reservation_rooms.id')->whereNull('stays.deleted_at');
+            })
             ->crossJoin(DB::raw(
                 'lateral generate_series(greatest(reservations.arrival_date, ?::date)::timestamp, '
                 ."({$endExclusive} - 1)::timestamp, interval '1 day') as nights(night)"
             ))
             // The lateral join's placeholders come first in the SQL, ahead of
             // the where clauses, so they must lead the bindings.
-            ->addBinding([$from, ReservationStatus::CHECKED_IN->value, $today, $tomorrow, $to], 'join')
+            ->addBinding([$from, StayStatus::IN_HOUSE->value, ReservationStatus::CHECKED_IN->value, $today, $tomorrow, $to], 'join')
             ->where('reservation_rooms.hotel_id', $hotel->id)
             ->where('reservations.hotel_id', $hotel->id)
             ->where('reservation_rooms.status', '!=', ReservationRoomStatus::CANCELLED->value)
             ->whereNull('reservation_rooms.deleted_at')
             ->whereNull('reservations.deleted_at')
             ->whereIn('reservations.status', $holding)
+            ->where(fn ($query) => $query->whereNull('stays.id')
+                ->orWhereNotIn('stays.status', [StayStatus::DEPARTED->value, StayStatus::NO_SHOW->value]))
             ->where('reservations.arrival_date', '<', $to);
     }
 

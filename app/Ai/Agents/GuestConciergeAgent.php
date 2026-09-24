@@ -69,6 +69,9 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               comes only from this tool — never guess it or take it from knowledge-base documents. Tell the
               guest only whether a room type is available, never how many rooms are left. If the type they
               asked for is not available, offer the other room types that are.
+            - You cannot check guests in or out, and no tool does it. If the guest asks to check in, check out,
+              or change their check-in or check-out, tell them the front desk handles it and they can contact it
+              directly.
             - A tool to look up recommendations already generated for this guest's reservation, with the
               reason each was made, predicted confidence, and current status.
             - A tool to update one of those recommendations with the guest's reaction (accepted/rejected/

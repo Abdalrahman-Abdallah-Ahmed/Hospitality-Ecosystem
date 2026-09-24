@@ -31,6 +31,8 @@ class HotelResource extends JsonResource
             'branding' => $this->branding,
             'ai_preferences' => $this->ai_preferences,
             'is_active' => $this->is_active,
+            'housekeeping_team_id' => $this->housekeeping_team_id,
+            'cleaning_task_category_id' => $this->cleaning_task_category_id,
             'owner' => UserResource::make($this->whenLoaded('owner')),
             'hotel_group' => HotelGroupResource::make($this->whenLoaded('hotelGroup')),
             'created_at' => $this->created_at,

@@ -53,8 +53,15 @@ class CreateReservationTool implements Tool
             return $lines;
         }
 
+        // Arrivals go through the check-in tool and its rules (FR-020a).
+        $status = $request->string('status')->toString() ?: ReservationStatus::PENDING->value;
+
+        if (! in_array($status, [ReservationStatus::PENDING->value, ReservationStatus::CONFIRMED->value], true)) {
+            return 'I can only create pending or confirmed reservations; check guests in with the check-in tool.';
+        }
+
         try {
-            $reservation = EventLogger::asAiAgent(function () use ($request, $lines) {
+            $reservation = EventLogger::asAiAgent(function () use ($request, $lines, $status) {
                 $guest = ReservationCreator::findOrCreateGuest($this->hotel->id, [
                     'phone_number' => $request->string('guest_phone')->toString(),
                     'first_name' => $request->string('guest_first_name')->toString() ?: null,
@@ -68,7 +75,7 @@ class CreateReservationTool implements Tool
                     'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
                     'arrival_date' => $request->string('arrival_date')->toString(),
                     'departure_date' => $request->string('departure_date')->toString(),
-                    'status' => $request->string('status')->toString() ?: ReservationStatus::PENDING->value,
+                    'status' => $status,
                     'adults' => $request->integer('adults') ?: 1,
                     'children' => $request->integer('children') ?: 0,
                     'source' => 'whatsapp',
@@ -191,7 +198,7 @@ class CreateReservationTool implements Tool
             'arrival_date' => $schema->string()->description('Arrival date, YYYY-MM-DD.')->required(),
             'departure_date' => $schema->string()->description('Departure date, YYYY-MM-DD.')->required(),
             'status' => $schema->string()
-                ->description('One of: '.implode(', ', array_column(ReservationStatus::cases(), 'value')).'. Defaults to pending.'),
+                ->description('pending or confirmed. Defaults to pending. Guests are checked in with the check-in tool, never here.'),
             'adults' => $schema->integer()->description('Number of adults. Defaults to 1.'),
             'children' => $schema->integer()->description('Number of children. Defaults to 0.'),
             'special_requests' => $schema->string()->description('Any special requests the guest mentioned.'),

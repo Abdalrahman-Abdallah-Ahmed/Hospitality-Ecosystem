@@ -7,7 +7,10 @@ use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\HotelResource;
 use App\Models\Hotel;
+use App\Models\TaskCategory;
+use App\Models\Team;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Http\JsonResponse;
 
 class HotelController extends Controller
 {
@@ -68,9 +71,46 @@ class HotelController extends Controller
     {
         $this->authorize('update', $hotel);
 
-        $hotel->update($request->validated());
+        $validated = $request->validated();
+
+        if ($error = $this->invalidHousekeepingDefaults($hotel, $validated)) {
+            return $error;
+        }
+
+        $hotel->update($validated);
 
         return apiResponse('Hotel updated successfully.', 200, HotelResource::make($hotel));
+    }
+
+    /**
+     * The cleaning-task defaults (FR-013) must be this hotel's own team and
+     * category, the team must be active, and the category must belong to it.
+     * Checked against the values the hotel will have after the update.
+     */
+    private function invalidHousekeepingDefaults(Hotel $hotel, array $validated): ?JsonResponse
+    {
+        if (! array_key_exists('housekeeping_team_id', $validated) && ! array_key_exists('cleaning_task_category_id', $validated)) {
+            return null;
+        }
+
+        $teamId = array_key_exists('housekeeping_team_id', $validated) ? $validated['housekeeping_team_id'] : $hotel->housekeeping_team_id;
+        $categoryId = array_key_exists('cleaning_task_category_id', $validated) ? $validated['cleaning_task_category_id'] : $hotel->cleaning_task_category_id;
+
+        if ($invalid = invalidRelation($hotel, ['teams' => $teamId, 'taskCategories' => $categoryId])) {
+            return apiResponse("The selected {$invalid} does not belong to you.", 403);
+        }
+
+        $team = $teamId ? Team::withoutGlobalScope('hotel')->find($teamId) : null;
+
+        if ($team && ! $team->is_active) {
+            return apiResponse('The housekeeping team must be active.', 422);
+        }
+
+        if ($categoryId && $teamId && TaskCategory::withoutGlobalScope('hotel')->whereKey($categoryId)->value('team_id') !== $teamId) {
+            return apiResponse('The cleaning task category must belong to the housekeeping team.', 422);
+        }
+
+        return null;
     }
 
     /**

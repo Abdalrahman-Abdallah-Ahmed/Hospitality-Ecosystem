@@ -1,7 +1,9 @@
 <?php
 
+use App\Ai\Tools\CheckInTool;
 use App\Ai\Tools\GetAvailabilityTool;
 use App\Ai\Tools\GetGuestAvailabilityTool;
+use App\Ai\Tools\GetStaysTool;
 use App\Enums\AttributionMethod;
 use App\Enums\OutcomeType;
 use App\Enums\UserRole;
@@ -34,6 +36,7 @@ use App\Services\RecommendationOutcomeService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Tools\Request;
+use Laravel\Ai\Tools\Request as ToolRequest;
 
 uses(RefreshDatabase::class);
 
@@ -444,4 +447,40 @@ it('never lets an availability AI tool built for one hotel see another hotel\'s 
         ->and(collect(json_decode($admin, true)['room_types'])->pluck('room_type.name')->all())->toBe(['Deluxe'])
         ->and($named)->toBe('This hotel has no room type called "Penthouse".')
         ->and(collect(json_decode($guest, true)['room_types'])->pluck('name')->all())->toBe(['Deluxe']);
+});
+
+it('never shows or lets anyone act on another hotel\'s stays', function () {
+    [$hotelA, $typeA, [$roomA]] = fdHotel();
+    [$hotelB, $typeB, [$roomB]] = fdHotel();
+    $reservationB = fdBook($hotelB, $typeB, [$roomB->id]);
+    [$stayB] = fdStays($reservationB);
+    fdBook($hotelA, $typeA, [$roomA->id]);
+    $adminA = $hotelA->owner;
+
+    // Lists show only the admin's own hotel.
+    foreach (['/api/stays/arrivals', '/api/stays'] as $uri) {
+        $ids = collect(fdGet($this, $adminA, $uri)->assertOk()->json($uri === '/api/stays' ? 'body.data' : 'body.stays'))->pluck('id');
+        expect($ids)->not->toContain($stayB->id);
+    }
+
+    // Another hotel's stay or reservation is refused (the same-hotel policy
+    // check, like every other resource), and nothing changes.
+    fdGet($this, $adminA, "/api/stays/{$stayB->id}")->assertForbidden();
+    fdPost($this, $adminA, "/api/stays/{$stayB->id}/check-in")->assertForbidden();
+    fdPost($this, $adminA, "/api/stays/{$stayB->id}/check-out")->assertForbidden();
+    fdPost($this, $adminA, "/api/reservation/{$reservationB->id}/check-in")->assertForbidden();
+    fdPost($this, $adminA, "/api/reservation/{$reservationB->id}/check-out")->assertForbidden();
+
+    // Naming another hotel's room at check-in is refused like an unknown room.
+    [$stayA] = fdStays(fdBook($hotelA, $typeA, [null]));
+    fdPost($this, $adminA, "/api/stays/{$stayA->id}/check-in", ['room_id' => $roomB->id])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(["stays.{$stayA->id}.room_id" => 'The selected room is not available.']);
+
+    // The Admin AI's tools only ever see their own hotel.
+    $tools = [new GetStaysTool($hotelA, $adminA), new CheckInTool($hotelA, $adminA)];
+    expect((string) $tools[0]->handle(new ToolRequest(['list' => 'arrivals'])))->not->toContain($reservationB->reservation_id)
+        ->and((string) $tools[1]->handle(new ToolRequest(['reservation_id' => $reservationB->reservation_id])))->toBe('This hotel has no reservation with that code.');
+
+    expect($stayB->fresh()->status->value)->toBe('expected');
 });
