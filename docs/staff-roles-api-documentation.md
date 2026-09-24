@@ -32,6 +32,8 @@ An employee with no staff role has:
 
 `availability.view` was added on purpose: it is read-only, shows staff nothing sensitive, and anyone taking a booking needs it to avoid overselling. `reservations.overbook` is never a default.
 
+`stays.view`, `stays.check_in` and `stays.check_out` are never defaults: the stays lists show guest names, rooms and dates, and check-in/out change room status and occupancy, so a hotel grants them on purpose to its front-desk roles.
+
 `GET /api/permissions` returns this list as `employee_defaults`, so the UI does not need to hard-code it.
 
 ### Permission Reference
@@ -85,6 +87,9 @@ An employee with no staff role has:
 | `room_types.create` | `POST /api/room-types` |
 | `room_types.update` | `PUT /api/room-types/{id}` |
 | `room_types.delete` | `DELETE /api/room-types/{id}` |
+| `stays.view` | `GET /api/stays`, `GET /api/stays/{id}`, `GET /api/stays/arrivals`, `GET /api/stays/departures`, `GET /api/stays/in-house` (not a default) |
+| `stays.check_in` | `POST /api/stays/{id}/check-in`, `POST /api/reservation/{id}/check-in`, and the deprecated `status: checked_in` on `POST /api/reservation` / `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
+| `stays.check_out` | `POST /api/stays/{id}/check-out`, `POST /api/reservation/{id}/check-out`, and the deprecated `status: checked_out` on `PUT /api/reservation/{id}` (on top of `reservations.update`; not a default) |
 | `task_categories.view` | `GET /api/task-category`, `GET /api/task-category/{id}` |
 | `task_categories.create` | `POST /api/task-category` |
 | `task_categories.update` | `PUT /api/task-category/{id}` |

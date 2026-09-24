@@ -96,6 +96,8 @@ Successful custom API responses use this structure:
   "branding": { "primary_color": "#0f172a" },
   "ai_preferences": { "tone": "friendly", "language": "en" },
   "is_active": true,
+  "housekeeping_team_id": null,
+  "cleaning_task_category_id": null,
   "created_at": "2026-07-25T21:39:10.000000Z",
   "updated_at": "2026-07-25T21:39:10.000000Z",
   "deleted_at": null
@@ -109,6 +111,11 @@ Field notes for the UI:
 - `email` is only validated as a plain string (max length), not with an email-format rule. Validate format client-side.
 - `currency` is capped at 3 characters, `country_code` at 2 — these are not validated against ISO lists server-side; constrain input client-side (e.g. a currency/country picker).
 - `is_active` defaults to `true` at the database level when omitted on create.
+- `housekeeping_team_id` / `cleaning_task_category_id` (*added 2026-09-24*): where a
+  check-out's cleaning task goes — the team it is assigned to and the category it is filed
+  under. Both are `null` until an admin sets them (a later release fills them in for every
+  hotel); while unset, cleaning tasks are created unassigned. See
+  [stays-api-documentation.md](stays-api-documentation.md#check-out).
 - Hotels use `SoftDeletes`, so `DELETE` does **not** permanently erase the row — see the restore behavior under [Create a Hotel](#2-create-a-hotel).
 - No relations are eager-loaded on this object.
 
@@ -283,6 +290,13 @@ Send only the fields you want to change — every field is optional on update:
 ### Validation Rules
 
 Same field-level rules as [create](#validation-rules), except every field is optional (`sometimes` instead of `required`), and `slug` uniqueness ignores the hotel's own current row (so re-saving the same slug doesn't trip the unique check).
+
+**Housekeeping defaults.** `housekeeping_team_id` and `cleaning_task_category_id` (uuid
+or `null`) must be this hotel's own team and task category — another hotel's gives `403`
+"The selected teams does not belong to you." (or `taskCategories`). The team must be
+active and the category must belong to that team, else `422` "The housekeeping team must
+be active." / "The cleaning task category must belong to the housekeeping team." They are
+chosen by id, so a team named in any language works.
 
 **Note:** there is currently **no server-side guard preventing `owner_id` from being changed** on update. If an owning admin includes `owner_id` in their payload, it will be validated (must exist in `users.id`) and saved as-is — which would transfer the hotel away from themselves. The frontend should not include `owner_id` in a regular admin's edit form; reserve that field for a super-admin "reassign owner" feature, if one is built.
 

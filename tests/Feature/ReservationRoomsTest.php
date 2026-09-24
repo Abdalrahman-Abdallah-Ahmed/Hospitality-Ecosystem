@@ -9,6 +9,7 @@ use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Models\Stay;
 use App\Models\User;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Database\QueryException;
@@ -22,6 +23,27 @@ beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
 });
+
+/**
+ * Tests that check a guest in run on 2 October 2026, inside the 1–4 October
+ * bookings: check-in follows its rules now (FR-020), dates included.
+ */
+function rrCheckInDay($test): void
+{
+    $test->travelTo('2026-10-02 12:00:00');
+}
+
+/**
+ * Checks in the line that has a room, leaving the other waiting.
+ */
+function rrCheckInLine($test, User $admin, string $lineId): void
+{
+    $stayId = Stay::withoutGlobalScope('hotel')->where('reservation_room_id', $lineId)->value('id');
+
+    $test->withHeaders(rrHeaders())->actingAs($admin, 'sanctum')
+        ->postJson("/api/stays/{$stayId}/check-in")
+        ->assertOk();
+}
 
 function rrHeaders(): array
 {
@@ -370,8 +392,10 @@ it('rejects a line id that is not a live line of the reservation', function () {
 it('rejects line changes on a checked-out or cancelled reservation', function (string $status) {
     [$admin, $hotel, $guest] = rrAdmin();
     $deluxe = rrType($hotel, 'Deluxe');
-    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $deluxe->id]], ['status' => $status]))->json('body.id');
+    $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $deluxe->id]]))->json('body.id');
     $line = ReservationRoom::where('reservation_id', $id)->value('id');
+    // Only the import records a checked-out reservation, so set it directly.
+    Reservation::find($id)->update(['status' => $status]);
 
     rrUpdate($this, $admin, $id, ['rooms' => [['id' => $line], ['room_type_id' => $deluxe->id]]])
         ->assertStatus(422)
@@ -383,11 +407,14 @@ it('rejects adding, removing or retyping lines on a checked-in reservation', fun
     $deluxe = rrType($hotel, 'Deluxe');
     $suite = rrType($hotel, 'Suite');
     $room = rrRoom($hotel, $deluxe, '101');
-    [$id, $assigned, $unassigned] = rrReservationWithTwoDeluxe($this, $admin, $hotel, $guest, $deluxe, $room, 'checked_in');
+    rrCheckInDay($this);
+    [$id, $assigned, $unassigned] = rrReservationWithTwoDeluxe($this, $admin, $hotel, $guest, $deluxe, $room);
+    rrCheckInLine($this, $admin, $assigned);
 
     rrUpdate($this, $admin, $id, ['rooms' => [['id' => $assigned], ['id' => $unassigned], ['room_type_id' => $suite->id]]])
         ->assertStatus(422);
-    rrUpdate($this, $admin, $id, ['rooms' => [['id' => $assigned]]])
+    // The checked-in room cannot be removed; the one still waiting could be.
+    rrUpdate($this, $admin, $id, ['rooms' => [['id' => $unassigned]]])
         ->assertStatus(422);
     rrUpdate($this, $admin, $id, ['rooms' => [['id' => $assigned], ['id' => $unassigned, 'room_type_id' => $suite->id]]])
         ->assertStatus(422)
@@ -409,8 +436,7 @@ it('cancels every line when the reservation is cancelled', function () {
     [$admin, $hotel, $guest] = rrAdmin();
     $deluxe = rrType($hotel, 'Deluxe');
     $room = rrRoom($hotel, $deluxe, '101');
-    [$id] = rrReservationWithTwoDeluxe($this, $admin, $hotel, $guest, $deluxe, $room, 'checked_in');
-    expect($room->fresh()->status)->toBe('occupied');
+    [$id] = rrReservationWithTwoDeluxe($this, $admin, $hotel, $guest, $deluxe, $room);
 
     rrUpdate($this, $admin, $id, ['status' => 'cancelled'])->assertOk();
 
@@ -463,6 +489,7 @@ it('rejects a room of another type, another hotel, or one that does not exist', 
 })->with(['type', 'hotel', 'missing']);
 
 it('moves a checked-in guest to another room of the same type', function () {
+    rrCheckInDay($this);
     [$admin, $hotel, $guest] = rrAdmin();
     $deluxe = rrType($hotel, 'Deluxe');
     $room101 = rrRoom($hotel, $deluxe, '101');
@@ -481,6 +508,7 @@ it('moves a checked-in guest to another room of the same type', function () {
 });
 
 it('rejects moving a checked-in guest to another type, or clearing their room', function () {
+    rrCheckInDay($this);
     [$admin, $hotel, $guest] = rrAdmin();
     $deluxe = rrType($hotel, 'Deluxe');
     $suite = rrType($hotel, 'Suite');
@@ -585,6 +613,7 @@ it('moves a line into the room of a line removed in the same update', function (
 });
 
 it('restores the rooms a reservation had when it is brought back from cancelled', function () {
+    rrCheckInDay($this);
     [$admin, $hotel, $guest] = rrAdmin();
     $deluxe = rrType($hotel, 'Deluxe');
     $room = rrRoom($hotel, $deluxe, '101');
@@ -598,8 +627,10 @@ it('restores the rooms a reservation had when it is brought back from cancelled'
     expect($cancelled[$assigned]['cancelled_with_reservation'])->toBeTrue()
         ->and($cancelled[$unassigned]['cancelled_with_reservation'])->toBeFalse();
 
-    rrUpdate($this, $admin, $id, ['status' => 'checked_in'])->assertOk()
+    // A cancelled reservation is confirmed again before anyone checks in.
+    rrUpdate($this, $admin, $id, ['status' => 'confirmed'])->assertOk()
         ->assertJsonPath('body.room_summary.0.quantity', 1);
+    rrUpdate($this, $admin, $id, ['status' => 'checked_in'])->assertOk();
 
     expect(ReservationRoom::find($assigned)->status)->toBe(ReservationRoomStatus::RESERVED)
         ->and(ReservationRoom::find($unassigned)->status)->toBe(ReservationRoomStatus::CANCELLED)

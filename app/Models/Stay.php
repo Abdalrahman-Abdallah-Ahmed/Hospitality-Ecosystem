@@ -6,7 +6,9 @@ use App\Concerns\BelongsToHotel;
 use App\Enums\StayStatus;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
+use App\Support\Audit\EventLogger;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,7 +17,20 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Stay extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids, RecordsEvents, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
+    use RecordsEvents {
+        loggedChangeSet as baseLoggedChangeSet;
+    }
+
+    /**
+     * Extra values for the audit row of the next save, not persisted: the
+     * moment a late-entered check-in or check-out was actually recorded
+     * (`entered_at`), so one row shows both times (research R17). Set by
+     * StayLifecycleService right before the save and cleared after it.
+     *
+     * @var array<string, mixed>
+     */
+    public array $auditExtras = [];
 
     protected $keyType = 'string';
 
@@ -25,6 +40,7 @@ class Stay extends Model
         'hotel_id',
         'guest_id',
         'reservation_id',
+        'reservation_room_id',
         'room_id',
         'planned_arrival_date',
         'planned_departure_date',
@@ -61,11 +77,45 @@ class Stay extends Model
     public function eventLoggedAttributes(): array
     {
         return [
-            'guest_id', 'reservation_id', 'room_id', 'planned_arrival_date',
+            'guest_id', 'reservation_id', 'reservation_room_id', 'room_id', 'planned_arrival_date',
             'planned_departure_date', 'checked_in_at', 'checked_out_at',
             'status', 'adults', 'children', 'nights', 'room_revenue',
             'currency', 'market_segment', 'source_channel',
         ];
+    }
+
+    /**
+     * `?search=` on the stays list: the guest's name or phone, or the
+     * reservation's code — a stay's own columns hold nothing worth typing.
+     */
+    public function scopeSearch(Builder $query, ?string $term): Builder
+    {
+        if ($term === null || $term === '') {
+            return $query;
+        }
+
+        $like = '%'.$term.'%';
+
+        return $query->where(fn (Builder $query) => $query
+            ->whereHas('guest', fn (Builder $guest) => $guest->where(fn (Builder $q) => $q
+                ->where('first_name', 'ilike', $like)
+                ->orWhere('last_name', 'ilike', $like)
+                ->orWhere('phone_number', 'like', $like)))
+            ->orWhereHas('reservation', fn (Builder $reservation) => $reservation->where('reservation_id', 'ilike', $like)));
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public function loggedChangeSet(bool $withFrom): array
+    {
+        $set = $this->baseLoggedChangeSet($withFrom);
+
+        foreach ($this->auditExtras as $key => $value) {
+            $set[$key] = ['to' => EventLogger::normalize($value)];
+        }
+
+        return $set;
     }
 
     /**
@@ -98,9 +148,23 @@ class Stay extends Model
         return $this->belongsTo(Reservation::class);
     }
 
+    /**
+     * The reservation line this stay is the guest presence of: one stay per
+     * line (SPEC-023). Null only for legacy stays with no reservation.
+     */
+    public function reservationRoom(): BelongsTo
+    {
+        return $this->belongsTo(ReservationRoom::class);
+    }
+
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class);
+    }
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class);
     }
 
     public function transactions(): HasMany
@@ -117,24 +181,16 @@ class Stay extends Model
      * not sleep there on the night of the 5th, so the comparison is a
      * strict `<` on planned_departure_date, not `<=`.
      *
-     * Each stay counts as many rooms as its reservation has live room lines,
-     * and at least one — a stay with no reservation, or one whose single room
-     * is not assigned yet, still counts as the one room it always did.
+     * Every stay is one room (one stay per reservation line), so this is a
+     * plain count.
      */
     public static function occupiedRoomsOn(Hotel $hotel, CarbonInterface $date): int
     {
-        $liveLines = ReservationRoom::withoutGlobalScope('hotel')
-            ->selectRaw('count(*)')
-            ->whereColumn('reservation_rooms.reservation_id', 'stays.reservation_id')
-            ->active()
-            ->toBase();
-
-        return (int) static::query()
+        return static::query()
             ->where('hotel_id', $hotel->id)
             ->whereIn('status', [StayStatus::IN_HOUSE, StayStatus::DEPARTED])
             ->whereDate('planned_arrival_date', '<=', $date)
             ->whereDate('planned_departure_date', '>', $date)
-            ->selectRaw('coalesce(sum(greatest(1, ('.$liveLines->toSql().'))), 0) as rooms', $liveLines->getBindings())
-            ->value('rooms');
+            ->count();
     }
 }

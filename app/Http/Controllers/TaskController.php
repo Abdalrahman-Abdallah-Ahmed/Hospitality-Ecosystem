@@ -8,6 +8,7 @@ use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\TaskCategoryResource;
 use App\Http\Resources\TaskResource;
 use App\Models\Reservation;
+use App\Models\Stay;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Services\CreationNotificationService;
@@ -55,6 +56,7 @@ class TaskController extends Controller
             'teams' => $validated['assigned_to_team_id'] ?? null,
             'users' => $validated['assigned_to_user_id'] ?? null,
             'taskCategories' => $validated['task_category_id'] ?? null,
+            'stays' => $validated['stay_id'] ?? null,
         ]) ?? invalidRelation($hotel, [
             'users' => $validated['created_by_user_id'] ?? null,
         ]);
@@ -68,6 +70,10 @@ class TaskController extends Controller
 
         if (! $this->taskCategoryBelongsToTeam($teamId, $taskCategoryId)) {
             return apiResponse('The selected task category does not belong to the chosen team.', 403);
+        }
+
+        if ($error = $this->applyStay($validated)) {
+            return $error;
         }
 
         $task = Task::create([
@@ -108,6 +114,7 @@ class TaskController extends Controller
             'teams' => $validated['assigned_to_team_id'] ?? null,
             'users' => $validated['assigned_to_user_id'] ?? null,
             'taskCategories' => $validated['task_category_id'] ?? null,
+            'stays' => $validated['stay_id'] ?? null,
         ]) ?? invalidRelation($task->hotel, [
             'users' => $validated['created_by_user_id'] ?? null,
         ]);
@@ -121,6 +128,10 @@ class TaskController extends Controller
 
         if (! $this->taskCategoryBelongsToTeam($teamId, $taskCategoryId)) {
             return apiResponse('The selected task category does not belong to the chosen team.', 403);
+        }
+
+        if ($error = $this->applyStay($validated, $task)) {
+            return $error;
         }
 
         if (array_key_exists('reservation_id', $validated)) {
@@ -141,6 +152,45 @@ class TaskController extends Controller
         $task->delete();
 
         return apiResponse('Task deleted successfully.', 200);
+    }
+
+    /**
+     * A task linked to a stay (FR-018) is about that stay's room and
+     * reservation: a room or reservation that says otherwise is rejected, and
+     * missing ones are filled in from the stay. Checked against what the
+     * task will hold after this request.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function applyStay(array &$validated, ?Task $task = null): ?JsonResponse
+    {
+        $stayId = array_key_exists('stay_id', $validated) ? $validated['stay_id'] : $task?->stay_id;
+
+        if (! $stayId) {
+            return null;
+        }
+
+        $stay = Stay::find($stayId);
+
+        // A soft-deleted stay (its reservation was deleted) leaves stay_id
+        // behind, since the FK's "set null" only fires on a hard delete.
+        if (! $stay) {
+            return null;
+        }
+
+        foreach (['room_id', 'reservation_id'] as $field) {
+            $value = array_key_exists($field, $validated) ? $validated[$field] : $task?->{$field};
+
+            if ($value !== null && $stay->{$field} !== null && $value !== $stay->{$field}) {
+                return apiResponse("The task's {$field} does not match its stay.", 422);
+            }
+
+            if ($value === null) {
+                $validated[$field] = $stay->{$field};
+            }
+        }
+
+        return null;
     }
 
     /**

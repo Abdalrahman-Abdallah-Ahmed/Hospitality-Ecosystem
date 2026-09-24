@@ -37,6 +37,9 @@ class Hotel extends Model
         'branding',
         'ai_preferences',
         'is_active',
+        // Where a check-out's cleaning task goes (FR-013). SPEC-004 fills them.
+        'housekeeping_team_id',
+        'cleaning_task_category_id',
     ];
 
     protected $casts = [
@@ -155,6 +158,22 @@ class Hotel extends Model
         return $this->belongsToMany(User::class, 'hotel_user')
             ->withPivot(['role', 'is_primary'])
             ->withTimestamps();
+    }
+
+    /**
+     * The team a check-out's cleaning task is assigned to (FR-013).
+     */
+    public function housekeepingTeam(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'housekeeping_team_id');
+    }
+
+    /**
+     * The task category a check-out's cleaning task is filed under (FR-013).
+     */
+    public function cleaningTaskCategory(): BelongsTo
+    {
+        return $this->belongsTo(TaskCategory::class, 'cleaning_task_category_id');
     }
 
     public function teams(): HasMany

@@ -21,6 +21,7 @@ class Task extends Model
         'hotel_id',
         'room_id',
         'reservation_id',
+        'stay_id',
         'guest_id',
         'assigned_to_team_id',
         'assigned_to_user_id',
@@ -50,7 +51,7 @@ class Task extends Model
     public function eventLoggedAttributes(): array
     {
         return [
-            'room_id', 'reservation_id', 'guest_id', 'assigned_to_team_id',
+            'room_id', 'reservation_id', 'stay_id', 'guest_id', 'assigned_to_team_id',
             'assigned_to_user_id', 'task_category_id', 'title', 'description',
             'created_by', 'guest_signal', 'status', 'priority', 'due_date',
         ];
@@ -64,6 +65,11 @@ class Task extends Model
     public function reservation()
     {
         return $this->belongsTo(Reservation::class);
+    }
+
+    public function stay()
+    {
+        return $this->belongsTo(Stay::class);
     }
 
     public function guest()

@@ -2,19 +2,24 @@
 
 namespace App\Support\Reservations;
 
+use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\RoomStatusesEnum;
+use App\Enums\StayStatus;
 use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Models\Stay;
 use App\Services\AvailabilityService;
 use App\Services\GuestIdentityService;
 use App\Services\StayService;
 use App\Support\Audit\EventLogger;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The one domain operation that writes reservations and their room lines,
@@ -140,7 +145,7 @@ class ReservationCreator
                 $availability->guard($reservation, [], $overbookOverride);
             }
 
-            self::syncStay($reservation);
+            self::syncStays($reservation, recordStatus: true);
             self::syncRoomOccupancy([...$previousRoomIds, ...self::roomIdsOf($reservation)]);
 
             return $reservation;
@@ -188,6 +193,7 @@ class ReservationCreator
             $footprintBefore = $availability->footprint($reservation);
 
             $roomIdsBefore = self::roomIdsOf($reservation);
+            $vacatedRooms = self::guardInHouse($reservation, $attributes, $plan);
 
             $reservation->update($attributes);
             $partyChanged = $reservation->wasChanged(['adults', 'children']);
@@ -208,8 +214,9 @@ class ReservationCreator
 
             $availability->guard($reservation, $footprintBefore, $overbookOverride);
 
-            self::syncStay($reservation);
+            self::syncStays($reservation, recordStatus: $reservation->wasChanged('status'));
             self::syncRoomOccupancy([...$roomIdsBefore, ...self::roomIdsOf($reservation)]);
+            self::markDirty($vacatedRooms);
 
             return $reservation;
         });
@@ -347,39 +354,136 @@ class ReservationCreator
     }
 
     /**
-     * Ensures a stay exists for this reservation (idempotent — safe to call
-     * on every create/update) and keeps it in step with the reservation: its
-     * planned side via StayService, and its status via the match below. The
-     * one place both WP-2 acceptance criteria ("every reservation
-     * automatically produces one stay") and the expected/check-in/check-out/
-     * cancel transitions are driven from. No-show is deliberately not one of
-     * them — see the match below.
+     * Keeps one stay per line in step with the reservation (StayService::
+     * syncForReservation()).
+     *
+     * `$recordStatus` is for callers that record what already happened — the
+     * reservation import, fixtures — when they set a status: checked in puts
+     * the live lines' stays in the house, checked out makes them departed,
+     * with no room checks and no cleaning task. Front-desk check-in and
+     * check-out never come through here; they are StayLifecycleService, and
+     * the HTTP and AI entry points hand those statuses to it instead.
+     *
+     * Cancelled needs no flag: the sync cancels the stays of cancelled lines,
+     * and this also cancels a line-less legacy stay. No-show is not a
+     * reservation status and is never mirrored.
      */
-    public static function syncStay(Reservation $reservation): void
+    public static function syncStays(Reservation $reservation, bool $recordStatus = false): void
     {
         $stayService = app(StayService::class);
-        $stay = $stayService->syncFromReservation($reservation);
+        $stays = $stayService->syncForReservation($reservation)
+            ->reject(fn (Stay $stay) => $stay->status === StayStatus::CANCELLED);
 
-        match ($reservation->status) {
-            ReservationStatus::CHECKED_IN => $stayService->checkIn($stay),
-            ReservationStatus::CHECKED_OUT => $stayService->checkOut($stay),
-            ReservationStatus::CANCELLED => $stayService->markCancelled($stay),
-            // PENDING and CONFIRMED are both "booked, not arrived yet" as far
-            // as the stay is concerned — neither implies a no-show, which
-            // specifically means the planned arrival date already passed
-            // with nobody checking in. Nothing currently detects that (see
-            // StayService::markNoShow()'s docblock); it is not a reservation
-            // status transition, so it doesn't belong in this match.
-            ReservationStatus::CONFIRMED, ReservationStatus::PENDING => $stayService->markExpected($stay),
-            default => null,
-        };
+        foreach ($stays as $stay) {
+            match (true) {
+                $reservation->status === ReservationStatus::CANCELLED && $stay->status === StayStatus::EXPECTED => $stayService->markCancelled($stay),
+                ! $recordStatus => null,
+                $reservation->status === ReservationStatus::CHECKED_IN && $stay->status === StayStatus::EXPECTED => $stayService->checkIn($stay),
+                $reservation->status === ReservationStatus::CHECKED_OUT && in_array($stay->status, [StayStatus::EXPECTED, StayStatus::IN_HOUSE], true) => $stayService->checkOut($stay),
+                default => null,
+            };
+        }
+    }
+
+    /**
+     * Deletes a reservation and its stays in one go (FR-021: not while a
+     * guest is in the house, which would leave an occupied room nobody is in).
+     *
+     * @throws ValidationException
+     */
+    public static function delete(Reservation $reservation): void
+    {
+        DB::transaction(function () use ($reservation) {
+            $locked = Reservation::withoutGlobalScope('hotel')->whereKey($reservation->id)->lockForUpdate()->firstOrFail();
+
+            if (self::inHouseStays($locked)->isNotEmpty()) {
+                throw ValidationException::withMessages(['reservation' => 'Check out the in-house rooms first.']);
+            }
+
+            Stay::withoutGlobalScope('hotel')->where('reservation_id', $locked->id)->get()->each->delete();
+            $locked->delete();
+        });
+    }
+
+    /**
+     * Rejects an edit that would strand a guest in the house (FR-021): a
+     * status change away from checked in, or removing or cancelling a line
+     * whose guest is in. Returns the rooms that in-house guests are moving
+     * out of, which are left dirty.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, mixed>|null  $plan
+     * @return list<string>
+     *
+     * @throws ValidationException
+     */
+    private static function guardInHouse(Reservation $reservation, array $attributes, ?array $plan): array
+    {
+        $inHouse = self::inHouseStays($reservation)->keyBy('reservation_room_id');
+
+        if ($inHouse->isEmpty()) {
+            return [];
+        }
+
+        $status = $attributes['status'] ?? null;
+        $status = $status instanceof ReservationStatus ? $status : ($status !== null ? ReservationStatus::from($status) : null);
+
+        if ($status !== null && $status !== ReservationStatus::CHECKED_IN) {
+            throw ValidationException::withMessages(['status' => 'Check out the in-house rooms first.']);
+        }
+
+        foreach ($plan['cancel'] ?? [] as $line) {
+            if ($inHouse->has($line->id)) {
+                $room = $line->room()->withoutGlobalScope('hotel')->value('room_number') ?? 'unassigned';
+
+                throw ValidationException::withMessages(['rooms' => "Room {$room} is checked in; check it out first."]);
+            }
+        }
+
+        $vacated = [];
+
+        foreach ($plan['moves'] ?? [] as $lineId => $roomId) {
+            $stay = $inHouse->get($lineId);
+
+            if ($stay && $stay->room_id && $stay->room_id !== $roomId) {
+                $vacated[] = $stay->room_id;
+            }
+        }
+
+        return $vacated;
+    }
+
+    /**
+     * @return Collection<int, Stay>
+     */
+    private static function inHouseStays(Reservation $reservation): Collection
+    {
+        return Stay::withoutGlobalScope('hotel')
+            ->where('reservation_id', $reservation->id)
+            ->where('status', StayStatus::IN_HOUSE)
+            ->get();
+    }
+
+    /**
+     * Rooms a guest just moved out of need servicing, unless they are out of
+     * order (a blocked housekeeping status is the out-of-order marker).
+     *
+     * @param  list<string>  $roomIds
+     */
+    private static function markDirty(array $roomIds): void
+    {
+        foreach (Room::withoutGlobalScope('hotel')->whereIn('id', $roomIds)->get() as $room) {
+            if ($room->housekeeping_status !== HousekeepingStatusesEnum::BLOCKED) {
+                $room->update(['housekeeping_status' => HousekeepingStatusesEnum::DIRTY]);
+            }
+        }
     }
 
     /**
      * Keeps the status of each given room in step with who is physically
      * there. Pass every room an operation touched — the rooms its lines hold
      * now and the ones it just released or moved out of. Call after
-     * syncStay(), which it reads.
+     * syncStays(), which it reads.
      *
      * @param  array<int, string|null>  $roomIds
      */
@@ -406,7 +510,12 @@ class ReservationCreator
             ->where('room_id', $roomId)
             ->exists();
 
-        $room = Room::withoutGlobalScope('hotel')->whereKey($roomId);
+        // Through the model, so the change is audited (room.updated).
+        $room = Room::withoutGlobalScope('hotel')->find($roomId);
+
+        if (! $room) {
+            return;
+        }
 
         if ($someoneInHouse) {
             $room->update(['status' => RoomStatusesEnum::OCCUPIED->value]);
@@ -414,7 +523,8 @@ class ReservationCreator
             return;
         }
 
-        $room->where('status', RoomStatusesEnum::OCCUPIED->value)
-            ->update(['status' => RoomStatusesEnum::AVAILABLE->value]);
+        if ($room->status === RoomStatusesEnum::OCCUPIED->value) {
+            $room->update(['status' => RoomStatusesEnum::AVAILABLE->value]);
+        }
     }
 }

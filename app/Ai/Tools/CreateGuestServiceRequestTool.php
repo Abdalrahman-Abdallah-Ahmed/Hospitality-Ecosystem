@@ -5,9 +5,11 @@ namespace App\Ai\Tools;
 use App\Enums\CreatedBy;
 use App\Enums\GuestSignal;
 use App\Enums\Priority;
+use App\Enums\StayStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\Stay;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Services\CreationNotificationService;
@@ -40,12 +42,14 @@ class CreateGuestServiceRequestTool implements Tool
     public function handle(Request $request): Stringable|string
     {
         $kind = $this->kind($request);
+        $stay = $this->stayFor($request->string('room_number')->toString());
 
         $task = Task::make([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
             'reservation_id' => $this->reservation?->id,
-            'room_id' => $this->reservation?->primaryRoomId(),
+            'stay_id' => $stay?->id,
+            'room_id' => $stay ? $stay->room_id : $this->fallbackRoomId(),
             'task_category_id' => $this->taskCategoryId($request),
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
@@ -68,6 +72,51 @@ class CreateGuestServiceRequestTool implements Tool
     }
 
     /**
+     * The guest's stay the request is about (FR-019): their only room in the
+     * house, or the one whose number they gave. None when they are not in
+     * yet, or are in several rooms and did not say which.
+     */
+    private function stayFor(string $roomNumber): ?Stay
+    {
+        if (! $this->reservation) {
+            return null;
+        }
+
+        $inHouse = Stay::withoutGlobalScope('hotel')
+            ->where('reservation_id', $this->reservation->id)
+            ->where('status', StayStatus::IN_HOUSE)
+            ->with('room')
+            ->get();
+
+        if ($inHouse->count() === 1) {
+            return $inHouse->first();
+        }
+
+        $roomNumber = trim($roomNumber);
+
+        return $roomNumber === '' ? null : $inHouse->first(fn (Stay $stay) => $stay->room?->room_number === $roomNumber);
+    }
+
+    /**
+     * Before the guest is in, the request still names the room they are
+     * booked into, when there is exactly one; several rooms and none named
+     * leave it to staff.
+     */
+    private function fallbackRoomId(): ?string
+    {
+        if (! $this->reservation) {
+            return null;
+        }
+
+        $inHouse = Stay::withoutGlobalScope('hotel')
+            ->where('reservation_id', $this->reservation->id)
+            ->where('status', StayStatus::IN_HOUSE)
+            ->count();
+
+        return $inHouse > 1 ? null : $this->reservation->primaryRoomId();
+    }
+
+    /**
      * Get the tool's schema definition.
      */
     public function schema(JsonSchema $schema): array
@@ -85,6 +134,8 @@ class CreateGuestServiceRequestTool implements Tool
                 ->enum([GuestSignal::SERVICE_REQUEST->value, GuestSignal::BOOKING_FOLLOW_UP->value])
                 ->description('service_request: the guest needs something or something is broken. booking_follow_up: the guest is interested in an activity and staff should help them book it. When in doubt, use service_request.')
                 ->default(GuestSignal::SERVICE_REQUEST->value),
+            'room_number' => $schema->string()
+                ->description('The room the request is for, only if the guest is staying in more than one room and said which.'),
         ];
     }
 

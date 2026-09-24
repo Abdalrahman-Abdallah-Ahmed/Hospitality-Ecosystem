@@ -99,7 +99,7 @@ it('gives an employee without a staff role exactly the default permissions', fun
             ->getJson($allowed)->assertOk();
     }
 
-    foreach (['/api/room', '/api/task', '/api/reservation', '/api/transaction'] as $denied) {
+    foreach (['/api/room', '/api/task', '/api/reservation', '/api/transaction', '/api/stays'] as $denied) {
         $this->withHeaders(permissionApiHeaders())->actingAs($employee, 'sanctum')
             ->getJson($denied)->assertForbidden();
     }
@@ -139,10 +139,42 @@ it('lets an employee read a resource only when their role grants it', function (
     'reservations' => ['/api/reservation', Permission::RESERVATIONS_VIEW],
     'rooms' => ['/api/room', Permission::ROOMS_VIEW],
     'room types' => ['/api/room-types', Permission::ROOM_TYPES_VIEW],
+    'stays' => ['/api/stays', Permission::STAYS_VIEW],
+    'arrivals' => ['/api/stays/arrivals', Permission::STAYS_VIEW],
+    'departures' => ['/api/stays/departures', Permission::STAYS_VIEW],
+    'in-house' => ['/api/stays/in-house', Permission::STAYS_VIEW],
     'task categories' => ['/api/task-category', Permission::TASK_CATEGORIES_VIEW],
     'tasks' => ['/api/task', Permission::TASKS_VIEW],
     'teams' => ['/api/team', Permission::TEAMS_VIEW],
     'transactions' => ['/api/transaction', Permission::TRANSACTIONS_VIEW],
+]);
+
+it('never gives employees without a role the stays permissions', function () {
+    expect(Permission::employeeDefaults())
+        ->not->toContain(Permission::STAYS_VIEW)
+        ->not->toContain(Permission::STAYS_CHECK_IN)
+        ->not->toContain(Permission::STAYS_CHECK_OUT);
+});
+
+it('lets an employee check guests in and out only when their role grants it', function (string $action, string $scope) {
+    [$hotel, $type, [$room]] = fdHotel();
+    $reservation = fdBook($hotel, $type, [$room->id]);
+    [$stay] = fdStays($reservation);
+
+    if ($action === 'check-out') {
+        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    }
+
+    $permission = $action === 'check-in' ? Permission::STAYS_CHECK_IN : Permission::STAYS_CHECK_OUT;
+    $uri = $scope === 'room' ? "/api/stays/{$stay->id}/{$action}" : "/api/reservation/{$reservation->id}/{$action}";
+
+    fdPost($this, fdEmployee($hotel, Permission::employeeDefaults()), $uri)->assertForbidden();
+    fdPost($this, fdEmployee($hotel, [$permission]), $uri)->assertOk();
+})->with([
+    'check-in a room' => ['check-in', 'room'],
+    'check-in a reservation' => ['check-in', 'reservation'],
+    'check-out a room' => ['check-out', 'room'],
+    'check-out a reservation' => ['check-out', 'reservation'],
 ]);
 
 it('replaces the defaults with the role instead of adding to them', function () {

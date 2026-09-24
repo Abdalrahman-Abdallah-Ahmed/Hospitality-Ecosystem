@@ -19,6 +19,7 @@ class TaskResource extends JsonResource
             'hotel_id' => $this->hotel_id,
             'room_id' => $this->room_id,
             'reservation_id' => $this->reservation_id,
+            'stay_id' => $this->stay_id,
             'guest_id' => $this->guest_id,
             'assigned_to_team_id' => $this->assigned_to_team_id,
             'assigned_to_user_id' => $this->assigned_to_user_id,

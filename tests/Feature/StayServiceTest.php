@@ -13,6 +13,7 @@ use App\Support\Reservations\ReservationCreator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -55,9 +56,9 @@ it('creates exactly one stay per reservation, even when synced repeatedly', func
     // Simulates the same reservation being synced multiple times — e.g. a
     // repeat import restoring a soft-deleted reservation, or the update
     // endpoint being called more than once for the same row.
-    ReservationCreator::syncStay($reservation);
-    ReservationCreator::syncStay($reservation);
-    ReservationCreator::syncStay($reservation);
+    ReservationCreator::syncStays($reservation);
+    ReservationCreator::syncStays($reservation);
+    ReservationCreator::syncStays($reservation);
 
     expect(Stay::where('reservation_id', $reservation->id)->count())->toBe(1);
 });
@@ -101,7 +102,7 @@ it('does not mark a merely pending reservation as a no-show', function () {
     expect(Stay::where('reservation_id', $reservation->id)->first()->status)->toBe(StayStatus::EXPECTED);
 });
 
-it('reverts a checked-in stay back to expected, clearing the stale check-in, when its reservation reverts to pending', function () {
+it('refuses to move a checked-in reservation back to pending, keeping the stay in the house', function () {
     $hotel = stayTestHotel();
     $guest = stayTestGuest($hotel);
 
@@ -114,13 +115,15 @@ it('reverts a checked-in stay back to expected, clearing the stale check-in, whe
         'status' => ReservationStatus::CHECKED_IN->value,
     ], [['room_type_id' => bookableTypeIdFor($hotel)]]);
 
-    $reservation->update(['status' => ReservationStatus::PENDING->value]);
-    ReservationCreator::syncStay($reservation);
+    // Undoing a check-in is out of scope (spec clarification Q3): the guest
+    // is checked out, not un-checked-in by editing the reservation.
+    expect(fn () => ReservationCreator::update($reservation, ['status' => ReservationStatus::PENDING->value], null))
+        ->toThrow(ValidationException::class);
 
     $stay = Stay::where('reservation_id', $reservation->id)->first();
 
-    expect($stay->status)->toBe(StayStatus::EXPECTED);
-    expect($stay->checked_in_at)->toBeNull();
+    expect($stay->status)->toBe(StayStatus::IN_HOUSE);
+    expect($stay->checked_in_at)->not->toBeNull();
 });
 
 it('counts a departure-day guest as not occupying that night', function () {
@@ -223,10 +226,10 @@ it('marks a stay cancelled when its reservation is cancelled', function () {
         'status' => ReservationStatus::CONFIRMED->value,
     ]);
 
-    ReservationCreator::syncStay($reservation);
+    ReservationCreator::syncStays($reservation);
 
     $reservation->update(['status' => ReservationStatus::CANCELLED->value]);
-    ReservationCreator::syncStay($reservation);
+    ReservationCreator::syncStays($reservation);
 
     expect(Stay::where('reservation_id', $reservation->id)->first()->status)->toBe(StayStatus::CANCELLED);
 });

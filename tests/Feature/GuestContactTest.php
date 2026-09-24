@@ -67,7 +67,7 @@ function contactStay(Guest $guest, string $arrival, string $departure): Stay
         'status' => 'confirmed',
     ]);
 
-    return app(StayService::class)->syncFromReservation($reservation);
+    return app(StayService::class)->syncForReservation($reservation)->first();
 }
 
 /**

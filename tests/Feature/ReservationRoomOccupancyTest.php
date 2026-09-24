@@ -15,6 +15,11 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
+
+    // The bookings below run 1–4 September 2026. Checking in through the
+    // reservation status now follows the check-in rules (FR-020), so the
+    // tests run on a day inside that stay.
+    $this->travelTo('2026-09-02 12:00:00');
 });
 
 it('does not occupy the room for a merely confirmed reservation, only once the guest actually checks in', function () {
@@ -90,7 +95,7 @@ it('frees the room back to available once the guest checks out', function () {
     expect($room->fresh()->status)->toBe('available');
 });
 
-it('frees the room back to available when a checked-in reservation is cancelled', function () {
+it('refuses to cancel a checked-in reservation, and frees the room once the guest is checked out and it is cancelled', function () {
     [$admin, $hotel] = adminWithHotel();
     $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
@@ -108,8 +113,16 @@ it('frees the room back to available when a checked-in reservation is cancelled'
 
     $reservationId = $response->json('body.id');
 
+    // FR-021: a guest in the house must be checked out first.
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->putJson("/api/reservation/{$reservationId}", ['status' => 'cancelled'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['status' => 'Check out the in-house rooms first.']);
+
+    expect($room->fresh()->status)->toBe('occupied');
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson("/api/reservation/{$reservationId}/check-out")
         ->assertOk();
 
     expect($room->fresh()->status)->toBe('available');
@@ -229,12 +242,16 @@ it('occupies every room of a checked-in multi-room reservation', function () {
     }
 });
 
-it('releases every room when a multi-room reservation is cancelled', function () {
+it('releases every room when a multi-room reservation is checked out', function () {
     [$admin, $hotel] = adminWithHotel();
     [$id, $rooms] = checkedInThreeRooms($this, $admin, $hotel);
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->putJson("/api/reservation/{$id}", ['status' => 'cancelled'])
+        ->assertUnprocessable();
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson("/api/reservation/{$id}/check-out")
         ->assertOk();
 
     foreach ($rooms as $room) {
