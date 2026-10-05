@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\HousekeepingStatusesEnum;
+use App\Enums\RoomStatusesEnum;
 use App\Http\Requests\Generic\GenericIndexRequest;
-use App\Http\Requests\Generic\GenericStoreRequest;
-use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Requests\StoreRoomRequest;
+use App\Http\Requests\UpdateRoomRequest;
 use App\Http\Resources\RoomResource;
 use App\Http\Resources\RoomTypeResource;
+use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomType;
 use App\Support\RequestRules\GenericQuery;
@@ -23,6 +26,10 @@ class RoomController extends Controller
         $query = Room::query()->with('roomType');
 
         $rooms = GenericQuery::apply($query, $request);
+
+        // One read of each hotel for the whole page, for readiness.
+        $hotels = Hotel::whereIn('id', collect($rooms->items())->pluck('hotel_id')->unique())->get()->keyBy('id');
+        collect($rooms->items())->each(fn (Room $room) => $room->readinessHotel = $hotels->get($room->hotel_id));
         // The hotel scope limits this to the caller's hotel; a super admin gets
         // every hotel's types and picks by hotel_id.
         $roomTypes = RoomType::query()->orderBy('name')->get();
@@ -37,7 +44,7 @@ class RoomController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(GenericStoreRequest $request)
+    public function store(StoreRoomRequest $request)
     {
         $this->authorize('create', Room::class);
 
@@ -57,9 +64,16 @@ class RoomController extends Controller
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
         }
 
-        $room = Room::create([...$validated, 'hotel_id' => $hotel->id]);
+        // A new room is available and clean; status and housekeeping status
+        // have their own actions (research R2).
+        $room = Room::create([
+            ...$validated,
+            'hotel_id' => $hotel->id,
+            'status' => RoomStatusesEnum::AVAILABLE,
+            'housekeeping_status' => HousekeepingStatusesEnum::CLEAN,
+        ]);
 
-        return apiResponse('Room created successfully.', 201, RoomResource::make($room->load('roomType')));
+        return apiResponse('Room created successfully.', 201, RoomResource::make($room->load('roomType')->withReadiness()));
     }
 
     /**
@@ -69,13 +83,13 @@ class RoomController extends Controller
     {
         $this->authorize('view', $room);
 
-        return apiResponse('Room fetched successfully.', 200, RoomResource::make($room->load('roomType')));
+        return apiResponse('Room fetched successfully.', 200, RoomResource::make($room->load('roomType')->withReadiness()));
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(GenericUpdateRequest $request, Room $room)
+    public function update(UpdateRoomRequest $request, Room $room)
     {
         $this->authorize('update', $room);
 
@@ -92,7 +106,7 @@ class RoomController extends Controller
 
         $room->update($validated);
 
-        return apiResponse('Room updated successfully.', 200, RoomResource::make($room->load('roomType')));
+        return apiResponse('Room updated successfully.', 200, RoomResource::make($room->load('roomType')->withReadiness()));
     }
 
     /**

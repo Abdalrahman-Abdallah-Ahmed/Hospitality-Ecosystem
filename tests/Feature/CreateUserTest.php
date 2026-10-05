@@ -55,7 +55,7 @@ function teamForUsers(Hotel $hotel, array $overrides = []): Team
 {
     return Team::create(array_merge([
         'hotel_id' => $hotel->id,
-        'name' => 'Housekeeping',
+        'name' => 'Front Office',
     ], $overrides));
 }
 

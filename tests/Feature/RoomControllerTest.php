@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\HousekeepingStatusesEnum;
+use App\Enums\RoomStatusesEnum;
 use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\Room;
@@ -87,12 +88,16 @@ it('creates a room for the admin hotel with valid data', function () {
             'room_number' => '201',
             'room_type_id' => roomTypeIdFor($hotel),
             'floor' => '2',
-            'status' => 'available',
+            'building' => 'Garden Wing',
         ]);
 
     $response->assertStatus(201)
         ->assertJsonPath('body.hotel_id', $hotel->id)
-        ->assertJsonPath('body.room_number', '201');
+        ->assertJsonPath('body.room_number', '201')
+        ->assertJsonPath('body.building', 'Garden Wing')
+        ->assertJsonPath('body.status', 'available')
+        ->assertJsonPath('body.housekeeping_status', 'clean')
+        ->assertJsonPath('body.ready', true);
     expect(Room::where('room_number', '201')->where('hotel_id', $hotel->id)->exists())->toBeTrue();
 });
 
@@ -200,10 +205,10 @@ it('lets an admin partially update a room belonging to their own hotel', functio
 
     $response = $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
         ->putJson("/api/room/{$room->id}", [
-            'status' => 'maintenance',
+            'floor' => '3',
         ]);
 
-    $response->assertOk()->assertJsonPath('body.status', 'maintenance');
+    $response->assertOk()->assertJsonPath('body.floor', '3');
     expect($room->fresh()->room_number)->toBe('101');
 });
 
@@ -213,10 +218,10 @@ it('rejects an admin updating a room belonging to a different hotel', function (
     $room = roomFor($otherHotel);
 
     $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/room/{$room->id}", ['status' => 'maintenance'])
+        ->putJson("/api/room/{$room->id}", ['floor' => '9'])
         ->assertStatus(403);
 
-    expect($room->fresh()->status)->toBe('available');
+    expect($room->fresh()->floor)->not->toBe('9');
 });
 
 it('rejects an unknown hotel_id when updating a room', function () {
@@ -289,9 +294,9 @@ it('lets a super admin update a room belonging to any hotel', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
     $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/room/{$room->id}", ['status' => 'maintenance'])
+        ->putJson("/api/room/{$room->id}", ['floor' => '7'])
         ->assertOk()
-        ->assertJsonPath('body.status', 'maintenance');
+        ->assertJsonPath('body.floor', '7');
 });
 
 it('lets a super admin delete a room belonging to any hotel', function () {
@@ -325,37 +330,35 @@ it('defaults a newly created room to clean', function () {
         ->toBe(HousekeepingStatusesEnum::CLEAN);
 });
 
-it('lets an admin flag a room as dirty or blocked', function () {
+it('rejects room and housekeeping status on the room edit, naming the actions that set them', function (array $payload, string $field, string $names) {
     [$admin, $hotel] = adminWithOwnHotel();
     $room = roomFor($hotel);
 
     $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/room/{$room->id}", ['housekeeping_status' => 'dirty'])
-        ->assertOk()
-        ->assertJsonPath('body.housekeeping_status', 'dirty');
-
-    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/room/{$room->id}", ['housekeeping_status' => 'blocked'])
-        ->assertOk();
-
-    expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::BLOCKED);
-});
-
-it('rejects a housekeeping status outside the allowed set', function () {
-    [$admin, $hotel] = adminWithOwnHotel();
-    $room = roomFor($hotel);
-
-    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/room/{$room->id}", ['housekeeping_status' => 'sparkling'])
+        ->putJson("/api/room/{$room->id}", $payload)
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['housekeeping_status']);
-});
+        ->assertJsonValidationErrors([$field])
+        ->assertJsonPath("errors.{$field}.0", fn (string $message) => str_contains($message, $names));
+
+    $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/room', ['hotel_id' => $hotel->id, 'room_number' => '909', 'room_type_id' => roomTypeIdFor($hotel), ...$payload])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors([$field]);
+
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
+        ->and($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEAN);
+})->with([
+    'old maintenance status' => [['status' => 'maintenance'], 'status', '/out-of-order'],
+    'new out_of_order status' => [['status' => 'out_of_order'], 'status', '/out-of-order'],
+    'old blocked status' => [['housekeeping_status' => 'blocked'], 'housekeeping_status', '/housekeeping-status'],
+    'dirty' => [['housekeeping_status' => 'dirty'], 'housekeeping_status', '/housekeeping-status'],
+]);
 
 it('filters the room list by housekeeping status', function () {
     [$admin, $hotel] = adminWithOwnHotel();
     roomFor($hotel, ['room_number' => '101']);
     roomFor($hotel, ['room_number' => '102', 'housekeeping_status' => 'dirty']);
-    roomFor($hotel, ['room_number' => '103', 'housekeeping_status' => 'blocked']);
+    roomFor($hotel, ['room_number' => '103', 'housekeeping_status' => 'inspected']);
 
     $response = $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/room?filter[housekeeping_status]=dirty')

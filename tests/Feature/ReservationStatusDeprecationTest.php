@@ -2,6 +2,7 @@
 
 use App\Ai\Tools\CreateReservationTool;
 use App\Enums\Permission;
+use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Models\Guest;
 use App\Models\Reservation;
@@ -156,8 +157,8 @@ it('moves an in-house guest to another room and leaves the old one dirty', funct
     putReservation($this, $hotel->owner, $reservation, ['rooms' => [['id' => $stay->reservation_room_id, 'room_id' => $b->id]]])->assertOk();
 
     expect($stay->fresh()->room_id)->toBe($b->id)
-        ->and($b->fresh()->status)->toBe('occupied')
-        ->and($a->fresh()->status)->toBe('available')
+        ->and($b->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED)
+        ->and($a->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
         ->and($a->fresh()->housekeeping_status->value)->toBe('dirty');
 });
 

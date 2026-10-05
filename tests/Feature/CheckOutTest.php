@@ -3,6 +3,7 @@
 use App\Enums\CreatedBy;
 use App\Enums\Permission;
 use App\Enums\Priority;
+use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
 use App\Models\EventLog;
@@ -57,7 +58,7 @@ function inHouseStay($test, int $daysAgo = 1, int $nightsLeft = 1): array
 /**
  * @return array{0: Team, 1: TaskCategory}
  */
-function housekeepingDefaults(Hotel $hotel, string $teamName = 'Housekeeping'): array
+function housekeepingDefaults(Hotel $hotel, string $teamName = 'Rooms Division'): array
 {
     $team = Team::create(['hotel_id' => $hotel->id, 'name' => $teamName, 'is_active' => true]);
     $category = TaskCategory::create(['hotel_id' => $hotel->id, 'team_id' => $team->id, 'name' => 'تنظيف']);
@@ -77,7 +78,7 @@ it('checks a guest out: stay departed with actual nights, room free and dirty, r
     $stay->refresh();
     expect($stay->status)->toBe(StayStatus::DEPARTED)
         ->and($stay->nights)->toBe(2)
-        ->and($room->fresh()->status)->toBe('available')
+        ->and($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
         ->and($room->fresh()->housekeeping_status->value)->toBe('dirty')
         ->and(EventLog::where('event_type', 'stay.checked_out')->where('subject_id', $stay->id)->sole()->actor_id)->toBe($hotel->owner->id)
         ->and(Transaction::withoutGlobalScope('hotel')->count())->toBe(0);
@@ -106,6 +107,8 @@ it('still checks out and leaves the cleaning task unassigned when no team is set
     if ($setThenDeactivate) {
         [$team] = housekeepingDefaults($hotel);
         $team->update(['is_active' => false]);
+    } else {
+        $hotel->update(['housekeeping_team_id' => null, 'cleaning_task_category_id' => null]);
     }
 
     fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
@@ -159,22 +162,13 @@ it('does nothing the second time: no second task, no second audit row', function
 
 it('keeps an out-of-order room out of order, marks it dirty and still creates the task', function () {
     [$hotel, $stay, $room] = inHouseStay($this);
-    Room::withoutGlobalScope('hotel')->whereKey($room->id)->update(['status' => 'maintenance']);
+    Room::withoutGlobalScope('hotel')->whereKey($room->id)->update(['status' => 'out_of_order', 'out_of_order_reason' => 'Leak']);
 
     fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
 
-    expect($room->fresh()->status)->toBe('maintenance')
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::OUT_OF_ORDER)
         ->and($room->fresh()->housekeeping_status->value)->toBe('dirty')
         ->and(Task::withoutGlobalScope('hotel')->count())->toBe(1);
-});
-
-it('leaves a blocked room blocked', function () {
-    [$hotel, $stay, $room] = inHouseStay($this);
-    Room::withoutGlobalScope('hotel')->whereKey($room->id)->update(['housekeeping_status' => 'blocked']);
-
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
-
-    expect($room->fresh()->housekeeping_status->value)->toBe('blocked');
 });
 
 it('records an earlier actual time from today, with the entry time on the same audit row', function () {
@@ -206,10 +200,10 @@ it('refuses a check-out time from yesterday, the future, or before the check-in'
 it('lets an admin choose the housekeeping team and cleaning category, and checks them', function () {
     [$hotel] = fdHotel();
     [$otherHotel] = fdHotel();
-    $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Housekeeping', 'is_active' => true]);
+    $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Rooms Division', 'is_active' => true]);
     $category = TaskCategory::create(['hotel_id' => $hotel->id, 'team_id' => $team->id, 'name' => 'Cleaning']);
     $inactive = Team::create(['hotel_id' => $hotel->id, 'name' => 'Old', 'is_active' => false]);
-    $otherTeam = Team::create(['hotel_id' => $hotel->id, 'name' => 'Maintenance', 'is_active' => true]);
+    $otherTeam = Team::create(['hotel_id' => $hotel->id, 'name' => 'Engineering', 'is_active' => true]);
     $foreignTeam = Team::create(['hotel_id' => $otherHotel->id, 'name' => 'Theirs', 'is_active' => true]);
     $put = fn ($user, array $payload) => $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->putJson("/api/hotel/{$hotel->id}", $payload);
 

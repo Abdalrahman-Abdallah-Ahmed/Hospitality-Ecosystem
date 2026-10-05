@@ -34,7 +34,12 @@ class HotelController extends Controller
     public function store(GenericStoreRequest $request)
     {
         $this->authorize('create', Hotel::class);
-        $validated = $request->validated();
+        // A hotel that doesn't exist yet owns no teams; its defaults are
+        // created with it (HotelOperationalDefaults).
+        $validated = unsetAttributes($request->validated(), [
+            'housekeeping_team_id', 'cleaning_task_category_id', 'inspection_task_category_id',
+            'maintenance_team_id', 'maintenance_task_category_id',
+        ]);
 
         $trashed = Hotel::onlyTrashed()->where('slug', $validated['slug'])->first();
 
@@ -71,10 +76,16 @@ class HotelController extends Controller
     {
         $this->authorize('update', $hotel);
 
-        $validated = $request->validated();
+        $validated = $this->withoutStrandedCategories($hotel, $request->validated());
 
         if ($error = $this->invalidHousekeepingDefaults($hotel, $validated)) {
             return $error;
+        }
+
+        // Turning inspection on starts the clock: rooms cleaned before then
+        // still count as ready (FR-006).
+        if (($validated['inspection_required'] ?? false) && ! $hotel->inspection_required) {
+            $hotel->forceFill(['inspection_required_since' => now()]);
         }
 
         $hotel->update($validated);
@@ -83,31 +94,91 @@ class HotelController extends Controller
     }
 
     /**
-     * The cleaning-task defaults (FR-013) must be this hotel's own team and
-     * category, the team must be active, and the category must belong to it.
+     * Choosing another housekeeping or maintenance team without also choosing
+     * its inspection or maintenance category clears the one left behind in
+     * the old team, rather than refusing the change. The cleaning category
+     * keeps its stricter rule (it must be chosen with the team, FR-013), and
+     * a category sent with the request is always checked.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function withoutStrandedCategories(Hotel $hotel, array $validated): array
+    {
+        $dependents = [
+            'housekeeping_team_id' => ['inspection_task_category_id'],
+            'maintenance_team_id' => ['maintenance_task_category_id'],
+        ];
+
+        foreach ($dependents as $teamField => $categoryFields) {
+            if (! array_key_exists($teamField, $validated) || $validated[$teamField] === $hotel->{$teamField}) {
+                continue;
+            }
+
+            foreach ($categoryFields as $categoryField) {
+                $current = $hotel->{$categoryField};
+
+                if (! array_key_exists($categoryField, $validated) && $current
+                    && TaskCategory::withoutGlobalScope('hotel')->whereKey($current)->value('team_id') !== $validated[$teamField]) {
+                    $validated[$categoryField] = null;
+                }
+            }
+        }
+
+        return $validated;
+    }
+
+    /**
+     * The operational defaults must be this hotel's own teams and categories
+     * (R8): each team active, the cleaning and inspection categories in the
+     * housekeeping team, the maintenance category in the maintenance team.
      * Checked against the values the hotel will have after the update.
      */
     private function invalidHousekeepingDefaults(Hotel $hotel, array $validated): ?JsonResponse
     {
-        if (! array_key_exists('housekeeping_team_id', $validated) && ! array_key_exists('cleaning_task_category_id', $validated)) {
+        $fields = [
+            'housekeeping_team_id', 'cleaning_task_category_id', 'inspection_task_category_id',
+            'maintenance_team_id', 'maintenance_task_category_id',
+        ];
+
+        if (array_intersect($fields, array_keys($validated)) === []) {
             return null;
         }
 
-        $teamId = array_key_exists('housekeeping_team_id', $validated) ? $validated['housekeeping_team_id'] : $hotel->housekeeping_team_id;
-        $categoryId = array_key_exists('cleaning_task_category_id', $validated) ? $validated['cleaning_task_category_id'] : $hotel->cleaning_task_category_id;
+        $after = fn (string $field) => array_key_exists($field, $validated) ? $validated[$field] : $hotel->{$field};
 
-        if ($invalid = invalidRelation($hotel, ['teams' => $teamId, 'taskCategories' => $categoryId])) {
-            return apiResponse("The selected {$invalid} does not belong to you.", 403);
+        foreach (['housekeeping_team_id', 'maintenance_team_id'] as $field) {
+            if ($invalid = invalidRelation($hotel, ['teams' => $after($field)])) {
+                return apiResponse("The selected {$invalid} does not belong to you.", 403);
+            }
         }
 
-        $team = $teamId ? Team::withoutGlobalScope('hotel')->find($teamId) : null;
-
-        if ($team && ! $team->is_active) {
-            return apiResponse('The housekeeping team must be active.', 422);
+        foreach (['cleaning_task_category_id', 'inspection_task_category_id', 'maintenance_task_category_id'] as $field) {
+            if ($invalid = invalidRelation($hotel, ['taskCategories' => $after($field)])) {
+                return apiResponse("The selected {$invalid} does not belong to you.", 403);
+            }
         }
 
-        if ($categoryId && $teamId && TaskCategory::withoutGlobalScope('hotel')->whereKey($categoryId)->value('team_id') !== $teamId) {
-            return apiResponse('The cleaning task category must belong to the housekeeping team.', 422);
+        $rules = [
+            'housekeeping' => ['housekeeping_team_id', ['cleaning_task_category_id' => 'cleaning', 'inspection_task_category_id' => 'inspection']],
+            'maintenance' => ['maintenance_team_id', ['maintenance_task_category_id' => 'maintenance']],
+        ];
+
+        foreach ($rules as $teamName => [$teamField, $categories]) {
+            $teamId = $after($teamField);
+            $team = $teamId ? Team::withoutGlobalScope('hotel')->find($teamId) : null;
+
+            if ($team && ! $team->is_active) {
+                return apiResponse("The {$teamName} team must be active.", 422);
+            }
+
+            foreach ($categories as $categoryField => $label) {
+                $categoryId = $after($categoryField);
+
+                if ($categoryId && $teamId && TaskCategory::withoutGlobalScope('hotel')->whereKey($categoryId)->value('team_id') !== $teamId) {
+                    return apiResponse("The {$label} task category must belong to the {$teamName} team.", 422);
+                }
+            }
         }
 
         return null;

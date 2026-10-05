@@ -2,13 +2,9 @@
 
 namespace App\Services;
 
-use App\Enums\CreatedBy;
-use App\Enums\HousekeepingStatusesEnum;
-use App\Enums\Priority;
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\StayStatus;
-use App\Enums\TaskStatus;
 use App\Exceptions\CheckInOutException;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -16,9 +12,6 @@ use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
 use App\Models\Task;
-use App\Models\TaskCategory;
-use App\Models\Team;
-use App\Support\Housekeeping\HousekeepingDefaults;
 use App\Support\Reservations\ReservationCreator;
 use App\Support\Reservations\RoomAssignmentRules;
 use Carbon\CarbonImmutable;
@@ -41,6 +34,7 @@ class StayLifecycleService
 {
     public function __construct(
         private readonly StayService $stays,
+        private readonly HousekeepingService $housekeeping,
     ) {}
 
     /**
@@ -153,8 +147,8 @@ class StayLifecycleService
                 $this->withEnteredAt($stay, $at, fn () => $this->stays->checkIn($stay, $time));
                 ReservationCreator::syncRoomOccupancy([$room->id]);
 
-                if ($room->housekeeping_status !== HousekeepingStatusesEnum::CLEAN) {
-                    $warnings[] = ['stay_id' => $stay->id, 'message' => "Room {$room->room_number} is {$room->housekeeping_status->value}."];
+                if (! $this->housekeeping->isReady($room, $hotel)) {
+                    $warnings[] = ['stay_id' => $stay->id, 'message' => "Room {$room->room_number} is not ready ({$room->housekeeping_status->value})."];
                 }
             }
 
@@ -288,7 +282,6 @@ class StayLifecycleService
             }
 
             $rooms = $this->lockRooms($toCheckOut->pluck('room_id')->filter()->all());
-            $defaults = HousekeepingDefaults::for($hotel);
             $tasks = collect();
 
             foreach ($toCheckOut as $stay) {
@@ -303,11 +296,7 @@ class StayLifecycleService
                 ReservationCreator::syncRoomOccupancy([$room->id]);
                 $room->refresh();
 
-                if ($room->housekeeping_status !== HousekeepingStatusesEnum::BLOCKED) {
-                    $room->update(['housekeeping_status' => HousekeepingStatusesEnum::DIRTY]);
-                }
-
-                $tasks->push($this->cleaningTask($stay, $room, $defaults));
+                $tasks->push($this->housekeeping->roomVacated($room, $stay));
             }
 
             if (! $stays->contains(fn (Stay $stay) => $stay->fresh()->status === StayStatus::IN_HOUSE)) {
@@ -316,29 +305,6 @@ class StayLifecycleService
 
             return $this->checkOutResult($reservation, $stayIds === null ? $toCheckOut->values() : $targets->values(), $tasks);
         });
-    }
-
-    /**
-     * The turnover task for housekeeping (research R11). No notification yet:
-     * SPEC-030 adds housekeeping notifications with de-duplication.
-     *
-     * @param  array{team: ?Team, category: ?TaskCategory}  $defaults
-     */
-    private function cleaningTask(Stay $stay, Room $room, array $defaults): Task
-    {
-        return Task::create([
-            'hotel_id' => $stay->hotel_id,
-            'room_id' => $room->id,
-            'reservation_id' => $stay->reservation_id,
-            'stay_id' => $stay->id,
-            'guest_id' => $stay->guest_id,
-            'assigned_to_team_id' => $defaults['team']?->id,
-            'task_category_id' => $defaults['category']?->id,
-            'title' => "Clean room {$room->room_number} after check-out",
-            'created_by' => CreatedBy::SYSTEM,
-            'status' => TaskStatus::PENDING,
-            'priority' => Priority::NORMAL,
-        ]);
     }
 
     /**

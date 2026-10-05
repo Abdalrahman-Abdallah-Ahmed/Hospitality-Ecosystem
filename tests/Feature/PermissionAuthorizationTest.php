@@ -5,6 +5,7 @@ use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\StaffRole;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -147,6 +148,44 @@ it('lets an employee read a resource only when their role grants it', function (
     'tasks' => ['/api/task', Permission::TASKS_VIEW],
     'teams' => ['/api/team', Permission::TEAMS_VIEW],
     'transactions' => ['/api/transaction', Permission::TRANSACTIONS_VIEW],
+    'housekeeping board' => ['/api/housekeeping/board', Permission::ROOMS_VIEW],
+    'maintenance list' => ['/api/maintenance/tasks', Permission::TASKS_VIEW],
+]);
+
+it('never gives employees without a role the housekeeping or out-of-order permissions', function () {
+    expect(Permission::employeeDefaults())
+        ->not->toContain(Permission::ROOMS_UPDATE_HOUSEKEEPING_STATUS)
+        ->not->toContain(Permission::ROOMS_SET_OUT_OF_ORDER);
+});
+
+it('lets an employee run housekeeping and maintenance actions only when their role grants it', function (string $action, Permission $permission) {
+    [$hotel, $room, $cleaning] = hkVacatedRoom($this);
+    hkPut($this, $hotel->owner, "/api/hotel/{$hotel->id}", ['inspection_required' => true])->assertOk();
+    hkSetTaskStatus($this, $hotel->owner, $cleaning, 'completed')->assertOk();
+    $inspection = Task::where('housekeeping_kind', 'inspection')->sole();
+
+    $call = fn ($user) => match ($action) {
+        'housekeeping status' => hkPut($this, $user, "/api/room/{$room->id}/housekeeping-status", ['housekeeping_status' => 'dirty', 'reason' => 'Spill']),
+        'take out of order' => fdPost($this, $user, "/api/room/{$room->id}/out-of-order", ['reason' => 'Leak']),
+        'edit out of order' => hkPatch($this, $user, "/api/room/{$room->id}/out-of-order", ['reason' => 'Bigger leak']),
+        'return to service' => fdPost($this, $user, "/api/room/{$room->id}/return-to-service"),
+        'inspection' => fdPost($this, $user, "/api/task/{$inspection->id}/inspection", ['result' => 'pass']),
+        'report issue' => fdPost($this, $user, "/api/task/{$cleaning->id}/issues", ['description' => 'Leak']),
+    };
+
+    if (in_array($action, ['edit out of order', 'return to service'], true)) {
+        fdPost($this, $hotel->owner, "/api/room/{$room->id}/out-of-order", ['reason' => 'Leak'])->assertOk();
+    }
+
+    $call(fdEmployee($hotel, Permission::employeeDefaults()))->assertForbidden();
+    expect($call(fdEmployee($hotel, [$permission]))->status())->toBeIn([200, 201]);
+})->with([
+    'housekeeping status' => ['housekeeping status', Permission::ROOMS_UPDATE_HOUSEKEEPING_STATUS],
+    'take out of order' => ['take out of order', Permission::ROOMS_SET_OUT_OF_ORDER],
+    'edit out of order' => ['edit out of order', Permission::ROOMS_SET_OUT_OF_ORDER],
+    'return to service' => ['return to service', Permission::ROOMS_SET_OUT_OF_ORDER],
+    'inspection' => ['inspection', Permission::TASKS_UPDATE],
+    'report issue' => ['report issue', Permission::TASKS_UPDATE],
 ]);
 
 it('never gives employees without a role the stays permissions', function () {

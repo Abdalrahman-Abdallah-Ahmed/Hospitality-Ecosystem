@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Enums\TaskStatus;
 use App\Models\Task;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,6 +24,17 @@ class TaskAssignedNotification extends Notification implements ShouldQueue
     public function __construct(public Task $task)
     {
         $this->afterCommit();
+    }
+
+    /**
+     * A task finished or cancelled before the queue got to it needs no one
+     * (FR-028).
+     */
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        $status = $this->task->fresh()?->status;
+
+        return $status !== null && ! in_array($status, [TaskStatus::COMPLETED, TaskStatus::CANCELLED], true);
     }
 
     /**

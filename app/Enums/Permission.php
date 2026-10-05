@@ -66,6 +66,8 @@ enum Permission: string
     case ROOMS_CREATE = 'rooms.create';
     case ROOMS_UPDATE = 'rooms.update';
     case ROOMS_DELETE = 'rooms.delete';
+    case ROOMS_UPDATE_HOUSEKEEPING_STATUS = 'rooms.update_housekeeping_status';
+    case ROOMS_SET_OUT_OF_ORDER = 'rooms.set_out_of_order';
 
     case ROOM_TYPES_VIEW = 'room_types.view';
     case ROOM_TYPES_CREATE = 'room_types.create';
@@ -113,6 +115,8 @@ enum Permission: string
      * - Stays are never a default: the lists expose guest names, rooms and
      *   dates, and check-in/out change room status and occupancy, so a hotel
      *   grants them on purpose to its front-desk roles.
+     * - Correcting a room's housekeeping status and taking rooms out of order
+     *   are never defaults: both change which rooms can be sold.
      *
      * @return list<self>
      */

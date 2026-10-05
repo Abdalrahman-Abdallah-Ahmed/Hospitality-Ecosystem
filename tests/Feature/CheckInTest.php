@@ -2,6 +2,7 @@
 
 use App\Enums\ActorKind;
 use App\Enums\HousekeepingStatusesEnum;
+use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Models\EventLog;
 use App\Models\Room;
@@ -38,7 +39,7 @@ it('checks a guest into their assigned room', function () {
 
     expect($stay->fresh()->status)->toBe(StayStatus::IN_HOUSE)
         ->and($stay->fresh()->checked_in_at)->not->toBeNull()
-        ->and($room->fresh()->status)->toBe('occupied');
+        ->and($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 
     $audit = EventLog::where('event_type', 'stay.checked_in')->where('subject_id', $stay->id)->sole();
     expect($audit->actor_id)->toBe($hotel->owner->id)
@@ -118,8 +119,7 @@ it('refuses a room that is out of order', function (array $roomState) {
         ->assertUnprocessable()
         ->assertJsonValidationErrors(["stays.{$stay->id}.room" => "Room {$room->room_number} is out of order."]);
 })->with([
-    'maintenance status' => [['status' => 'maintenance']],
-    'blocked housekeeping' => [['housekeeping_status' => 'blocked']],
+    'out of order' => [['status' => 'out_of_order', 'out_of_order_reason' => 'Leak']],
 ]);
 
 it('refuses a room that another guest is in', function () {
@@ -202,7 +202,7 @@ it('checks in a room that is not clean, with a warning', function () {
     fdPost($this, $hotel->owner, checkInUri($stay))
         ->assertOk()
         ->assertJsonPath('body.warnings.0.stay_id', $stay->id)
-        ->assertJsonPath('body.warnings.0.message', "Room {$room->room_number} is dirty.");
+        ->assertJsonPath('body.warnings.0.message', "Room {$room->room_number} is not ready (dirty).");
 });
 
 it('records an earlier actual time from today, with the entry time on the same audit row', function () {

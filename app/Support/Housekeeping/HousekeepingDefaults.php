@@ -7,34 +7,55 @@ use App\Models\TaskCategory;
 use App\Models\Team;
 
 /**
- * Where a check-out's cleaning task goes: the team and task category the
- * hotel's admin chose (hotel settings). Read by id, never by name, so a team
- * named in any language works. A missing, deleted or inactive choice gives
+ * Where a hotel's automatic housekeeping and maintenance tasks go: the teams
+ * and task categories in its settings. Read by id, never by name, so teams
+ * named in any language work. A missing, deleted or inactive choice gives
  * null and the task is created without it (FR-013).
  *
- * SPEC-004: fills these hotel columns for every hotel when it creates the
- * default Housekeeping team and its categories.
+ * HotelOperationalDefaults fills these settings for every hotel.
  */
 class HousekeepingDefaults
 {
     /**
-     * @return array{team: ?Team, category: ?TaskCategory}
+     * @return array{
+     *     housekeepingTeam: ?Team,
+     *     cleaningCategory: ?TaskCategory,
+     *     inspectionCategory: ?TaskCategory,
+     *     maintenanceTeam: ?Team,
+     *     maintenanceCategory: ?TaskCategory,
+     * }
      */
     public static function for(Hotel $hotel): array
     {
-        $team = $hotel->housekeeping_team_id
-            ? Team::withoutGlobalScope('hotel')
-                ->where('hotel_id', $hotel->id)
-                ->where('is_active', true)
-                ->find($hotel->housekeeping_team_id)
-            : null;
+        return [
+            'housekeepingTeam' => self::team($hotel, $hotel->housekeeping_team_id),
+            'cleaningCategory' => self::category($hotel, $hotel->cleaning_task_category_id),
+            'inspectionCategory' => self::category($hotel, $hotel->inspection_task_category_id),
+            'maintenanceTeam' => self::team($hotel, $hotel->maintenance_team_id),
+            'maintenanceCategory' => self::category($hotel, $hotel->maintenance_task_category_id),
+        ];
+    }
 
-        $category = $hotel->cleaning_task_category_id
-            ? TaskCategory::withoutGlobalScope('hotel')
-                ->where('hotel_id', $hotel->id)
-                ->find($hotel->cleaning_task_category_id)
-            : null;
+    private static function team(Hotel $hotel, ?string $id): ?Team
+    {
+        if (! $id) {
+            return null;
+        }
 
-        return ['team' => $team, 'category' => $category];
+        return Team::withoutGlobalScope('hotel')
+            ->where('hotel_id', $hotel->id)
+            ->where('is_active', true)
+            ->find($id);
+    }
+
+    private static function category(Hotel $hotel, ?string $id): ?TaskCategory
+    {
+        if (! $id) {
+            return null;
+        }
+
+        return TaskCategory::withoutGlobalScope('hotel')
+            ->where('hotel_id', $hotel->id)
+            ->find($id);
     }
 }

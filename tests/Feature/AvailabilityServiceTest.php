@@ -51,7 +51,7 @@ it('takes out-of-order rooms and booked lines off the sellable count, night by n
     $hotel = avHotel();
     $deluxe = avType($hotel, 'Deluxe');
     avRooms($hotel, $deluxe, 4);
-    avRooms($hotel, $deluxe, 1, 'maintenance');
+    avRooms($hotel, $deluxe, 1, 'out_of_order');
     avBook($hotel, $deluxe, '2027-03-13', '2027-03-14', units: 2);
 
     $row = avRow(avService()->forHotel($hotel, '2027-03-12', '2027-03-15'), $deluxe);
@@ -66,7 +66,7 @@ it('counts an out-of-order room on future nights too', function () {
     $hotel = avHotel();
     $deluxe = avType($hotel, 'Deluxe');
     avRooms($hotel, $deluxe, 2);
-    avRooms($hotel, $deluxe, 1, 'maintenance');
+    avRooms($hotel, $deluxe, 1, 'out_of_order');
 
     $row = avRow(avService()->forHotel($hotel, '2028-01-01', '2028-01-03'), $deluxe);
 

@@ -32,6 +32,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Services\BookingService;
+use App\Services\HousekeepingService;
 use App\Services\RecommendationOutcomeService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -483,4 +484,34 @@ it('never shows or lets anyone act on another hotel\'s stays', function () {
         ->and((string) $tools[1]->handle(new ToolRequest(['reservation_id' => $reservationB->reservation_id])))->toBe('This hotel has no reservation with that code.');
 
     expect($stayB->fresh()->status->value)->toBe('expected');
+});
+
+it('keeps one hotel out of another hotel housekeeping and maintenance (FR-034)', function () {
+    [$hotelA, $roomA, $cleaningA] = hkVacatedRoom($this);
+    [$hotelB, $roomB, $cleaningB] = hkVacatedRoom($this);
+    $adminA = $hotelA->owner;
+
+    // Another hotel's room or task cannot be acted on.
+    hkPut($this, $adminA, "/api/room/{$roomB->id}/housekeeping-status", ['housekeeping_status' => 'clean', 'reason' => 'x'])->assertForbidden();
+    fdPost($this, $adminA, "/api/room/{$roomB->id}/out-of-order", ['reason' => 'x'])->assertForbidden();
+    hkPatch($this, $adminA, "/api/room/{$roomB->id}/out-of-order", ['reason' => 'x'])->assertForbidden();
+    fdPost($this, $adminA, "/api/room/{$roomB->id}/return-to-service")->assertForbidden();
+    fdPost($this, $adminA, "/api/task/{$cleaningB->id}/inspection", ['result' => 'pass'])->assertForbidden();
+    fdPost($this, $adminA, "/api/task/{$cleaningB->id}/issues", ['description' => 'x'])->assertForbidden();
+    fdPost($this, $adminA, "/api/room/{$roomA->id}/out-of-order", ['reason' => 'x', 'task_id' => $cleaningB->id])->assertForbidden();
+
+    // Lists show only the caller's own hotel.
+    fdPost($this, $hotelB->owner, "/api/task/{$cleaningB->id}/issues", ['description' => 'Their leak'])->assertCreated();
+    $board = collect(fdGet($this, $adminA, '/api/housekeeping/board')->assertOk()->json('body.rooms'))->pluck('room.id');
+    $maintenance = collect(fdGet($this, $adminA, '/api/maintenance/tasks')->assertOk()->json('body.data'))->pluck('room.id');
+    expect($board)->toContain($roomA->id)->not->toContain($roomB->id)
+        ->and($maintenance)->not->toContain($roomB->id);
+
+    // Settings cannot point at another hotel's teams.
+    hkPut($this, $adminA, "/api/hotel/{$hotelA->id}", ['maintenance_team_id' => $hotelB->maintenance_team_id])->assertForbidden();
+
+    // Start of day for one hotel never touches another.
+    app(HousekeepingService::class)->startDay($hotelA, now()->toDateString());
+    expect($roomB->fresh()->housekeeping_status->value)->toBe('dirty')
+        ->and(Task::withoutGlobalScope('hotel')->where('room_id', $roomB->id)->count())->toBe(2);
 });

@@ -1,9 +1,9 @@
 <?php
 
 use App\Jobs\AiCost\FlagAiCostOverrunsJob;
-use App\Jobs\MakeRoomDirtyOvernightJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
+use App\Jobs\StartHousekeepingDayJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -21,7 +21,10 @@ Schedule::job(new MatchRecommendationOutcomesJob)->dailyAt('03:30');
 // catches drift, and it logs any it finds rather than quietly correcting it.
 Schedule::job(new RebuildUsageCountersJob)->dailyAt('04:00');
 
-Schedule::job(new MakeRoomDirtyOvernightJob)->dailyAt('00:01');
+// Starts each hotel's housekeeping day: stay-over rooms become dirty with one
+// cleaning task each. Hourly, so every time zone gets its own local date; the
+// job runs once per hotel and date however often it fires.
+Schedule::job(new StartHousekeepingDayJob)->hourly();
 
 // Flags accounts whose AI cost has passed a configured share of what they
 // pay. Alert only — it never throttles: a thin margin is a commercial

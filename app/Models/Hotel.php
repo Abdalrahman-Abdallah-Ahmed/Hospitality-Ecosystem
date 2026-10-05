@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
+use App\Support\Housekeeping\HotelOperationalDefaults;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -37,15 +38,22 @@ class Hotel extends Model
         'branding',
         'ai_preferences',
         'is_active',
-        // Where a check-out's cleaning task goes (FR-013). SPEC-004 fills them.
+        // Where automatic housekeeping and maintenance tasks go, read by id.
+        // HotelOperationalDefaults fills the empty ones for every hotel.
         'housekeeping_team_id',
         'cleaning_task_category_id',
+        'inspection_task_category_id',
+        'maintenance_team_id',
+        'maintenance_task_category_id',
+        'inspection_required',
     ];
 
     protected $casts = [
         'branding' => 'array',
         'ai_preferences' => 'array',
         'is_active' => 'boolean',
+        'inspection_required' => 'boolean',
+        'inspection_required_since' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -71,7 +79,13 @@ class Hotel extends Model
         // incremented. Incrementing would leave a property count that only
         // ever rises, surviving every hotel anyone deletes — which is exactly
         // what the recount on delete is here to prevent.
-        static::created(fn (self $hotel) => $hotel->recountSeats());
+        // Every hotel starts with Housekeeping and Maintenance teams and their
+        // categories (D7). DatabaseSeeder runs WithoutModelEvents, so seeders
+        // call HotelOperationalDefaults::ensure() themselves.
+        static::created(function (self $hotel): void {
+            $hotel->recountSeats();
+            HotelOperationalDefaults::ensure($hotel);
+        });
         static::deleted(fn (self $hotel) => $hotel->recountSeats());
 
         // A hotel can move between accounts — the single-property group above
@@ -174,6 +188,30 @@ class Hotel extends Model
     public function cleaningTaskCategory(): BelongsTo
     {
         return $this->belongsTo(TaskCategory::class, 'cleaning_task_category_id');
+    }
+
+    /**
+     * Where an inspection task is filed (SPEC-030).
+     */
+    public function inspectionTaskCategory(): BelongsTo
+    {
+        return $this->belongsTo(TaskCategory::class, 'inspection_task_category_id');
+    }
+
+    /**
+     * The team maintenance tasks and room issues go to (SPEC-033).
+     */
+    public function maintenanceTeam(): BelongsTo
+    {
+        return $this->belongsTo(Team::class, 'maintenance_team_id');
+    }
+
+    /**
+     * Where a maintenance task from a room issue is filed (SPEC-035).
+     */
+    public function maintenanceTaskCategory(): BelongsTo
+    {
+        return $this->belongsTo(TaskCategory::class, 'maintenance_task_category_id');
     }
 
     public function teams(): HasMany

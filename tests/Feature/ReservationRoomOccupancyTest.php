@@ -1,12 +1,14 @@
 <?php
 
 use App\Enums\HousekeepingStatusesEnum;
-use App\Jobs\MakeRoomDirtyOvernightJob;
+use App\Enums\RoomStatusesEnum;
+use App\Jobs\StartHousekeepingDayJob;
 use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
+use App\Services\HousekeepingService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -40,7 +42,7 @@ it('does not occupy the room for a merely confirmed reservation, only once the g
 
     // Booked ahead of arrival is not the same as physically occupying the
     // room — that's the whole distinction a Stay exists to capture.
-    expect($room->fresh()->status)->toBe('available');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE);
 });
 
 it('occupies the room once the reservation is updated to checked_in', function () {
@@ -65,7 +67,7 @@ it('occupies the room once the reservation is updated to checked_in', function (
         ->putJson("/api/reservation/{$reservationId}", ['status' => 'checked_in'])
         ->assertOk();
 
-    expect($room->fresh()->status)->toBe('occupied');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 });
 
 it('frees the room back to available once the guest checks out', function () {
@@ -85,14 +87,14 @@ it('frees the room back to available once the guest checks out', function () {
         ]);
 
     $reservationId = $response->json('body.id');
-    expect($room->fresh()->status)->toBe('occupied');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->putJson("/api/reservation/{$reservationId}", ['status' => 'checked_out'])
         ->assertOk();
 
     // Previously nothing ever freed the room back up automatically.
-    expect($room->fresh()->status)->toBe('available');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE);
 });
 
 it('refuses to cancel a checked-in reservation, and frees the room once the guest is checked out and it is cancelled', function () {
@@ -119,13 +121,13 @@ it('refuses to cancel a checked-in reservation, and frees the room once the gues
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['status' => 'Check out the in-house rooms first.']);
 
-    expect($room->fresh()->status)->toBe('occupied');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->postJson("/api/reservation/{$reservationId}/check-out")
         ->assertOk();
 
-    expect($room->fresh()->status)->toBe('available');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE);
 });
 
 it('keeps a room occupied when a future reservation is booked into it', function () {
@@ -157,7 +159,7 @@ it('keeps a room occupied when a future reservation is booked into it', function
         ])->assertCreated();
 
     // Booking the room for next week says nothing about who is in it tonight.
-    expect($room->fresh()->status)->toBe('occupied');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 });
 
 it('frees the old room and occupies the new one when a checked-in guest moves rooms', function () {
@@ -183,13 +185,13 @@ it('frees the old room and occupies the new one when a checked-in guest moves ro
         ->putJson("/api/reservation/{$reservationId}", ['rooms' => [['id' => $lineId, 'room_id' => $newRoom->id]]])
         ->assertOk();
 
-    expect($oldRoom->fresh()->status)->toBe('available')
-        ->and($newRoom->fresh()->status)->toBe('occupied');
+    expect($oldRoom->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
+        ->and($newRoom->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 });
 
 it('leaves a room under maintenance alone when a future reservation is booked into it', function () {
     [$admin, $hotel] = adminWithHotel();
-    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101', 'status' => 'maintenance']);
+    $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101', 'status' => 'out_of_order', 'out_of_order_reason' => 'Leak']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
@@ -203,7 +205,7 @@ it('leaves a room under maintenance alone when a future reservation is booked in
             'status' => 'confirmed',
         ])->assertCreated();
 
-    expect($room->fresh()->status)->toBe('maintenance');
+    expect($room->fresh()->status)->toBe(RoomStatusesEnum::OUT_OF_ORDER);
 });
 
 // Multi-room reservations
@@ -238,7 +240,7 @@ it('occupies every room of a checked-in multi-room reservation', function () {
     [, $rooms] = checkedInThreeRooms($this, $admin, $hotel);
 
     foreach ($rooms as $room) {
-        expect($room->fresh()->status)->toBe('occupied');
+        expect($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
     }
 });
 
@@ -255,7 +257,7 @@ it('releases every room when a multi-room reservation is checked out', function 
         ->assertOk();
 
     foreach ($rooms as $room) {
-        expect($room->fresh()->status)->toBe('available');
+        expect($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE);
     }
 });
 
@@ -263,7 +265,7 @@ it('dirties every room of a multi-room reservation overnight', function () {
     [$admin, $hotel] = adminWithHotel();
     [, $rooms] = checkedInThreeRooms($this, $admin, $hotel);
 
-    (new MakeRoomDirtyOvernightJob)->handle();
+    (new StartHousekeepingDayJob)->handle(app(HousekeepingService::class));
 
     foreach ($rooms as $room) {
         expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::DIRTY);

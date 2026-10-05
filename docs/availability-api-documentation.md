@@ -19,8 +19,10 @@ for, and nothing is stored.
   An unassigned line holds a unit just like a line with a physical room. A checked-in
   guest who stays past their departure date keeps holding tonight until checked out; a
   guest who is due out today does not, so tonight can be sold to the next arrival.
-- A room is **out of order** while its status is `maintenance`. It is taken out of every
-  night looked up, including future nights, until it returns to service.
+- A room is **out of order** while its status is `out_of_order` (2026-10-04; it was
+  `maintenance`). It is taken out of every night looked up, including future nights, until
+  it is returned to service — its `expected_end_date` is for staff only and is not used
+  here.
 - **Sellable** = rooms − out of order − booked, never below 0. **Overbooked** is how far
   booked goes past the rooms that can be used.
 

@@ -22,4 +22,18 @@ class RoomFactory extends Factory
             'housekeeping_status' => 'clean',
         ];
     }
+
+    public function outOfOrder(string $reason = 'Test'): static
+    {
+        return $this->state(fn () => [
+            'status' => 'out_of_order',
+            'out_of_order_reason' => $reason,
+            'out_of_order_since' => now(),
+        ]);
+    }
+
+    public function dirty(): static
+    {
+        return $this->state(fn () => ['housekeeping_status' => 'dirty']);
+    }
 }

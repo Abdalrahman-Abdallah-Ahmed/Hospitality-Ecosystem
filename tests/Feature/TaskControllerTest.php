@@ -51,7 +51,7 @@ function teamForTask(Hotel $hotel, array $overrides = []): Team
 {
     return Team::create(array_merge([
         'hotel_id' => $hotel->id,
-        'name' => 'Housekeeping',
+        'name' => 'Front Office',
     ], $overrides));
 }
 
@@ -146,7 +146,7 @@ it('creates a task when the task category belongs to the chosen team', function 
 
 it('rejects creating a task whose task category belongs to a different team', function () {
     [$admin, $hotel] = adminWithHotelForTasks();
-    $team = teamForTask($hotel, ['name' => 'Housekeeping']);
+    $team = teamForTask($hotel, ['name' => 'Front Office']);
     $otherTeam = teamForTask($hotel, ['name' => 'Front Desk']);
     $category = taskCategoryFor($hotel, $otherTeam);
 
@@ -245,7 +245,7 @@ it('allows updating a task category to one that belongs to the task current team
 
 it('rejects updating a task category to one that does not belong to the task current team', function () {
     [$admin, $hotel] = adminWithHotelForTasks();
-    $team = teamForTask($hotel, ['name' => 'Housekeeping']);
+    $team = teamForTask($hotel, ['name' => 'Front Office']);
     $otherTeam = teamForTask($hotel, ['name' => 'Front Desk']);
     $category = taskCategoryFor($hotel, $otherTeam);
     $task = taskFor($hotel, ['assigned_to_team_id' => $team->id]);
@@ -259,7 +259,7 @@ it('rejects updating a task category to one that does not belong to the task cur
 
 it('rejects reassigning a task to a team whose the existing task category does not belong to', function () {
     [$admin, $hotel] = adminWithHotelForTasks();
-    $team = teamForTask($hotel, ['name' => 'Housekeeping']);
+    $team = teamForTask($hotel, ['name' => 'Front Office']);
     $otherTeam = teamForTask($hotel, ['name' => 'Front Desk']);
     $category = taskCategoryFor($hotel, $team);
     $task = taskFor($hotel, ['assigned_to_team_id' => $team->id, 'task_category_id' => $category->id]);

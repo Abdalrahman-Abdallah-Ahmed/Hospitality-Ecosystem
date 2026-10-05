@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\User;
+use App\Support\Housekeeping\HotelOperationalDefaults;
 use Illuminate\Database\Seeder;
 
 class HospitalitySeeder extends Seeder
@@ -57,6 +58,10 @@ class HospitalitySeeder extends Seeder
             ],
             'is_active' => true,
         ]);
+
+        // Hotel's created hook (default teams and categories) does not fire
+        // under WithoutModelEvents either.
+        HotelOperationalDefaults::ensure($hotel);
 
         $user = $user->update([
             'hotel_id' => $hotel->id,

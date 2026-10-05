@@ -34,6 +34,13 @@ class TaskResource extends JsonResource
             'status' => $this->status,
             'priority' => $this->priority,
             'due_date' => $this->due_date,
+            // Read-only, set by housekeeping and maintenance (SPEC-030/035).
+            'housekeeping_kind' => $this->housekeeping_kind,
+            'cleaning_reason' => $this->cleaning_reason,
+            'inspection_result' => $this->inspection_result,
+            'inspection_note' => $this->inspection_note,
+            'source_task_id' => $this->source_task_id,
+            'completed_at' => $this->completed_at,
             'hotel' => HotelResource::make($this->whenLoaded('hotel')),
             'room' => RoomResource::make($this->whenLoaded('room')),
             'reservation' => ReservationResource::make($this->whenLoaded('reservation')),

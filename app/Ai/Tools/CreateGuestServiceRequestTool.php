@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Enums\CreatedBy;
 use App\Enums\GuestSignal;
+use App\Enums\HousekeepingKind;
 use App\Enums\Priority;
 use App\Enums\StayStatus;
 use App\Models\Guest;
@@ -13,8 +14,10 @@ use App\Models\Stay;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Services\CreationNotificationService;
+use App\Services\HousekeepingService;
 use App\Support\Pitching\PitchTurn;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -43,21 +46,53 @@ class CreateGuestServiceRequestTool implements Tool
     {
         $kind = $this->kind($request);
         $stay = $this->stayFor($request->string('room_number')->toString());
+        $roomId = $stay ? $stay->room_id : $this->fallbackRoomId();
+        $categoryId = $this->taskCategoryId($request);
+        $housekeeping = app(HousekeepingService::class);
 
         $task = Task::make([
             'hotel_id' => $this->hotel->id,
             'guest_id' => $this->guest->id,
             'reservation_id' => $this->reservation?->id,
             'stay_id' => $stay?->id,
-            'room_id' => $stay ? $stay->room_id : $this->fallbackRoomId(),
-            'task_category_id' => $this->taskCategoryId($request),
+            'room_id' => $roomId,
+            'task_category_id' => $categoryId,
+            // The category's team, so a housekeeping or maintenance request
+            // reaches that team (FR-015).
+            'assigned_to_team_id' => $categoryId ? TaskCategory::whereKey($categoryId)->value('team_id') : null,
             'title' => $request->string('title')->toString(),
             'description' => $request->string('description')->toString(),
             'created_by' => CreatedBy::GUEST,
             'priority' => $this->priority($request),
         ]);
         $task->guest_signal = $kind;
-        $task->save();
+
+        $isCleaning = $roomId && $housekeeping->kindFor($this->hotel, $categoryId) === HousekeepingKind::CLEANING;
+
+        // One open clean per room (FR-007): a guest asking for a clean that
+        // is already scheduled is told so instead of getting a second one.
+        // Checked under the room lock, so a clean the start-of-day job is
+        // creating at the same moment is seen rather than collided with.
+        $scheduled = DB::transaction(function () use ($task, $housekeeping, $isCleaning): ?Task {
+            $housekeeping->lockRooms([$task->room_id]);
+
+            $open = $isCleaning
+                ? Task::where('room_id', $task->room_id)->where('housekeeping_kind', HousekeepingKind::CLEANING)->open()->first()
+                : null;
+
+            if ($open) {
+                return $open;
+            }
+
+            $task->save();
+            $housekeeping->taskCreated($task);
+
+            return null;
+        });
+
+        if ($scheduled) {
+            return "A cleaning of this room is already scheduled (task id: {$scheduled->id}). Staff will take care of it.";
+        }
 
         // Something is needed or broken: nothing may be pitched in this reply.
         if ($kind === GuestSignal::SERVICE_REQUEST) {

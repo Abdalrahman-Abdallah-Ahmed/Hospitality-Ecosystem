@@ -5,6 +5,7 @@ namespace App\Ai\Tools;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
+use App\Exceptions\HousekeepingException;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\Task;
@@ -12,8 +13,10 @@ use App\Models\TaskCategory;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\CreationNotificationService;
+use App\Services\HousekeepingService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -47,11 +50,18 @@ class CreateTaskTool implements Tool
             return 'A task title is required.';
         }
 
-        $task = Task::create([
+        $categoryId = $this->belongingId($request, 'task_category_id', TaskCategory::class);
+        // No team named: the category's team (FR-015).
+        $teamId = $this->belongingId($request, 'assigned_to_team_id', Team::class)
+            ?? ($categoryId ? TaskCategory::whereKey($categoryId)->value('team_id') : null);
+        $housekeeping = app(HousekeepingService::class);
+        $roomId = $this->roomId($request);
+
+        $attributes = [
             'hotel_id' => $this->hotel->id,
-            'room_id' => $this->roomId($request),
-            'task_category_id' => $this->belongingId($request, 'task_category_id', TaskCategory::class),
-            'assigned_to_team_id' => $this->belongingId($request, 'assigned_to_team_id', Team::class),
+            'room_id' => $roomId,
+            'task_category_id' => $categoryId,
+            'assigned_to_team_id' => $teamId,
             'assigned_to_user_id' => $this->assignedUserId($request),
             'created_by_user_id' => $this->creator->getKey(),
             'title' => $title,
@@ -63,7 +73,19 @@ class CreateTaskTool implements Tool
             'status' => TaskStatus::PENDING,
             'priority' => $request->enum('priority', Priority::class, Priority::NORMAL),
             'due_date' => $request->filled('due_date') ? $request->string('due_date')->toString() : null,
-        ]);
+        ];
+
+        try {
+            $task = DB::transaction(function () use ($attributes, $housekeeping, $roomId): Task {
+                $housekeeping->lockRooms([$roomId]);
+                $task = Task::create($attributes);
+                $housekeeping->taskCreated($task);
+
+                return $task;
+            });
+        } catch (HousekeepingException $exception) {
+            return $exception->getMessage().' Nothing was created.';
+        }
 
         app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
 

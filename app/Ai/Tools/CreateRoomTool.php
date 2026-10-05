@@ -50,11 +50,13 @@ class CreateRoomTool implements Tool
             'room_number' => $roomNumber,
             'room_type_id' => $roomType->id,
             'floor' => $request->filled('floor') ? $request->integer('floor') : null,
-            'status' => $request->enum('status', RoomStatusesEnum::class, RoomStatusesEnum::AVAILABLE)->value,
+            // A new room is available and clean. Out of order has its own
+            // action (with a reason), so the tool does not set it.
+            'status' => RoomStatusesEnum::AVAILABLE,
             'housekeeping_status' => HousekeepingStatusesEnum::CLEAN,
         ]);
 
-        return "Room {$room->room_number} created (room id: {$room->id}), type {$roomType->name}, status {$room->status}.";
+        return "Room {$room->room_number} created (room id: {$room->id}), type {$roomType->name}, status {$room->status->value}.";
     }
 
     public function schema(JsonSchema $schema): array
@@ -70,10 +72,6 @@ class CreateRoomTool implements Tool
             'room_type' => $schema->string()
                 ->description('The room type name, ideally one of: '.(implode(', ', $roomTypeNames) ?: 'none yet').'. A new name creates that type; leave empty for the hotel\'s default type.'),
             'floor' => $schema->integer()->description('Which floor the room is on, if mentioned.'),
-            'status' => $schema->string()
-                ->enum(RoomStatusesEnum::class)
-                ->description('Availability status. Use maintenance only if the admin says the room is out of service.')
-                ->default(RoomStatusesEnum::AVAILABLE->value),
         ];
     }
 }

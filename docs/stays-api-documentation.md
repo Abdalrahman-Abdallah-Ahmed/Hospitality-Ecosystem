@@ -161,7 +161,7 @@ A room can be checked in when all of these hold:
 | Today (hotel time) is on or after the arrival date… | `stays.{id}.dates` | "Arrival is 2026-10-02." |
 | …and before the departure date | `stays.{id}.dates` | "The departure date has passed; correct the reservation dates first." |
 | A room is assigned, or named in the request | `stays.{id}.room` | "Assign or name a room first." |
-| The room is not out of order (`maintenance` status or `blocked` housekeeping) | `stays.{id}.room` | "Room 204 is out of order." |
+| The room is not out of order (`out_of_order` status) | `stays.{id}.room` | "Room 204 is out of order." |
 | No other guest is in the room | `stays.{id}.room` | "Room 204 is occupied." |
 
 **Naming a room.** For a line with no room assigned, `room_id` (or `rooms[]`) puts the
@@ -172,7 +172,7 @@ line's room type." or "The selected room is not available." (also for another ho
 room). A room cannot be swapped on a line that already has one: "This line already has
 room 203; reassign it first."
 
-**A room that is not clean** is still checked in, with a warning.
+**A room that is not ready** (not clean, or not yet inspected when the hotel requires inspection) is still checked in, with a warning.
 
 **An earlier time.** `checked_in_at` records a check-in entered late. It must be earlier
 today (hotel time), not in the future; otherwise `422` on `checked_in_at`. The audit row
@@ -190,7 +190,7 @@ the same room at the same moment get one check-in.
   "body": {
     "reservation": { "...": "ReservationResource", "status": "checked_in" },
     "stays": [ "stay objects" ],
-    "warnings": [ { "stay_id": "uuid", "message": "Room 204 is dirty." } ]
+    "warnings": [ { "stay_id": "uuid", "message": "Room 204 is not ready (dirty)." } ]
   }
 }
 ```
@@ -227,13 +227,15 @@ For each room:
 - The stay becomes `departed`, with `nights` counted by calendar date from check-in to
   check-out (hotel time). A guest who leaves early frees the rest of their nights for
   sale right away.
-- The room becomes `available` (a `maintenance` room stays `maintenance`) and its
-  housekeeping status `dirty` (a `blocked` room stays `blocked`).
-- One cleaning task: `created_by: system`, `status: pending`, `priority: normal`,
-  title "Clean room 204 after check-out", linked to the room, reservation, guest and
-  stay, assigned to the hotel's **housekeeping team** and filed under its **cleaning
-  category** (hotel settings, see below). Not set → the task is created unassigned. No
-  notification is sent yet (that comes with the housekeeping release).
+- The room becomes `available` (an `out_of_order` room stays `out_of_order`) and its
+  housekeeping status `dirty`.
+- One cleaning task (`cleaning_reason: check_out`): `created_by: system`,
+  `status: pending`, `priority: normal`, title "Clean room 204 after check-out", linked to
+  the room, reservation, guest and stay, assigned to the hotel's **housekeeping team** and
+  filed under its **cleaning category** (hotel settings, see below). If the room already
+  has an open stay-over cleaning task, that task is returned instead and becomes the
+  check-out clean. The Housekeeping team is emailed (see
+  [task-management-api-documentation.md](task-management-api-documentation.md#45-notifications)).
 
 The reservation becomes `checked_out` when none of its rooms is in the house any more.
 
@@ -264,10 +266,11 @@ row.
 
 ## Housekeeping defaults (hotel settings)
 
-`PUT /api/hotel/{hotel}` (admins) accepts `housekeeping_team_id` and
-`cleaning_task_category_id`. The team must be one of the hotel's active teams, and the
-category must belong to that team. They are chosen by id, so the team can be named in any
-language. See [hotel-api-documentation.md](hotel-api-documentation.md).
+Every hotel has a Housekeeping team and Cleaning category, set as its
+`housekeeping_team_id` and `cleaning_task_category_id`. `PUT /api/hotel/{hotel}` (admins)
+can change them: the team must be one of the hotel's active teams, and the category must
+belong to that team. They are chosen by id, so the team can be named in any language. See
+[hotel-api-documentation.md](hotel-api-documentation.md).
 
 ---
 

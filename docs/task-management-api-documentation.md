@@ -260,6 +260,12 @@ Hard delete. Tasks referencing this category have `task_category_id` set to `NUL
   "status": "pending",
   "priority": "normal",
   "due_date": null,
+  "housekeeping_kind": null,
+  "cleaning_reason": null,
+  "inspection_result": null,
+  "inspection_note": null,
+  "source_task_id": null,
+  "completed_at": null,
   "created_at": "2026-08-01T10:00:00.000000Z",
   "updated_at": "2026-08-01T10:00:00.000000Z",
   "deleted_at": null
@@ -272,6 +278,7 @@ Field notes:
 - `guest_signal` (read-only, *added 2026-09-19*) says why a guest-related task exists: `escalation` (the concierge handed the guest to a human), `service_request` (the guest needs something or something is broken), `booking_follow_up` (staff should help an interested guest book an activity), or `null` (a task not raised by the concierge). Only the WhatsApp concierge sets it; create and update ignore it. While a guest has an escalation this stay, or a `service_request` from the last 24 hours that is still `pending` or `in_progress`, the concierge does not suggest activities to them. Completing or cancelling a service request lifts that block. An escalation keeps it in place until the guest leaves, whatever the task's status.
 - `stay_id` (*added 2026-09-24*) links the task to one guest stay (one room of a reservation; see [stays-api-documentation.md](stays-api-documentation.md)). A check-out creates a cleaning task with it set, and the WhatsApp concierge sets it on a guest's request when it knows which room the guest is in.
 - `status` is a fixed enum: `pending`, `in_progress`, `completed`, `cancelled`. Defaults to `pending`.
+- Read-only housekeeping fields (*added 2026-10-04*, see [§4](#4-housekeeping-and-maintenance)): `housekeeping_kind` (`cleaning` / `inspection` / `null`), `cleaning_reason` (`check_out` / `stay_over` / `re_clean` / `return_to_service` / `manual`), `inspection_result` (`pass` / `fail`) and `inspection_note`, `source_task_id` (the housekeeping task a maintenance task was reported from) and `completed_at`. Create and update ignore them.
 - `priority` is a fixed enum: `low`, `normal`, `high`. Defaults to `normal`. A service request the WhatsApp concierge creates for a VIP guest (`guest.is_vip`) is always `high`.
 - Unlike `category` on hotel-policy or `status` on room, **these three fields are real, server-enforced enums** — sending any other string returns a `422`.
 - **Tasks use `SoftDeletes`** — `DELETE` sets `deleted_at`, it does not remove the row. (Teams and task categories do **not** soft-delete — only Task does.)
@@ -342,7 +349,9 @@ The intended flow, per product: **title + description → choose team → choose
 
 #### Team/Category Consistency Rule
 
-If `task_category_id` is present in the request, the backend checks it against whatever `assigned_to_team_id` you also sent (or `null`, if you didn't send one):
+**Team from category (2026-10-04):** if you send `task_category_id` without `assigned_to_team_id` (and the task has no team), the task is assigned to the category's team. A Maintenance category therefore reaches the Maintenance team without the client choosing both. This used to be a `403`.
+
+When you do send a team, the backend checks the category against it:
 
 - The category's own `team_id` must **exactly equal** the `assigned_to_team_id` you sent.
 - This means a category with `team_id: null` (a hotel-wide category, not scoped to any team) can only be used on a task that also has **no** `assigned_to_team_id`. Choosing a team on the task and a team-less category together is rejected.
@@ -366,7 +375,9 @@ The word plugged in is one of: `rooms`, `guests`, `reservations`, `stays`, `team
 
 Success: `201`, `body` is the created [task object](#the-task-object).
 
-**Email:** when `assigned_to_user_id` is set, that staff member is emailed about the new task. The email is queued, so it goes out shortly after the `201`. Tasks created by the AI agents also email the hotel's admins (see [AI Advisor Chat API](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md)); tasks created through this endpoint do not.
+**Email:** see [Notifications](#45-notifications). Tasks created by the AI agents also email the hotel's admins (see [AI Advisor Chat API](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md)); tasks created through this endpoint do not.
+
+**One open clean per room:** a task in the hotel's cleaning (or inspection) category for a room that already has an open one of that kind is refused with `422`, naming the open task.
 
 ### 3.3 Get a Task — `GET /api/task/{id}`
 
@@ -387,11 +398,83 @@ Same hotel-ownership and enum-value validation as create applies to whichever fi
 
 **`guest_id` on update is only re-derived when you send `reservation_id` in that same request.** If your `PUT` payload omits `reservation_id` entirely (e.g. you're only changing `status` or `priority`), the task's existing `guest_id` is left as-is — it isn't wiped to `null` just because you didn't resend the reservation. If you do send `reservation_id` (including explicitly sending `null` to detach it), `guest_id` is recalculated from it, same as on create.
 
-Success: `200`, `body` is the updated [task object](#the-task-object).
+Changing `status` on a cleaning task moves its room's housekeeping status ([§4.1](#41-cleaning-tasks-move-the-room)). Completing an **inspection** task here is refused (`422`) — use [the inspection action](#43-complete-an-inspection--post-apitaskidinspection).
+
+Success: `200`, `body` is the updated [task object](#the-task-object). When the completed task is the maintenance task tracking an out-of-order room, `body.room_ready_to_return` is `true`: the room stays out of order until someone calls `POST /api/room/{id}/return-to-service`.
 
 ### 3.5 Delete a Task — `DELETE /api/task/{id}`
 
 **Soft delete** (`deleted_at` is set). Success: `200`, `body: null`.
+
+---
+
+## 4. Housekeeping and Maintenance
+
+*Added 2026-10-04 (SPEC-030/033/035).* Every hotel has a **Housekeeping** team (categories *Cleaning*, *Inspection*) and a **Maintenance** team (category *Maintenance*), created with the hotel. The hotel settings `housekeeping_team_id`, `cleaning_task_category_id`, `inspection_task_category_id`, `maintenance_team_id` and `maintenance_task_category_id` point at them (see [hotel-api-documentation.md](hotel-api-documentation.md)). Admins may rename them; everything finds them by id.
+
+### 4.1 Cleaning tasks move the room
+
+A task in the hotel's cleaning category, with a room, is a **cleaning task** (`housekeeping_kind: cleaning`). Other categories under the Housekeeping team (e.g. a "Turndown" category you add) are ordinary tasks and never move a room.
+
+| Task change | Room housekeeping status |
+| --- | --- |
+| → `in_progress` | `cleaning` |
+| → `completed` | `clean` (+ an inspection task when the hotel requires inspection) |
+| `in_progress` → `pending` / `cancelled`, or deleted | back to `dirty` |
+| a completed clean reopened | `cleaning` (in progress) or `dirty` (pending) |
+
+Cleaning tasks are created automatically:
+
+- **on check-out** (`cleaning_reason: check_out`) — an open stay-over task is reused and becomes the check-out clean;
+- **each morning** for every room with a guest staying on (`stay_over`), by the start-of-day job, due the same day;
+- **after a failed inspection** (`re_clean`) and **on return to service** (`return_to_service`).
+
+A room has at most one open cleaning task and one open inspection task.
+
+### 4.2 Inspection
+
+When `hotel.inspection_required` is `true`, completing a clean creates one inspection task (category *Inspection*, Housekeeping team), and the room counts as ready only once inspected.
+
+### 4.3 Complete an inspection — `POST /api/task/{id}/inspection`
+
+Permission `tasks.update`. `{ "result": "pass" | "fail", "note": "required when fail" }`.
+
+- `pass` → task completed, room `inspected`.
+- `fail` → task completed with the note, room `dirty`, and a `re_clean` task whose description starts "Failed inspection: …".
+
+`200 { "task", "room", "cleaning_task" }`. Not an open inspection task → `422`. The same result again → `200`, no change.
+
+### 4.4 Report a room issue — `POST /api/task/{id}/issues`
+
+Permission `tasks.update` on the housekeeping task. The task must be a housekeeping task with a room, and open or completed today (hotel time); otherwise `422`.
+
+```json
+{ "description": "Shower leaking at the base", "priority": "high", "room_unsellable": true }
+```
+
+Creates one maintenance task for the room: Maintenance team and category, the cleaning task's stay and reservation, `source_task_id` set, `created_by_user_id` = the reporter. With `room_unsellable: true`, the room is also taken out of order (reason = the description) **if** the reporter has `rooms.set_out_of_order` and no guest is in it.
+
+```json
+{
+  "maintenance_task": { "...": "task object" },
+  "created": true,
+  "out_of_order": { "requested": true, "applied": false, "reason": "You do not have permission to take rooms out of order." }
+}
+```
+
+`201` when created; the same open report again (same description, ignoring case and spaces) returns the existing task with `200` and `created: false`.
+
+### 4.5 Notifications
+
+A new task, or one whose assignee changes, emails the assigned person — or, when it is assigned only to the hotel's Housekeeping or Maintenance team, every member of that team. Each person is told **once per assignment**: re-saving, retrying or narrowing a team task to one of its members sends nothing new; a task that moves away and comes back counts as a new assignment. Nothing is sent for a task that is completed or cancelled before the email goes out. Tasks assigned only to other teams email nobody (unchanged).
+
+When an automatic housekeeping or maintenance task has no team, or its team has no members, the hotel's admins are emailed — at most once per hotel, day and cause.
+
+### 4.6 Maintenance list — `GET /api/maintenance/tasks`
+
+Permission `tasks.view`; a super admin passes `hotel_id`. Tasks assigned to the Maintenance team or in its categories. Generic index parameters (`filter[status]`, `filter[priority]`, `filter[room_id]`, `search`, `sort`, `page`, `per_page`) plus `filter[room_out_of_order]=true|false`. Default order: open first, then `high` → `normal` → `low`, then oldest first.
+
+`body`: `{ "data": [task + { "room": { id, room_number, status, out_of_order: { reason, expected_end_date, overdue } | null }, "reporter": { id, name } | null, "age_hours" }], "meta": { current_page, per_page, total, last_page } }`.
 
 ---
 
@@ -467,7 +550,8 @@ curl -X POST http://your-domain.com/api/task \
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - `hotel_id` is required in the request body on every Team/TaskCategory/Task create call (send the caller's own hotel id), but it is **always overwritten server-side** — you can never create or move a record into a different hotel through these endpoints.
 - Team membership is single (`team_id` on the user), managed only via `POST /api/team/{id}/members`, and restricted to users with `role: employee`.
-- Filter the task-category picker by the chosen team (`filter[team_id]=`) before letting the user pick a category on a task — the backend rejects team/category combinations that don't match.
+- Filter the task-category picker by the chosen team (`filter[team_id]=`) before letting the user pick a category on a task — the backend rejects team/category combinations that don't match. Picking only a category is fine: the task goes to the category's team.
+- Cleaning tasks drive room readiness, inspections complete through `POST /api/task/{id}/inspection`, and housekeepers report faults with `POST /api/task/{id}/issues` (see [§4](#4-housekeeping-and-maintenance)).
 - `GET /api/task-category/{id}` returns a single category with `hotel` and `team` loaded.
 - Task's `status`/`priority`/`created_by` are real server-side enums (see [The Task Object](#the-task-object) for the fixed value lists) — safe to drive a `<select>` directly from them.
 - None of Task's relation ids (`assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `room_id`, `guest_id`, `reservation_id`, `created_by_user_id`) come back with the related object embedded — resolve names from data you already have.

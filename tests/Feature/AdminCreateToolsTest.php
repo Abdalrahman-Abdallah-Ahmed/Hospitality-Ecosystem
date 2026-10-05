@@ -9,6 +9,7 @@ use App\Ai\Tools\GetGuestsTool;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\ReservationStatus;
+use App\Enums\RoomStatusesEnum;
 use App\Enums\TaskStatus;
 use App\Enums\UserRole;
 use App\Models\Activity;
@@ -78,7 +79,7 @@ it('creates a room and refuses to duplicate an existing room number', function (
         // `floor` is a string column ("mezzanine", "G"), not an integer.
         ->and($room->floor)->toBe('2')
         // `status` is a plain string column, not a cast enum.
-        ->and($room->status)->toBe('available');
+        ->and($room->status)->toBe(RoomStatusesEnum::AVAILABLE);
 
     // rooms has a unique index on (hotel_id, room_number). The tool must turn
     // that into a sentence the model can relay, not a database exception that
@@ -151,7 +152,7 @@ it('creates a task, resolving the room by number and recording who asked', funct
         'is_active' => true,
     ]);
     $room = Room::create(['hotel_id' => $hotel->id, 'room_number' => '512', 'room_type_id' => $roomType->id]);
-    $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Maintenance']);
+    $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Engineering']);
     $category = TaskCategory::create(['hotel_id' => $hotel->id, 'team_id' => $team->id, 'name' => 'Repairs']);
 
     $result = callTool(new CreateTaskTool($hotel, $admin), [

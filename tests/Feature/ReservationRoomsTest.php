@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ReservationRoomStatus;
+use App\Enums\RoomStatusesEnum;
 use App\Enums\UserRole;
 use App\Models\EventLog;
 use App\Models\Guest;
@@ -441,7 +442,7 @@ it('cancels every line when the reservation is cancelled', function () {
     rrUpdate($this, $admin, $id, ['status' => 'cancelled'])->assertOk();
 
     expect(ReservationRoom::where('reservation_id', $id)->active()->count())->toBe(0)
-        ->and($room->fresh()->status)->toBe('available');
+        ->and($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE);
 });
 
 it('re-checks capacity when the party grows', function () {
@@ -496,12 +497,12 @@ it('moves a checked-in guest to another room of the same type', function () {
     $room105 = rrRoom($hotel, $deluxe, '105');
     $id = rrCreate($this, $admin, rrPayload($hotel, $guest, [['room_type_id' => $deluxe->id, 'room_id' => $room101->id]], ['status' => 'checked_in']))->json('body.id');
     $line = ReservationRoom::where('reservation_id', $id)->value('id');
-    expect($room101->fresh()->status)->toBe('occupied');
+    expect($room101->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 
     rrUpdate($this, $admin, $id, ['rooms' => [['id' => $line, 'room_id' => $room105->id]]])->assertOk();
 
-    expect($room101->fresh()->status)->toBe('available')
-        ->and($room105->fresh()->status)->toBe('occupied');
+    expect($room101->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
+        ->and($room105->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 
     $event = EventLog::where('event_type', 'reservation_room.updated')->where('subject_id', $line)->latest('occurred_at')->firstOrFail();
     expect($event->changes['room_id'] ?? null)->not->toBeNull();
@@ -634,7 +635,7 @@ it('restores the rooms a reservation had when it is brought back from cancelled'
 
     expect(ReservationRoom::find($assigned)->status)->toBe(ReservationRoomStatus::RESERVED)
         ->and(ReservationRoom::find($unassigned)->status)->toBe(ReservationRoomStatus::CANCELLED)
-        ->and($room->fresh()->status)->toBe('occupied');
+        ->and($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 });
 
 it('brings a cancelled reservation back with the rooms sent in the same request', function () {

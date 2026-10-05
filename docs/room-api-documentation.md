@@ -37,7 +37,7 @@ Notes:
 
 ## Who Can Call These Endpoints
 
-> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `rooms.view` (index, show), `rooms.create`, `rooms.update`, `rooms.delete`. Employees without a role have none of these.
+> **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `rooms.view` (index, show, the housekeeping board), `rooms.create`, `rooms.update`, `rooms.delete`, `rooms.update_housekeeping_status` (manual correction) and `rooms.set_out_of_order` (out of order, its edit, return to service). Employees without a role have none of these.
 
 Every action is gated by `App\Policies\RoomPolicy`, on top of the bearer-token check above:
 
@@ -83,8 +83,12 @@ Every endpoint that returns a room returns it in this shape, with its room type 
   "room_type_id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10",
   "room_type": { "id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10", "name": "Double", "...": "room type object, see room-types-api-documentation.md" },
   "floor": "1",
+  "building": "Main",
   "status": "available",
   "housekeeping_status": "clean",
+  "housekeeping_status_changed_at": "2026-10-04T08:12:00.000000Z",
+  "ready": true,
+  "out_of_order": null,
   "created_at": "2026-07-25T21:39:10.000000Z",
   "updated_at": "2026-07-25T21:39:10.000000Z"
 }
@@ -95,11 +99,17 @@ Field notes for the UI:
 - `id` and `hotel_id` are UUID strings, not integers — don't parse them as numbers.
 - `room_number` and `floor` are free-text strings and are nullable — a room can exist with either blank.
 - `room_type_id` is **required** and points at one of the hotel's [room types](room-types-api-documentation.md). `room_type` is that type embedded as an object (not a string any more). The hotel's types are echoed on every `index` call as `body.room_types` so the frontend can build the picker without a second request.
-- `status` is also a free-text string, not a restricted enum server-side (there's no `Rule::in`/cast enforcing specific values). It defaults to `"available"` at the database level when omitted on create. The API will accept any string here, so **the frontend should be the one constraining input** (e.g. a fixed dropdown of `available` / `occupied` / `maintenance` / whatever values the product actually uses) — don't rely on the server to reject typos.
-- `housekeeping_status` **is** a real, server-enforced enum (`App\Enums\HousekeepingStatusesEnum`): `clean`, `dirty`, `blocked`. Unlike `status`, an invalid value here is rejected with a `422`, so you can bind a dropdown straight to those three and trust the server to back you up. It defaults to `"clean"` at the database level when omitted on create, and is never null.
-- `status` and `housekeeping_status` are **two independent axes** — don't collapse them into one badge. `status` answers "can this room be sold" (`available` / `occupied` / `maintenance`); `housekeeping_status` answers "is it ready for a guest". A room can legitimately be `occupied` **and** `dirty` at the same time.
-- `blocked` means **out of order** — a fault, a leak, an unfinished repair — not merely "needs cleaning". A blocked room should be excluded from assignment even when `status` still reads `available`, and the UI should make clearing it a deliberate action rather than something housekeeping ticks off in passing.
-- `housekeeping_status` can change **without any user action**: a nightly job (`App\Jobs\MakeRoomDirtyOvernightJob`, scheduled `00:01` server time) flips every room holding an in-house stay to `dirty`, so housekeeping starts the day with an accurate worklist. It deliberately skips `blocked` rooms, so a fault is never silently downgraded to "just dirty". Don't cache a room's housekeeping status across a date boundary — refetch.
+- `building` is a nullable free-text string, like `floor` (there is no Building entity).
+- `status` is a server-enforced enum: `available`, `occupied`, `out_of_order`. **It is not writable through create or update** (see [Status fields are not editable here](#status-fields-are-not-editable-here)). `occupied` follows check-in and check-out; `out_of_order` is set and cleared only by [Take Out of Order](#7-take-a-room-out-of-order) and [Return to Service](#9-return-a-room-to-service).
+- `housekeeping_status` is a server-enforced enum: `dirty`, `cleaning`, `clean`, `inspected`. It is moved by cleaning and inspection tasks (see [task-management-api-documentation.md](task-management-api-documentation.md#4-housekeeping-and-maintenance)), by check-out, by the start-of-day job and by [Return to Service](#9-return-a-room-to-service). Staff correct it by hand only through [Set Housekeeping Status](#6-set-housekeeping-status-manual-correction).
+- `status` and `housekeeping_status` are **two independent axes** — don't collapse them into one badge. An `occupied` room can be `dirty`; an `out_of_order` room can be `clean`.
+- `ready` says whether the room can take a guest as far as housekeeping goes: `inspected`, or `clean` when the hotel does not require inspection (`hotel.inspection_required`). A room cleaned before inspection was turned on also counts as ready. It is `null` when the room is nested inside another object (a stay, task or reservation) — read it from the room endpoints or the board.
+- `out_of_order` is `null` unless `status` is `out_of_order`, then:
+  ```json
+  { "reason": "AC broken", "since": "2026-10-04T09:00:00.000000Z", "expected_end_date": "2026-10-06", "overdue": false, "by_user_id": "uuid", "task_id": "uuid" }
+  ```
+  `expected_end_date` is for staff only: availability ignores it, and the room stays out of order until it is returned to service. `overdue` is true once that date has passed (hotel time).
+- `housekeeping_status` can change **without any user action**: an hourly job (`App\Jobs\StartHousekeepingDayJob`) starts each hotel's day just after its local midnight, marking every room with a guest staying on `dirty` and giving it one stay-over cleaning task. Out-of-order rooms and rooms departing that day are skipped. Don't cache a room's housekeeping status across a date boundary — refetch.
 - There is no soft-delete on rooms — `DELETE` permanently removes the row (see [Delete a Room](#5-delete-a-room)).
 - If a room has active reservations pointing at it (`reservations.room_id`), deleting it does **not** cascade-delete those reservations; their `room_id` is left pointing at a now-missing row (no `ON DELETE` rule enforced from this side). Consider warning the user before deleting a room that's referenced by upcoming reservations.
 
@@ -115,7 +125,7 @@ All optional:
 
 | Param | Type | Example | Behavior |
 | --- | --- | --- | --- |
-| `filter[<column>]` | string, or array for multiple values | `filter[housekeeping_status]=dirty` | Exact match on any real `rooms` column. `filter[housekeeping_status][]=dirty&filter[housekeeping_status][]=blocked` matches either. |
+| `filter[<column>]` | string, or array for multiple values | `filter[housekeeping_status]=dirty` | Exact match on any real `rooms` column. `filter[housekeeping_status][]=dirty&filter[housekeeping_status][]=cleaning` matches either. |
 | `search` | string | `search=101` | Partial (`LIKE %term%`) match across the room's string-typed columns: `room_number`, `floor`, `status`, `housekeeping_status`. |
 | `sort` | string | `sort=-created_at` | Sort by a real column. Prefix with `-` for descending. |
 | `page` | integer | `page=2` | Page number, 1-indexed. |
@@ -203,10 +213,11 @@ HTTP `422`:
   "room_number": "101",
   "room_type_id": "019f9b37-c266-7a01-8f3c-2b8d1e4a9c10",
   "floor": "1",
-  "status": "available",
-  "housekeeping_status": "clean"
+  "building": "Main"
 }
 ```
+
+A new room always starts `available` and `clean`.
 
 ### Validation Rules
 
@@ -216,8 +227,9 @@ HTTP `422`:
 | `room_number` | optional, string, max 255. |
 | `room_type_id` | **required**, uuid, must be a room type of the **same hotel** (see [`body.room_types`](#1-list-rooms)). Missing → `422`; another hotel's type → `403`. |
 | `floor` | optional, string, max 255. |
-| `status` | optional, string, max 255. Defaults to `"available"` if omitted. Not restricted to a fixed list server-side — enforce allowed values client-side. |
-| `housekeeping_status` | optional, must be one of `clean`, `dirty`, `blocked` — any other value returns a `422`. Defaults to `"clean"` if omitted, so you can leave it out of the create form entirely. |
+| `building` | optional, string, max 100. |
+| `status` | **prohibited** — see below. |
+| `housekeeping_status` | **prohibited** — see below. |
 
 **Important — hotel scoping:** `hotel_id` must be an id the logged-in admin actually owns. The API does not silently substitute the user's own hotel here — you must pass it explicitly. In practice, for an admin managing only their own hotel, the frontend should hard-code `hotel_id` to that admin's own hotel (fetched once, e.g. from `GET /api/user` → the hotel relationship) rather than exposing a hotel picker, since attempting to use any other hotel id will be rejected (see below).
 
@@ -252,21 +264,20 @@ HTTP `403`:
 
 Same error applies on [update](#4-update-a-room) if `room_type_id` names another hotel's type.
 
-### Error: Invalid `housekeeping_status`
+### Status fields are not editable here
 
-HTTP `422`:
+Sending `status` or `housekeeping_status` to create or update returns HTTP `422`, whatever the value (including the old `maintenance` and `blocked`):
 
 ```json
 {
-  "message": "The given data was invalid.",
+  "message": "Room status (available, occupied, out_of_order) is set by check-in and check-out, and by POST /room/{id}/out-of-order and POST /room/{id}/return-to-service.",
   "errors": {
-    "housekeeping_status": ["The selected housekeeping status is invalid."]
+    "status": ["Room status (available, occupied, out_of_order) is set by check-in and check-out, and by POST /room/{id}/out-of-order and POST /room/{id}/return-to-service."]
   }
 }
 ```
 
-Same error applies on [update](#4-update-a-room). Note the contrast with `status`, which accepts any string — `housekeeping_status` is the one of the two the server actually validates.
-
+`housekeeping_status` gets the matching message pointing at cleaning and inspection tasks and `PUT /room/{id}/housekeeping-status`.
 ### Error: Room For a Different Hotel
 
 This uses the custom `message/code/body` format, **not** the validation-error shape, because it's a business-rule check rather than a field-shape check:
@@ -323,17 +334,12 @@ Send only the fields you want to change — every field is optional on update:
 
 ```json
 {
-  "status": "maintenance"
+  "floor": "3",
+  "building": "Garden Wing"
 }
 ```
 
-Marking a room clean once housekeeping has serviced it is the same one-key `PUT`, and is likely the most frequent write this endpoint will see:
-
-```json
-{
-  "housekeeping_status": "clean"
-}
-```
+`status` and `housekeeping_status` are refused here; see [Status fields are not editable here](#status-fields-are-not-editable-here).
 
 ### Validation Rules
 
@@ -372,6 +378,80 @@ HTTP `200 OK`:
 ### Error: Not Found / Wrong Hotel
 
 Same as [show](#3-get-a-single-room): `404` if the id doesn't exist, `403` if it belongs to a different hotel.
+
+## 6. Set Housekeeping Status (manual correction)
+
+`PUT /api/room/{id}/housekeeping-status` — permission `rooms.update_housekeeping_status` (not an employee default).
+
+For when reality and the system disagree, e.g. a room cleaned without a task. Tasks are **not** changed; any open cleaning or inspection task is listed so the person can close it.
+
+```json
+{ "housekeeping_status": "clean", "reason": "Cleaned without a task" }
+```
+
+| Field | Rules |
+| --- | --- |
+| `housekeeping_status` | **required**, one of `dirty`, `cleaning`, `clean`, `inspected` |
+| `reason` | **required**, string, max 500 |
+
+`200`: `{ "room": room, "changed": true, "open_housekeeping_tasks": [task, …] }`. The same status again returns `changed: false` and writes no audit entry. Each change is audited as `room.housekeeping_changed` with `cause: manual` and the reason.
+
+## 7. Take a Room Out of Order
+
+`POST /api/room/{id}/out-of-order` — permission `rooms.set_out_of_order` (not an employee default).
+
+```json
+{ "reason": "AC broken", "expected_end_date": "2026-10-06", "task_id": "uuid-of-the-maintenance-task" }
+```
+
+| Field | Rules |
+| --- | --- |
+| `reason` | **required**, string, max 500 |
+| `expected_end_date` | optional, `YYYY-MM-DD`, not before the hotel's today. Information only. |
+| `task_id` | optional, a task of the same hotel (another hotel's → `403`) |
+
+- `200` `{ "room": room, "changed": true, "affected_lines": [...] }`. The room leaves availability and assignment at once. `affected_lines` lists live reservation lines assigned to this room that depart after today, so staff can move them: `{ reservation_room_id, reservation_id, reservation_code, arrival_date, departure_date }`.
+- Already out of order: `200` with `changed: false`.
+- A guest is in the room: `422` — "Room 204 has an in-house guest (stay …). Move the guest first."
+
+Audited as `room.taken_out_of_order`.
+
+## 8. Update Out-of-Order Details
+
+`PATCH /api/room/{id}/out-of-order` — permission `rooms.set_out_of_order`.
+
+`{ "reason"?: string, "expected_end_date"?: "YYYY-MM-DD" | null }` — at least one. `200 { "room": room }`; `422` when the room is not out of order. Audited as `room.out_of_order_updated`.
+
+## 9. Return a Room to Service
+
+`POST /api/room/{id}/return-to-service` — permission `rooms.set_out_of_order`.
+
+`{ "note"?: string }`. The room becomes `available` and `dirty`, the out-of-order fields are cleared, and one cleaning task (`cleaning_reason: return_to_service`) is created or the open one reused. `200 { "room": room, "cleaning_task": task }`; `422` when the room is not out of order. Audited as `room.returned_to_service`.
+
+Completing the maintenance task linked to an out-of-order room **never** returns it to service by itself; the task update response carries `room_ready_to_return: true` as a hint.
+
+## 10. Housekeeping Board
+
+`GET /api/housekeeping/board` — permission `rooms.view`. A super admin passes `hotel_id`.
+
+Query: `housekeeping_status`, `status`, `floor`, `building`, `team_id` (rooms whose open housekeeping task is assigned to that team).
+
+```json
+{
+  "date": "2026-10-04",
+  "inspection_required": false,
+  "counts": { "dirty": 12, "cleaning": 3, "clean": 40, "inspected": 0, "out_of_order": 2 },
+  "rooms": [
+    {
+      "room": "room object (with ready)",
+      "departure_date": "2026-10-06",
+      "open_task": { "id": "uuid", "housekeeping_kind": "cleaning", "cleaning_reason": "stay_over", "status": "pending", "assigned_to_team_id": "uuid", "assigned_to_user_id": null }
+    }
+  ]
+}
+```
+
+Rooms are sorted by building, floor, room number; not paginated (one day's board). `departure_date` is the in-house guest's departure, or `null`.
 
 ## Validation Errors
 
@@ -425,18 +505,18 @@ curl -X PUT http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c1763cf
   -H "Content-Type: application/json" \
   -H "X-API-KEY: YOUR_API_KEY" \
   -H "Authorization: Bearer USER_LOGIN_TOKEN" \
-  -d '{ "status": "maintenance" }'
+  -d '{ "floor": "3" }'
 ```
 
-### Mark a room clean after servicing
+### Take a room out of order
 
 ```bash
-curl -X PUT http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c1763cf \
+curl -X POST http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c1763cf/out-of-order \
   -H "Accept: application/json" \
   -H "Content-Type: application/json" \
   -H "X-API-KEY: YOUR_API_KEY" \
   -H "Authorization: Bearer USER_LOGIN_TOKEN" \
-  -d '{ "housekeeping_status": "clean" }'
+  -d '{ "reason": "AC broken", "expected_end_date": "2026-10-06" }'
 ```
 
 ### Delete
@@ -454,8 +534,8 @@ curl -X DELETE http://your-domain.com/api/room/019f9b37-c268-738c-bc46-53281c176
 - List with `GET /api/room`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column` / `sort=-column`, paginate with `page`/`per_page`.
 - **Breaking change:** the room list is now at `body.data.data`, not `body.data` — `index`'s `body` is `{ data: <paginator>, room_types: [...] }`. Pagination fields (`current_page`, `last_page`, `total`) moved from `body.*` to `body.data.*`. See [List Rooms](#1-list-rooms).
 - **Breaking change (2026-09-23):** rooms belong to a hotel-defined room type. Send `room_type_id` (required) instead of the old `room_type` string; `room_type` in responses is now the embedded room type object. `body.room_types` (only on `index`) lists the hotel's types for the picker.
-- `status` is still a free-text string server-side — enforce your own fixed option list in the UI.
-- **New field:** every room now also returns `housekeeping_status` — a server-enforced enum of `clean` / `dirty` / `blocked`, defaulting to `clean`. It's a **separate axis from `status`**, so render it as its own badge: `status` says whether the room can be sold, `housekeeping_status` says whether it's ready. `blocked` means out of order and should block assignment on its own. Filter the housekeeping worklist with `filter[housekeeping_status]=dirty`, and mark a room serviced with a one-key `PUT`. Expect it to change overnight without user action — a scheduled job dirties every in-house room at `00:01` server time (leaving `blocked` rooms alone), so refetch rather than caching it across a date boundary.
+- **Breaking change (2026-10-04, status split):** `status` is `available` / `occupied` / `out_of_order` and `housekeeping_status` is `dirty` / `cleaning` / `clean` / `inspected`. Neither can be sent to create or update any more (`422`). Out of order goes through `POST /room/{id}/out-of-order` (with a reason) and `POST /room/{id}/return-to-service`; cleanliness follows cleaning and inspection tasks, with `PUT /room/{id}/housekeeping-status` for corrections. Rooms that were `maintenance` or `blocked` are now `out_of_order` and `dirty`.
+- Render `status`, `housekeeping_status` and `ready` separately; show `out_of_order.reason` and flag `out_of_order.overdue`. Build the housekeeping screen from `GET /api/housekeeping/board`. Housekeeping status changes without user action (check-out, the start-of-day job), so refetch rather than caching it across a date boundary.
 - `hotel_id` can be set on create but **should not** be included on update — the API doesn't block reassignment, but doing so can strand the room outside the current admin's access.
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours."
 - Deleting a room is permanent (no soft delete) and does not cascade to reservations referencing it — confirm before deleting a room with existing reservations.

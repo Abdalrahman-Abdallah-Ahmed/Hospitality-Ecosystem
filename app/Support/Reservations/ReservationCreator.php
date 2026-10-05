@@ -2,7 +2,8 @@
 
 namespace App\Support\Reservations;
 
-use App\Enums\HousekeepingStatusesEnum;
+use App\Enums\CleaningReason;
+use App\Enums\HousekeepingCause;
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\RoomStatusesEnum;
@@ -15,6 +16,7 @@ use App\Models\RoomType;
 use App\Models\Stay;
 use App\Services\AvailabilityService;
 use App\Services\GuestIdentityService;
+use App\Services\HousekeepingService;
 use App\Services\StayService;
 use App\Support\Audit\EventLogger;
 use Illuminate\Support\Collection;
@@ -465,17 +467,17 @@ class ReservationCreator
     }
 
     /**
-     * Rooms a guest just moved out of need servicing, unless they are out of
-     * order (a blocked housekeeping status is the out-of-order marker).
+     * Rooms a guest just moved out of need servicing: dirty, with a cleaning
+     * task, as on check-out.
      *
      * @param  list<string>  $roomIds
      */
     private static function markDirty(array $roomIds): void
     {
-        foreach (Room::withoutGlobalScope('hotel')->whereIn('id', $roomIds)->get() as $room) {
-            if ($room->housekeeping_status !== HousekeepingStatusesEnum::BLOCKED) {
-                $room->update(['housekeeping_status' => HousekeepingStatusesEnum::DIRTY]);
-            }
+        $housekeeping = app(HousekeepingService::class);
+
+        foreach (Room::withoutGlobalScope('hotel')->whereIn('id', $roomIds)->orderBy('id')->get() as $room) {
+            $housekeeping->roomNeedsCleaning($room, CleaningReason::CHECK_OUT, HousekeepingCause::CHECK_OUT);
         }
     }
 
@@ -500,8 +502,9 @@ class ReservationCreator
      * than from one reservation, so booking a room for next week cannot
      * release it while tonight's guest is still in it.
      *
-     * Only an occupied room is ever released: a room under maintenance stays
-     * under maintenance until a guest actually checks into it.
+     * Only an occupied room is ever released. An out-of-order room is never
+     * touched: only MaintenanceService takes a room out of order or returns
+     * it to service (FR-016, FR-020).
      */
     private static function syncRoomStatus(string $roomId): void
     {
@@ -513,18 +516,18 @@ class ReservationCreator
         // Through the model, so the change is audited (room.updated).
         $room = Room::withoutGlobalScope('hotel')->find($roomId);
 
-        if (! $room) {
+        if (! $room || $room->isOutOfOrder()) {
             return;
         }
 
         if ($someoneInHouse) {
-            $room->update(['status' => RoomStatusesEnum::OCCUPIED->value]);
+            $room->update(['status' => RoomStatusesEnum::OCCUPIED]);
 
             return;
         }
 
-        if ($room->status === RoomStatusesEnum::OCCUPIED->value) {
-            $room->update(['status' => RoomStatusesEnum::AVAILABLE->value]);
+        if ($room->status === RoomStatusesEnum::OCCUPIED) {
+            $room->update(['status' => RoomStatusesEnum::AVAILABLE]);
         }
     }
 }

@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Services\HousekeepingService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -20,7 +21,7 @@ class GetRoomsTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Retrieve the rooms for the current hotel, including room number, room type, floor, occupancy status, and housekeeping status (clean, dirty, or blocked).';
+        return 'Retrieve the rooms for the current hotel, including room number, room type, floor, room status (available, occupied, or out_of_order, with the reason), housekeeping status (dirty, cleaning, clean, or inspected), and whether the room is ready for a guest.';
     }
 
     /**
@@ -28,6 +29,8 @@ class GetRoomsTool implements Tool
      */
     public function handle(Request $request): Stringable|string
     {
+        $housekeeping = app(HousekeepingService::class);
+
         $rooms = Room::with('roomType')->where('hotel_id', $this->hotel->id)
             ->orderBy('room_number')
             ->limit(100)
@@ -38,7 +41,9 @@ class GetRoomsTool implements Tool
                 'room_type' => $room->roomType?->name,
                 'floor' => $room->floor,
                 'status' => $room->status,
+                'out_of_order_reason' => $room->out_of_order_reason,
                 'housekeeping_status' => $room->housekeeping_status,
+                'ready' => $housekeeping->isReady($room, $this->hotel),
             ])
             ->values();
 

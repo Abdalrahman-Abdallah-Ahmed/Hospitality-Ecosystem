@@ -16,6 +16,7 @@ use App\Models\Room;
 use App\Models\RoomType;
 use App\Models\StaffRole;
 use App\Models\Stay;
+use App\Models\Task;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
@@ -405,4 +406,50 @@ function fdPost($test, User $user, string $uri, array $payload = []): TestRespon
 function fdGet($test, User $user, string $uri): TestResponse
 {
     return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->getJson($uri);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Housekeeping and maintenance fixtures (SPEC-030/033/035)
+|--------------------------------------------------------------------------
+*/
+
+function hkPut($test, User $user, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->putJson($uri, $payload);
+}
+
+function hkPatch($test, User $user, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->patchJson($uri, $payload);
+}
+
+/**
+ * Checks a guest out of a room booked yesterday, which leaves the room dirty
+ * with one check-out cleaning task.
+ *
+ * @return array{0: Hotel, 1: Room, 2: Task}
+ */
+function hkVacatedRoom($test, string $timezone = 'UTC'): array
+{
+    [$hotel, $type, [$room]] = fdHotel(1, $timezone);
+    $test->travelTo(now()->subDay()->startOfDay()->addHours(14));
+    $reservation = fdBook($hotel, $type, [$room->id], [
+        'arrival_date' => now()->toDateString(),
+        'departure_date' => now()->addDay()->toDateString(),
+    ]);
+    [$stay] = fdStays($reservation);
+    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    $test->travelBack();
+    $test->travelTo(now()->startOfDay()->addHours(11));
+    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+
+    $task = Task::withoutGlobalScope('hotel')->where('room_id', $room->id)->sole();
+
+    return [$hotel->fresh(), $room->fresh(), $task];
+}
+
+function hkSetTaskStatus($test, User $user, Task $task, string $status): TestResponse
+{
+    return hkPut($test, $user, "/api/task/{$task->id}", ['status' => $status]);
 }

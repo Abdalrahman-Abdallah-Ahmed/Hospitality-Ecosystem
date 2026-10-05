@@ -34,6 +34,8 @@ An employee with no staff role has:
 
 `stays.view`, `stays.check_in` and `stays.check_out` are never defaults: the stays lists show guest names, rooms and dates, and check-in/out change room status and occupancy, so a hotel grants them on purpose to its front-desk roles.
 
+`rooms.update_housekeeping_status` and `rooms.set_out_of_order` are never defaults either: both change which rooms can be sold. A housekeeper who should report faults and complete inspections needs `tasks.update`; one who should also be able to take a room off sale when reporting needs `rooms.set_out_of_order`.
+
 `GET /api/permissions` returns this list as `employee_defaults`, so the UI does not need to hard-code it.
 
 ### Permission Reference
@@ -79,10 +81,12 @@ An employee with no staff role has:
 | `reservations.delete` | `DELETE /api/reservation/{id}` |
 | `reservations.import` | `POST /api/reservation/import` |
 | `reservations.overbook` | `overbook_override: true` on `POST /api/reservation` and `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
-| `rooms.view` | `GET /api/room`, `GET /api/room/{id}` |
+| `rooms.view` | `GET /api/room`, `GET /api/room/{id}`, `GET /api/housekeeping/board` |
 | `rooms.create` | `POST /api/room` |
 | `rooms.update` | `PUT /api/room/{id}` |
 | `rooms.delete` | `DELETE /api/room/{id}` |
+| `rooms.update_housekeeping_status` | `PUT /api/room/{id}/housekeeping-status` (manual correction; not a default) |
+| `rooms.set_out_of_order` | `POST /api/room/{id}/out-of-order`, `PATCH /api/room/{id}/out-of-order`, `POST /api/room/{id}/return-to-service`, and taking the room out of order from `POST /api/task/{id}/issues` (not a default) |
 | `room_types.view` | `GET /api/room-types`, `GET /api/room-types/{id}` |
 | `room_types.create` | `POST /api/room-types` |
 | `room_types.update` | `PUT /api/room-types/{id}` |
@@ -94,9 +98,9 @@ An employee with no staff role has:
 | `task_categories.create` | `POST /api/task-category` |
 | `task_categories.update` | `PUT /api/task-category/{id}` |
 | `task_categories.delete` | `DELETE /api/task-category/{id}` |
-| `tasks.view` | `GET /api/task`, `GET /api/task/{id}` |
+| `tasks.view` | `GET /api/task`, `GET /api/task/{id}`, `GET /api/maintenance/tasks` |
 | `tasks.create` | `POST /api/task` |
-| `tasks.update` | `PUT /api/task/{id}` |
+| `tasks.update` | `PUT /api/task/{id}`, `POST /api/task/{id}/inspection`, `POST /api/task/{id}/issues` |
 | `tasks.delete` | `DELETE /api/task/{id}` |
 | `teams.view` | `GET /api/team`, `GET /api/team/{id}` |
 | `teams.create` | `POST /api/team` |

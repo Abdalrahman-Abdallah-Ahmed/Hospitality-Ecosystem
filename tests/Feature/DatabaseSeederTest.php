@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\RoomStatusesEnum;
 use App\Models\Reservation;
 use App\Models\Room;
 use Database\Seeders\DatabaseSeeder;
@@ -14,5 +15,5 @@ it('seeds a fresh database, booking the demo guest into a real room', function (
     $line = $reservation->reservationRooms()->withoutGlobalScope('hotel')->sole();
 
     expect($line->room_id)->not->toBeNull()
-        ->and(Room::withoutGlobalScope('hotel')->find($line->room_id)->status)->toBe('occupied');
+        ->and(Room::withoutGlobalScope('hotel')->find($line->room_id)->status)->toBe(RoomStatusesEnum::OCCUPIED);
 });

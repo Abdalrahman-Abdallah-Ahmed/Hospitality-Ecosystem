@@ -36,7 +36,7 @@ function teamFor(Hotel $hotel, array $overrides = []): Team
 {
     return Team::create(array_merge([
         'hotel_id' => $hotel->id,
-        'name' => 'Housekeeping',
+        'name' => 'Front Office',
     ], $overrides));
 }
 
@@ -60,7 +60,7 @@ it('creates a team scoped to the caller own hotel, ignoring a spoofed hotel_id',
     $response->assertStatus(201)
         ->assertJsonPath('body.hotel_id', $hotel->id);
 
-    expect(Team::where('hotel_id', $otherHotel->id)->exists())->toBeFalse();
+    expect(Team::where('hotel_id', $otherHotel->id)->where('name', 'Front Desk')->exists())->toBeFalse();
 });
 
 it('allows two different hotels to have a team with the same name', function () {
@@ -91,9 +91,9 @@ it('lets an admin update a team belonging to their own hotel', function () {
     $team = teamFor($hotel);
 
     $response = $this->withHeaders(teamApiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/team/{$team->id}", ['name' => 'Maintenance']);
+        ->putJson("/api/team/{$team->id}", ['name' => 'Night Audit']);
 
-    $response->assertOk()->assertJsonPath('body.name', 'Maintenance');
+    $response->assertOk()->assertJsonPath('body.name', 'Night Audit');
 });
 
 it('rejects an admin updating a team belonging to a different hotel', function () {

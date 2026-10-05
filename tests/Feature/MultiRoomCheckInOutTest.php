@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\RoomStatusesEnum;
 use App\Enums\StayStatus;
 use App\Models\EventLog;
 use App\Models\Reservation;
@@ -46,7 +47,7 @@ it('checks every assigned room in with one action', function () {
         ->assertJsonCount(2, 'body.stays');
 
     expect(collect(fdStays($reservation))->pluck('status')->unique()->all())->toBe([StayStatus::IN_HOUSE])
-        ->and([$a->fresh()->status, $b->fresh()->status])->toBe(['occupied', 'occupied'])
+        ->and([$a->fresh()->status, $b->fresh()->status])->toBe([RoomStatusesEnum::OCCUPIED, RoomStatusesEnum::OCCUPIED])
         ->and(EventLog::where('event_type', 'stay.checked_in')->count())->toBe(2);
 });
 
@@ -60,7 +61,7 @@ it('checks nothing in when one room cannot be, and lists it', function () {
         ->assertJsonValidationErrors(["stays.{$unassigned->id}.room" => 'Assign or name a room first.']);
 
     expect(collect(fdStays($reservation))->pluck('status')->unique()->all())->toBe([StayStatus::EXPECTED])
-        ->and($a->fresh()->status)->toBe('available')
+        ->and($a->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
         ->and($reservation->fresh()->status->value)->toBe('confirmed');
 });
 

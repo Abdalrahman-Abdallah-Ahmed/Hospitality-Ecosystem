@@ -43,7 +43,7 @@ it('returns the per-type, per-night grid in the documented shape', function () {
     $hotel = avHotel();
     $deluxe = avType($hotel, 'Deluxe');
     avRooms($hotel, $deluxe, 4);
-    avRooms($hotel, $deluxe, 1, 'maintenance');
+    avRooms($hotel, $deluxe, 1, 'out_of_order');
     $dates = acDates(10, 13);
     avBook($hotel, $deluxe, now()->addDays(11)->toDateString(), now()->addDays(12)->toDateString(), units: 2);
 

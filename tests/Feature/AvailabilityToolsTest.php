@@ -30,7 +30,7 @@ it('gives the Admin AI exactly the numbers the endpoint gives staff', function (
     $hotel = avHotel();
     $deluxe = avType($hotel, 'Deluxe');
     avRooms($hotel, $deluxe, 3);
-    avRooms($hotel, $deluxe, 1, 'maintenance');
+    avRooms($hotel, $deluxe, 1, 'out_of_order');
     avBook($hotel, $deluxe, atDays(5), atDays(7), units: 2);
     avType($hotel, 'Suite');
 

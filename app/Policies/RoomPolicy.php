@@ -60,6 +60,22 @@ class RoomPolicy
     }
 
     /**
+     * Correct a room's housekeeping status by hand.
+     */
+    public function updateHousekeepingStatus(User $user, Room $room): bool
+    {
+        return $this->allows($user, Permission::ROOMS_UPDATE_HOUSEKEEPING_STATUS, $room);
+    }
+
+    /**
+     * Take a room out of order, edit that, or return it to service.
+     */
+    public function setOutOfOrder(User $user, Room $room): bool
+    {
+        return $this->allows($user, Permission::ROOMS_SET_OUT_OF_ORDER, $room);
+    }
+
+    /**
      * Determine whether the user can restore the model.
      */
     public function restore(User $user, Room $room): bool
