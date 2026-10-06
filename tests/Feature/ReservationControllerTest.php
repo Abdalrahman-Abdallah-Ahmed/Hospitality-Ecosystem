@@ -8,7 +8,6 @@ use App\Models\Room;
 use App\Models\User;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -16,42 +15,6 @@ beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
 });
-
-function apiHeaders(): array
-{
-    return ['X-API-KEY' => 'test-api-key'];
-}
-
-function adminWithHotel(): array
-{
-    $admin = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create([
-        'owner_id' => $admin->id,
-        'name' => 'Grand Harbor Hotel',
-        'slug' => 'grand-harbor-hotel-'.$admin->id,
-        'currency' => 'USD',
-    ]);
-    $admin->update(['hotel_id' => $hotel->id]);
-
-    return [$admin->fresh(), $hotel];
-}
-
-function reservationFor(Hotel $hotel, array $overrides = []): Reservation
-{
-    $guest = Guest::create([
-        'hotel_id' => $hotel->id,
-        'external_id' => 'ext-'.$hotel->id,
-        'channel' => 'booking_com',
-    ]);
-
-    return Reservation::create(array_merge([
-        'hotel_id' => $hotel->id,
-        'guest_id' => $guest->id,
-        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
-        'arrival_date' => '2026-09-01',
-        'departure_date' => '2026-09-04',
-    ], $overrides));
-}
 
 // index
 
