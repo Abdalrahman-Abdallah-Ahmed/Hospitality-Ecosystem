@@ -11,4 +11,6 @@ enum GuestSignal: string
     case ESCALATION = 'escalation';                 // EscalateToHumanTool
     case SERVICE_REQUEST = 'service_request';       // something is needed or broken
     case BOOKING_FOLLOW_UP = 'booking_follow_up';   // staff to help an interested guest book — a positive signal
+    // RequestBookingCancellationTool. Not a complaint, so it does not pause pitching.
+    case CANCELLATION_REQUEST = 'cancellation_request';
 }

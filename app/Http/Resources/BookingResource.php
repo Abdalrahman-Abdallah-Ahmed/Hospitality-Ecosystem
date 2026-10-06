@@ -19,13 +19,25 @@ class BookingResource extends JsonResource
             'hotel_id' => $this->hotel_id,
             'guest_id' => $this->guest_id,
             'stay_id' => $this->stay_id,
+            'reservation_id' => $this->reservation_id,
             'activity_id' => $this->activity_id,
             'recommendation_id' => $this->recommendation_id,
             'reference' => $this->reference,
             'item_name' => $this->item_name,
             'status' => $this->status,
             'scheduled_for' => $this->scheduled_for,
+            // The hotel-local schedule the availability rules use.
+            'scheduled_date' => $this->scheduled_date?->toDateString(),
+            'scheduled_time' => $this->scheduled_time !== null ? substr($this->scheduled_time, 0, 5) : null,
+            'last_date' => $this->last_date?->toDateString(),
             'pax' => $this->pax,
+            'notes' => $this->notes,
+            // Present when loaded with withExists()/loadExists(), so nesting a
+            // booking in another resource never costs a query per row.
+            'cancellation_requested' => $this->when(
+                array_key_exists('cancellation_requested', $this->resource->getAttributes()),
+                fn () => (bool) $this->cancellation_requested,
+            ),
             'charge_model' => $this->charge_model,
             'expected_value' => $this->expected_value,
             'currency' => $this->currency,

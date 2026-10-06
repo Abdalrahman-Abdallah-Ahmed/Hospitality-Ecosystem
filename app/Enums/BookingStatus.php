@@ -14,4 +14,25 @@ enum BookingStatus: string
     case REALISED = 'realised';     // guest attended / consumed
     case NO_SHOW = 'no_show';       // confirmed, guest never came
     case CANCELLED = 'cancelled';   // cancelled before the date
+
+    /**
+     * The statuses whose party takes places on the activity's dates. A
+     * pending booking holds its places from the start, so nothing is sold
+     * twice while staff have yet to confirm it.
+     *
+     * @return list<self>
+     */
+    public static function holdingCapacity(): array
+    {
+        return [self::PENDING, self::CONFIRMED, self::REALISED];
+    }
+
+    /**
+     * Whether its date, time, party or notes can still be changed. An attended
+     * or withdrawn booking is history.
+     */
+    public function isEditable(): bool
+    {
+        return $this === self::PENDING || $this === self::CONFIRMED;
+    }
 }

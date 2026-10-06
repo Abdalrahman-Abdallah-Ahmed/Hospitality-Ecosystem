@@ -2,19 +2,29 @@
 
 namespace App\Services;
 
+use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
 use App\Enums\BookingStatus;
+use App\Enums\CancellationResolution;
 use App\Enums\ChargeModel;
 use App\Enums\DeliveryChannel;
 use App\Enums\MeterFeature;
 use App\Enums\OutcomeType;
+use App\Enums\TaskStatus;
+use App\Models\Activity;
 use App\Models\Booking;
+use App\Models\Hotel;
 use App\Models\Transaction;
 use App\Services\Metering\MeteringService;
 use App\Support\Audit\EventLogger;
 use App\Support\Bookings\BookingReference;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use DateTimeInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -48,11 +58,49 @@ class BookingService
      */
     public function create(array $data): Booking
     {
-        $booking = Booking::create([
-            ...$data,
-            'reference' => $data['reference'] ?? BookingReference::generate(),
-            'status' => $data['status'] ?? BookingStatus::PENDING->value,
-        ]);
+        $override = (bool) ($data['capacity_override'] ?? false);
+        $hotel = Hotel::findOrFail($data['hotel_id']);
+        $activity = $this->activity($hotel, $data['activity_id'] ?? null);
+        $schedule = $this->schedule($hotel, $activity, $data['scheduled_for'] ?? null, $data['scheduled_date'] ?? null);
+
+        unset($data['capacity_override'], $data['scheduled_for'], $data['scheduled_date'], $data['scheduled_time'], $data['last_date']);
+        $this->requireParty((int) ($data['pax'] ?? 1));
+
+        $booking = DB::transaction(function () use ($data, $activity, $schedule, $override) {
+            $overridden = null;
+
+            if ($activity) {
+                $this->requireDate($activity, $schedule);
+                $this->availability()->lock([$activity->id]);
+
+                if ($existing = $this->repeatedAiBooking($data, $activity, $schedule)) {
+                    return $existing;
+                }
+
+                $overridden = $this->availability()->assertBookable(
+                    $activity, $schedule['scheduled_date'], $schedule['scheduled_time'], (int) ($data['pax'] ?? 1), override: $override,
+                );
+            }
+
+            $booking = new Booking([
+                ...$data,
+                'reference' => $data['reference'] ?? BookingReference::generate(),
+                'status' => $data['status'] ?? BookingStatus::PENDING->value,
+            ]);
+            $booking->forceFill($schedule)->save();
+
+            if ($overridden) {
+                EventLogger::record($booking, 'capacity_overridden', changes: $overridden);
+            }
+
+            return $booking;
+        });
+
+        // A retried AI booking returns the one already recorded: it was
+        // credited and counted the first time.
+        if (! $booking->wasRecentlyCreated) {
+            return $booking;
+        }
 
         $this->creditRecommendation($booking);
 
@@ -62,6 +110,228 @@ class BookingService
         $this->meter($booking, MeterFeature::BOOKINGS_CREATED);
 
         return $booking;
+    }
+
+    /**
+     * Change a live booking's activity, date, time, party, notes or links
+     * (SPEC-043). The guest, recommendation, origin, reference and status are
+     * never changed here.
+     *
+     * Availability is re-checked only when what the booking holds changes —
+     * activity, date, time or party — and the booking's own places never
+     * count against it. A booking whose date is left alone can have its party
+     * corrected even once the date has passed.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws RuntimeException when the booking is no longer live
+     */
+    public function update(Booking $booking, array $data): Booking
+    {
+        $override = (bool) ($data['capacity_override'] ?? false);
+        $hotel = Hotel::findOrFail($booking->hotel_id);
+
+        return DB::transaction(function () use ($booking, $data, $override, $hotel) {
+            $activityId = array_key_exists('activity_id', $data) ? $data['activity_id'] : $booking->activity_id;
+            $this->availability()->lock([$booking->activity_id, $activityId]);
+
+            $booking = Booking::withoutGlobalScope('hotel')->lockForUpdate()->findOrFail($booking->id);
+
+            if (! $booking->status->isEditable()) {
+                throw new RuntimeException("A {$booking->status->value} booking can no longer be changed.");
+            }
+
+            $activity = $this->activity($hotel, $activityId);
+            $activityChanged = $activityId !== $booking->activity_id;
+            $dateChanged = array_key_exists('scheduled_for', $data) || array_key_exists('scheduled_date', $data);
+
+            if (array_key_exists('item_name', $data) && $activity) {
+                throw new RuntimeException('Only a booking outside the activity catalogue can be renamed.');
+            }
+
+            $schedule = $dateChanged
+                ? $this->schedule($hotel, $activity, $data['scheduled_for'] ?? null, $data['scheduled_date'] ?? null)
+                : $this->currentSchedule($booking, $activity);
+
+            $pax = (int) ($data['pax'] ?? $booking->pax);
+            $this->requireParty($pax);
+            // A smaller party only frees places, so it is never refused —
+            // even after the activity closed or changed its hours.
+            $holdsMore = $activityChanged || $dateChanged || $pax > (int) $booking->pax;
+            $overridden = null;
+
+            // A catalogue booking with no date yet (taken before dates were
+            // recorded) must be given one before anything else changes.
+            if ($activity && ($holdsMore || $schedule['scheduled_date'] === null)) {
+                $this->requireDate($activity, $schedule);
+
+                $overridden = $this->availability()->assertBookable(
+                    $activity,
+                    $schedule['scheduled_date'],
+                    $schedule['scheduled_time'],
+                    $pax,
+                    ignoreBookingId: $booking->id,
+                    override: $override,
+                    checkPast: $activityChanged || $dateChanged,
+                );
+            }
+
+            $booking->fill(array_intersect_key($data, array_flip(['activity_id', 'pax', 'notes', 'item_name', 'reservation_id', 'stay_id'])));
+            $booking->forceFill($schedule);
+
+            if ($activityChanged && $activity) {
+                $booking->item_name = $activity->name;
+            }
+
+            $booking->save();
+
+            if ($overridden) {
+                EventLogger::record($booking, 'capacity_overridden', changes: $overridden);
+            }
+
+            return $booking;
+        });
+    }
+
+    /**
+     * The hotel-local schedule of a booking (research R4).
+     *
+     * A time with no offset is the hotel's local time — what a guest or the
+     * desk means by "17:30". A time with an offset, or a date object, is an
+     * instant and is converted to it. A date alone books an activity that runs
+     * all day. `scheduled_for` keeps the real instant, in UTC.
+     *
+     * @return array{scheduled_for: ?CarbonImmutable, scheduled_date: ?string, scheduled_time: ?string, last_date: ?string}
+     */
+    private function schedule(Hotel $hotel, ?Activity $activity, mixed $scheduledFor, ?string $scheduledDate): array
+    {
+        $timezone = $hotel->timezone ?: 'UTC';
+
+        // A bare date is a date with no time, not midnight: the time check
+        // then asks for one instead of calling 00:00 outside the hours.
+        if (is_string($scheduledFor) && preg_match('/^\d{4}-\d{2}-\d{2}$/', trim($scheduledFor))) {
+            [$scheduledFor, $scheduledDate] = [null, trim($scheduledFor)];
+        }
+
+        if ($scheduledFor !== null && $scheduledFor !== '') {
+            $local = match (true) {
+                $scheduledFor instanceof DateTimeInterface => CarbonImmutable::instance($scheduledFor)->setTimezone($timezone),
+                (bool) preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', trim((string) $scheduledFor)) => CarbonImmutable::parse($scheduledFor)->setTimezone($timezone),
+                default => CarbonImmutable::parse($scheduledFor, $timezone),
+            };
+
+            return [
+                'scheduled_for' => $local->utc(),
+                'scheduled_date' => $local->toDateString(),
+                'scheduled_time' => $local->format('H:i'),
+                'last_date' => $this->availability()->lastDate($activity, $local->toDateString()),
+            ];
+        }
+
+        if ($scheduledDate !== null && $scheduledDate !== '') {
+            return [
+                'scheduled_for' => null,
+                'scheduled_date' => $scheduledDate,
+                'scheduled_time' => null,
+                'last_date' => $this->availability()->lastDate($activity, $scheduledDate),
+            ];
+        }
+
+        return ['scheduled_for' => null, 'scheduled_date' => null, 'scheduled_time' => null, 'last_date' => null];
+    }
+
+    /**
+     * The booking's schedule as saved, with its last date recomputed for the
+     * activity it now belongs to.
+     *
+     * @return array{scheduled_for: mixed, scheduled_date: ?string, scheduled_time: ?string, last_date: ?string}
+     */
+    private function currentSchedule(Booking $booking, ?Activity $activity): array
+    {
+        $date = $booking->scheduled_date?->toDateString();
+
+        return [
+            'scheduled_for' => $booking->scheduled_for,
+            'scheduled_date' => $date,
+            'scheduled_time' => $booking->scheduled_time !== null ? substr($booking->scheduled_time, 0, 5) : null,
+            'last_date' => $date !== null ? $this->availability()->lastDate($activity, $date) : null,
+        ];
+    }
+
+    /**
+     * A party of none or fewer would lower the booked load and let the
+     * activity be oversold without an override, whichever path asked.
+     */
+    private function requireParty(int $pax): void
+    {
+        if ($pax < 1) {
+            throw ValidationException::withMessages(['pax' => 'A booking is for at least one person.']);
+        }
+    }
+
+    /**
+     * A catalogue booking always holds a date: without one it would hold no
+     * places, and the activity could be sold past its capacity.
+     *
+     * @param  array{scheduled_date: ?string}  $schedule
+     */
+    private function requireDate(Activity $activity, array $schedule): void
+    {
+        if ($schedule['scheduled_date'] === null) {
+            throw ValidationException::withMessages(['scheduled_for' => "A date is required to book {$activity->name}."]);
+        }
+    }
+
+    /**
+     * The same booking an AI agent already made in the last ten minutes — a
+     * retried message, not a second request (FR-017). Staff entering two
+     * identical walk-ups get two bookings. Called under the activity lock, so
+     * two retries racing each other see one another.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array{scheduled_date: ?string, scheduled_time: ?string}  $schedule
+     */
+    private function repeatedAiBooking(array $data, Activity $activity, array $schedule): ?Booking
+    {
+        if (EventLogger::currentActorKind() !== ActorKind::AI_AGENT || empty($data['guest_id'])) {
+            return null;
+        }
+
+        return Booking::withoutGlobalScope('hotel')
+            ->where('hotel_id', $activity->hotel_id)
+            ->where('guest_id', $data['guest_id'])
+            ->where('activity_id', $activity->id)
+            ->where('scheduled_date', $schedule['scheduled_date'])
+            ->when(
+                $schedule['scheduled_time'] !== null,
+                fn ($query) => $query->where('scheduled_time', $schedule['scheduled_time']),
+                fn ($query) => $query->whereNull('scheduled_time'),
+            )
+            ->where('pax', (int) ($data['pax'] ?? 1))
+            ->whereIn('status', [BookingStatus::PENDING->value, BookingStatus::CONFIRMED->value])
+            ->where('created_at', '>=', now()->subMinutes(10))
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * The hotel's activity, deleted ones included so the check can say it is
+     * no longer offered. A hallucinated or cross-hotel id finds nothing.
+     */
+    private function activity(Hotel $hotel, ?string $activityId): ?Activity
+    {
+        if (! $activityId) {
+            return null;
+        }
+
+        return Activity::withoutGlobalScope('hotel')->withTrashed()
+            ->where('hotel_id', $hotel->id)
+            ->find($activityId);
+    }
+
+    private function availability(): ActivityAvailabilityService
+    {
+        return app(ActivityAvailabilityService::class);
     }
 
     /**
@@ -177,12 +447,33 @@ class BookingService
      */
     public function cancel(Booking $booking, string $reason): Booking
     {
-        $this->moveTo($booking, BookingStatus::CANCELLED, [
-            'cancelled_at' => Carbon::now(),
-            'cancellation_reason' => $reason,
-        ]);
+        DB::transaction(function () use ($booking, $reason) {
+            $this->moveTo($booking, BookingStatus::CANCELLED, [
+                'cancelled_at' => Carbon::now(),
+                'cancellation_reason' => $reason,
+            ]);
+
+            $this->closeCancellationRequest($booking);
+        });
 
         return $booking;
+    }
+
+    /**
+     * However the booking came to be cancelled — from the request queue or
+     * the status endpoint — the guest's open request to cancel it has been
+     * answered yes (FR-026).
+     */
+    private function closeCancellationRequest(Booking $booking): void
+    {
+        $request = $booking->openCancellationRequest()->withoutGlobalScope('hotel')->first();
+
+        $request?->forceFill([
+            'status' => TaskStatus::COMPLETED,
+            'resolution' => CancellationResolution::APPROVED,
+            'resolved_by_user_id' => Auth::id(),
+            'resolved_at' => now(),
+        ])->save();
     }
 
     /**

@@ -43,13 +43,25 @@ class BookingPolicy
         return $this->allows($user, Permission::BOOKINGS_UPDATE_STATUS, $booking);
     }
 
-    // A booking is cancelled, never edited in place or deleted — whatever
-    // permissions a role grants.
+    /**
+     * Correcting a live booking's date, time, party or notes. Its guest,
+     * origin and status are not editable through this, whatever is granted.
+     */
     public function update(User $user, Booking $booking): bool
     {
-        return false;
+        return $this->allows($user, Permission::BOOKINGS_UPDATE, $booking);
     }
 
+    /**
+     * Booking an activity past its daily capacity on purpose. Never a default.
+     */
+    public function overrideCapacity(User $user): bool
+    {
+        return $this->allows($user, Permission::BOOKINGS_OVERRIDE_CAPACITY);
+    }
+
+    // A booking is cancelled, never deleted — whatever permissions a role
+    // grants. The history is the point, same as the ledger.
     public function delete(User $user, Booking $booking): bool
     {
         return false;
