@@ -156,6 +156,7 @@ function wp5Booking(Hotel $hotel, array $overrides = []): Booking
 {
     return app(BookingService::class)->create(array_merge([
         'hotel_id' => $hotel->id,
+        'scheduled_date' => now()->toDateString(),
         'item_name' => 'Sunset dive',
         'charge_model' => ChargeModel::PAY_ON_SITE->value,
         'origin' => BookingOrigin::GUEST_REQUEST->value,
@@ -452,4 +453,66 @@ function hkVacatedRoom($test, string $timezone = 'UTC'): array
 function hkSetTaskStatus($test, User $user, Task $task, string $status): TestResponse
 {
     return hkPut($test, $user, "/api/task/{$task->id}", ['status' => $status]);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Activity availability and booking fixtures (SPEC-041/043)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * An active activity of the hotel, re-read so database defaults are loaded.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function abActivity(Hotel $hotel, array $attributes = []): Activity
+{
+    return Activity::withoutGlobalScope('hotel')->findOrFail(Activity::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Sunset cruise',
+        'price' => 50,
+        'currency' => 'USD',
+        'is_active' => true,
+        ...$attributes,
+    ])->id);
+}
+
+function abGuest(Hotel $hotel): Guest
+{
+    return Guest::create([
+        'hotel_id' => $hotel->id,
+        'external_id' => 'ext-'.Str::random(8),
+        'channel' => 'booking_com',
+        'first_name' => 'Guest',
+        'last_name' => Str::random(5),
+    ]);
+}
+
+/**
+ * A booking of `$pax` people on `$date` (Y-m-d, or Y-m-d H:i for a time),
+ * taken through BookingService so it is checked like any other.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function abBook(Hotel $hotel, Activity $activity, string $date, int $pax = 1, array $attributes = []): Booking
+{
+    $schedule = strlen($date) > 10 ? ['scheduled_for' => $date] : ['scheduled_date' => $date];
+
+    return app(BookingService::class)->create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => abGuest($hotel)->id,
+        'activity_id' => $activity->id,
+        'item_name' => $activity->name,
+        'pax' => $pax,
+        'charge_model' => ChargeModel::PAY_ON_SITE->value,
+        'origin' => BookingOrigin::STAFF->value,
+        ...$schedule,
+        ...$attributes,
+    ]);
+}
+
+function abPatch($test, User $user, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->patchJson($uri, $payload);
 }

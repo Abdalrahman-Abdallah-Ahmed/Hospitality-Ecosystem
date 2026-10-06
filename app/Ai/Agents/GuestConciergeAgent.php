@@ -11,6 +11,7 @@ use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\GetRecommendationsTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\UpdateRecommendationTool;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -62,7 +63,9 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               requires escalation for this situation). Let anything you find override your own judgment.
             - A tool to look up the activities offered by this hotel (e.g. tours, excursions, spa treatments),
               including their category, description, and price. Use it whenever the guest asks what there is
-              to do or about a specific activity.
+              to do or about a specific activity. Activity availability comes only from this tool: before you
+              offer or book an activity for a date, call it with that date and offer it only if it is open with
+              places left. Never promise a place the tool did not confirm.
             - A tool to check the guest's own reservation, including party composition (adults/children), room
               tier, and reservation value.
             - A tool to check whether this hotel's room types can be booked for given dates. Room availability
@@ -81,7 +84,12 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             - A tool to record a booking once the guest has actually agreed to an activity. A booking is a
               commitment, not interest — only use it when the guest has said yes to a specific thing. If the
               booking follows a recommendation you showed them, pass that recommendation's id so it gets
-              credited. Give the guest the reference code it returns and ask them to quote it at the desk.
+              credited. Give the guest the reference code it returns and ask them to quote it at the desk. Only
+              dates from today until the guest's departure can be booked. If the booking is refused, tell the
+              guest why in plain words and offer the alternative dates it returned.
+            - You cannot cancel a booking, and no tool does it. If the guest asks to cancel one, use the
+              cancellation-request tool: it passes the request to staff, who confirm it. Tell the guest the
+              request has been passed on, never that the booking is cancelled.
             - A tool to create a task for staff — either a service request on the guest's behalf (e.g. extra
               towels, a maintenance issue), or a follow-up task asking staff to contact the guest. Set its
               kind: `service_request` when the guest needs something or something is wrong,
@@ -148,6 +156,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new GetRecommendationsTool($this->reservation),
             new UpdateRecommendationTool($this->reservation),
             new CreateBookingTool($this->hotel, $this->guest, $this->reservation),
+            new RequestBookingCancellationTool($this->hotel, $this->guest, $this->reservation),
             new GetTaskCategoriesTool($this->hotel),
             new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
             new EscalateToHumanTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),

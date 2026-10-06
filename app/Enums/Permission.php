@@ -28,7 +28,9 @@ enum Permission: string
 
     case BOOKINGS_VIEW = 'bookings.view';
     case BOOKINGS_CREATE = 'bookings.create';
+    case BOOKINGS_UPDATE = 'bookings.update';
     case BOOKINGS_UPDATE_STATUS = 'bookings.update_status';
+    case BOOKINGS_OVERRIDE_CAPACITY = 'bookings.override_capacity';
 
     case DASHBOARD_VIEW = 'dashboard.view';
 
@@ -106,6 +108,10 @@ enum Permission: string
      *   needs a guest and an activity picked from those lists.
      * - Bookings can be taken and moved through their lifecycle by whoever is
      *   serving the guest, since only the outlet knows if the guest turned up.
+     *   The same people can correct a booking's date or party size: that is a
+     *   smaller act than the cancel they can already do, and it is checked
+     *   against the activity's availability. Booking past an activity's
+     *   capacity on purpose (bookings.override_capacity) is never a default.
      * - Recommendation outcomes are recorded by the people at the desk when a
      *   guest says no; a refusal-capture tool only admins can use captures
      *   nothing.
@@ -127,6 +133,7 @@ enum Permission: string
             self::AVAILABILITY_VIEW,
             self::BOOKINGS_VIEW,
             self::BOOKINGS_CREATE,
+            self::BOOKINGS_UPDATE,
             self::BOOKINGS_UPDATE_STATUS,
             self::DASHBOARD_VIEW,
             self::GUESTS_VIEW,

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
+use App\Enums\CancellationResolution;
 use App\Enums\CleaningReason;
 use App\Enums\CreatedBy;
 use App\Enums\GuestSignal;
@@ -53,6 +54,10 @@ class Task extends Model
         'cleaning_reason' => CleaningReason::class,
         'inspection_result' => InspectionResult::class,
         'completed_at' => 'datetime',
+        // A cancellation request's answer. Set only by
+        // BookingCancellationService and BookingService (forceFill).
+        'resolution' => CancellationResolution::class,
+        'resolved_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -76,7 +81,7 @@ class Task extends Model
             'assigned_to_user_id', 'task_category_id', 'title', 'description',
             'created_by', 'guest_signal', 'status', 'priority', 'due_date',
             'housekeeping_kind', 'cleaning_reason', 'inspection_result', 'inspection_note',
-            'source_task_id',
+            'source_task_id', 'booking_id', 'resolution', 'resolution_note',
         ];
     }
 
@@ -144,5 +149,23 @@ class Task extends Model
     public function maintenanceTasks()
     {
         return $this->hasMany(Task::class, 'source_task_id');
+    }
+
+    /**
+     * The booking a guest asked to cancel (SPEC-043).
+     */
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
+    }
+
+    public function resolvedBy()
+    {
+        return $this->belongsTo(User::class, 'resolved_by_user_id');
+    }
+
+    public function isCancellationRequest(): bool
+    {
+        return $this->guest_signal === GuestSignal::CANCELLATION_REQUEST;
     }
 }

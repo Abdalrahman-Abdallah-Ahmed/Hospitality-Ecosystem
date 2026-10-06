@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountUsageController;
+use App\Http\Controllers\ActivityAvailabilityController;
 use App\Http\Controllers\ActivityCategoryController;
 use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\AiAdvisorController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\AvailabilityController;
+use App\Http\Controllers\BookingCancellationRequestController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestController;
@@ -59,6 +61,7 @@ Route::middleware('api.key')->group(function () {
         Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
+        Route::get('/activity/{activity}/availability', ActivityAvailabilityController::class);
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
         Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
         Route::get('/availability', [AvailabilityController::class, 'index']);
@@ -77,10 +80,14 @@ Route::middleware('api.key')->group(function () {
         Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
         Route::post('/recommendation/{recommendation}/outcome', [RecommendationController::class, 'recordOutcome']);
         Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);
+        Route::get('/booking/cancellation-requests', [BookingCancellationRequestController::class, 'index']);
+        Route::post('/booking/{booking}/cancellation-request/approve', [BookingCancellationRequestController::class, 'approve']);
+        Route::post('/booking/{booking}/cancellation-request/decline', [BookingCancellationRequestController::class, 'decline']);
         Route::post('/booking/{booking}/status', [BookingController::class, 'updateStatus']);
         Route::post('/booking', [BookingController::class, 'store']);
         Route::get('/booking', [BookingController::class, 'index']);
         Route::get('/booking/{booking}', [BookingController::class, 'show']);
+        Route::patch('/booking/{booking}', [BookingController::class, 'update']);
         Route::get('/analytics/conversion', [AnalyticsController::class, 'conversion']);
         Route::post('/transaction/import', [TransactionController::class, 'import']);
         Route::post('/transaction/{transaction}/reverse', [TransactionController::class, 'reverse']);

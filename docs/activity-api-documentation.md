@@ -158,7 +158,7 @@ Validation errors come back as standard `422` responses. They are keyed by path,
 | Bad or reversed period dates | `unavailable_periods.0.start_date` / `unavailable_periods.0.end_date` |
 | `unavailable_periods` sent as an object instead of a list | `unavailable_periods` |
 
-These fields are **informational**. Creating a booking does not check them yet. They are shown to the WhatsApp AI concierge, so it can tell guests when an activity is open.
+*Since 2026-10-05* these fields **gate bookings**: a booking for the activity is refused for a date out of season, inside a closure period, on a closed weekday, or at a time outside that day's slots. Each slot bounds the **start** time (from `start` up to, not including, `end`). See [Activity Availability](#6-activity-availability) and the booking rules in [booking-entity-documentation.md](/D:/Hospitality%20Ecosystem/docs/booking-entity-documentation.md#availability-at-booking-time).
 
 ## Pitching Attributes
 
@@ -172,7 +172,7 @@ These fields are **informational**. Creating a booking does not check them yet. 
 | `duration_days` | integer 1–30, or `null` | How many **consecutive** days the activity takes (a 3-day diving course = `3`). `null` is treated as a single-day activity. A guest who does not have enough open days left before departure is not offered it. |
 | `daily_capacity` | integer ≥ 1, or `null` | How many people the activity can take per day. A day is full when the `pax` on that day's non-cancelled bookings reaches this number. `null` = unknown, and the activity is never treated as full. `0` is rejected, because it would mean "full every day". |
 
-`daily_capacity` is a rough daily limit, not a timetable. Bookings still start as `pending` and staff confirm them. These fields are informational: creating a booking does not check them.
+`daily_capacity` is one daily limit shared by every slot of the day, not a per-slot timetable. *Since 2026-10-05* it **gates bookings**: pending, confirmed and realised bookings hold their `pax`, and a booking that would go past it is refused unless staff with `bookings.override_capacity` override it. A multi-day activity (`duration_days`) holds its party on every day it covers, and needs places and an open day on each.
 
 Validation errors come back as standard `422` responses keyed by the field name (`audience`, `duration_days`, `daily_capacity`).
 
@@ -429,6 +429,67 @@ HTTP `200 OK`:
 Same as [show](#3-get-a-single-activity): `404` if the id doesn't exist, `403` if it belongs to a different hotel or the caller isn't `admin`.
 
 ---
+
+## 6. Activity Availability
+
+*Added 2026-10-05.* Whether the activity runs, and how many places it has left, on each date of a range. It is the data behind the booking calendar, and it uses the same rules as the booking check, so a date shown with `remaining: N` takes a booking of `N` people.
+
+### Endpoint
+
+```
+GET /api/activity/{id}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD
+```
+
+Needs `activities.view`. Another hotel's activity is a `403`.
+
+| Query | Rules |
+| --- | --- |
+| `from` | **required**, `YYYY-MM-DD` (hotel-local) |
+| `to` | optional, on or after `from`, at most **31 days** inclusive. Defaults to `from`. |
+
+Past dates are allowed, for showing history; each day says whether it is past.
+
+### Success Response — `200 OK`
+
+```json
+{
+  "message": "Activity availability fetched successfully.",
+  "code": 200,
+  "body": {
+    "activity_id": "…",
+    "daily_capacity": 12,
+    "duration_days": 1,
+    "days": [
+      {
+        "date": "2026-10-09",
+        "open": true,
+        "reason": null,
+        "closure_reason": null,
+        "windows": [{ "start": "17:00", "end": "19:00" }],
+        "capacity": 12,
+        "booked": 5,
+        "remaining": 7,
+        "past": false,
+        "has_bookings_while_closed": false
+      }
+    ]
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `open` | The activity runs that day by its own rules (active, in season, no closure, open that weekday). It does not consider places or whether the day is past. |
+| `reason` | Why a day is closed (`inactive`, `out_of_season`, `closure_period`, `closed_weekday`), or `fully_booked` for an open day with no places left. |
+| `closure_reason` | The closure period's reason, when there is one. |
+| `windows` | That weekday's slots. Empty when the activity has no hours (open all day) or is closed that weekday. |
+| `booked` | People held on that date by pending, confirmed and realised bookings. |
+| `remaining` | Places a booking **starting** that date can still take (for a multi-day activity, the tightest day it covers). Can be `0` or less when capacity was lowered after bookings were taken. `null` when the activity has no capacity. |
+| `has_bookings_while_closed` | The day is closed by the activity's rules but still has bookings, for example after a closure was added. Staff should contact those guests: their bookings are not cancelled automatically. |
+
+### Error: Bad Range — `422`
+
+A missing or badly formatted `from`, a `to` before `from`, or a range longer than 31 days (keyed `to`).
 
 ## Activity Category API
 

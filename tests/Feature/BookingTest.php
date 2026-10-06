@@ -226,15 +226,17 @@ it('writes an event_log entry for every status change', function () {
 });
 
 it('creates a booking from the concierge tool and carries the recommendation id', function () {
-    [, $hotel] = bookingAdminWithHotel();
-    $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+    [$hotel, $type, $rooms] = fdHotel(1);
+    $reservation = fdBook($hotel, $type, [$rooms[0]->id]);
+    $guest = Guest::withoutGlobalScope('hotel')->find($reservation->guest_id);
     $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Sunset dive', 'price' => 60, 'currency' => 'USD']);
     $recommendation = Recommendation::create(['hotel_id' => $hotel->id, 'activity_id' => $activity->id]);
 
-    $tool = new CreateBookingTool($hotel, $guest);
+    $tool = new CreateBookingTool($hotel, $guest, $reservation);
     $result = (string) $tool->handle(new Request([
         'activity_id' => $activity->id,
         'recommendation_id' => $recommendation->id,
+        'scheduled_for' => now()->addDay()->format('Y-m-d 10:00'),
         'pax' => 2,
         'charge_model' => ChargeModel::INCLUDED->value,
     ]));
@@ -252,12 +254,14 @@ it('creates a booking from the concierge tool and carries the recommendation id'
 });
 
 it('treats a booking the guest asked for unprompted as guest_request', function () {
-    [, $hotel] = bookingAdminWithHotel();
-    $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+    [$hotel, $type, $rooms] = fdHotel(1);
+    $reservation = fdBook($hotel, $type, [$rooms[0]->id]);
+    $guest = Guest::withoutGlobalScope('hotel')->find($reservation->guest_id);
     $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Spa', 'price' => 40, 'currency' => 'USD']);
 
-    (new CreateBookingTool($hotel, $guest))->handle(new Request([
+    (new CreateBookingTool($hotel, $guest, $reservation))->handle(new Request([
         'activity_id' => $activity->id,
+        'scheduled_for' => now()->addDay()->format('Y-m-d 10:00'),
     ]));
 
     expect(Booking::withoutGlobalScope('hotel')->where('guest_id', $guest->id)->first()->origin)
@@ -287,6 +291,7 @@ function bookingFor(Hotel $hotel, array $overrides = []): Booking
     return app(BookingService::class)->create(array_merge([
         'hotel_id' => $hotel->id,
         'guest_id' => $guest->id,
+        'scheduled_date' => now()->toDateString(),
         'item_name' => 'Sunset dive',
         'charge_model' => ChargeModel::PAY_ON_SITE->value,
         'origin' => BookingOrigin::GUEST_REQUEST->value,
