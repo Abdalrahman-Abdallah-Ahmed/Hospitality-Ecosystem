@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Admin\AiCostController;
+use App\Http\Controllers\Admin\KnowledgeBaseArticleController;
+use App\Http\Controllers\Admin\KnowledgeDocumentController;
+use App\Http\Controllers\Admin\KnowledgeRebuildController;
 use App\Http\Controllers\Admin\UsageController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,3 +37,28 @@ use Illuminate\Support\Facades\Route;
 // plus `super_admin`.
 Route::get('/usage', [UsageController::class, 'index']);
 Route::get('/ai-cost', [AiCostController::class, 'index']);
+
+// Global knowledge: what every hotel's assistant reads. It lives here, and
+// only here, so nothing outside the super-admin stack can change it.
+// `deleted` before `{id}`, or it would be read as a document id.
+Route::get('/knowledge-documents/deleted', [KnowledgeDocumentController::class, 'deleted']);
+Route::get('/knowledge-documents', [KnowledgeDocumentController::class, 'index']);
+Route::post('/knowledge-documents', [KnowledgeDocumentController::class, 'store']);
+Route::get('/knowledge-documents/{id}', [KnowledgeDocumentController::class, 'show']);
+Route::put('/knowledge-documents/{id}', [KnowledgeDocumentController::class, 'update']);
+Route::delete('/knowledge-documents/{id}', [KnowledgeDocumentController::class, 'destroy']);
+Route::post('/knowledge-documents/{id}/file', [KnowledgeDocumentController::class, 'replace']);
+Route::get('/knowledge-documents/{id}/download', [KnowledgeDocumentController::class, 'download']);
+Route::get('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'showText']);
+Route::put('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'correctText']);
+Route::delete('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'discardText']);
+Route::post('/knowledge-documents/{id}/reindex', [KnowledgeDocumentController::class, 'reindex']);
+Route::post('/knowledge-documents/{id}/restore', [KnowledgeDocumentController::class, 'restore']);
+Route::get('/knowledge-base-articles', [KnowledgeBaseArticleController::class, 'index']);
+Route::post('/knowledge-base-articles', [KnowledgeBaseArticleController::class, 'store']);
+Route::get('/knowledge-base-articles/{id}', [KnowledgeBaseArticleController::class, 'show']);
+Route::put('/knowledge-base-articles/{id}', [KnowledgeBaseArticleController::class, 'update']);
+Route::delete('/knowledge-base-articles/{id}', [KnowledgeBaseArticleController::class, 'destroy']);
+Route::post('/knowledge/rebuilds', [KnowledgeRebuildController::class, 'store']);
+Route::get('/knowledge/rebuilds', [KnowledgeRebuildController::class, 'index']);
+Route::get('/knowledge/rebuilds/{id}', [KnowledgeRebuildController::class, 'show']);

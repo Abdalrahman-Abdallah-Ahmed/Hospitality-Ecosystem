@@ -19,6 +19,7 @@ use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
 use App\Http\Controllers\HousekeepingBoardController;
 use App\Http\Controllers\KnowledgeBaseArticleController;
+use App\Http\Controllers\KnowledgeDocumentController;
 use App\Http\Controllers\MaintenanceTaskController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\RecommendationController;
@@ -115,6 +116,20 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/staff-roles', StaffRoleController::class)->except(['edit', 'create']);
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
         Route::resource('/knowledge-base-articles', KnowledgeBaseArticleController::class)->except(['edit', 'create']);
+        // `deleted` before `{id}`, or it would be read as a document id.
+        Route::get('/knowledge-documents/deleted', [KnowledgeDocumentController::class, 'deleted']);
+        Route::get('/knowledge-documents', [KnowledgeDocumentController::class, 'index']);
+        Route::post('/knowledge-documents', [KnowledgeDocumentController::class, 'store']);
+        Route::get('/knowledge-documents/{id}', [KnowledgeDocumentController::class, 'show']);
+        Route::put('/knowledge-documents/{id}', [KnowledgeDocumentController::class, 'update']);
+        Route::delete('/knowledge-documents/{id}', [KnowledgeDocumentController::class, 'destroy']);
+        Route::post('/knowledge-documents/{id}/file', [KnowledgeDocumentController::class, 'replace']);
+        Route::get('/knowledge-documents/{id}/download', [KnowledgeDocumentController::class, 'download']);
+        Route::get('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'showText']);
+        Route::put('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'correctText']);
+        Route::delete('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'discardText']);
+        Route::post('/knowledge-documents/{id}/reindex', [KnowledgeDocumentController::class, 'reindex']);
+        Route::post('/knowledge-documents/{id}/restore', [KnowledgeDocumentController::class, 'restore']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
         Route::get('/history/{type}/{id}', [HistoryController::class, 'show']);
 
