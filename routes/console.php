@@ -3,6 +3,7 @@
 use App\Jobs\AiCost\FlagAiCostOverrunsJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
+use App\Jobs\PurgeDeletedKnowledgeDocumentsJob;
 use App\Jobs\StartHousekeepingDayJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -20,6 +21,10 @@ Schedule::job(new MatchRecommendationOutcomesJob)->dailyAt('03:30');
 // maintained incrementally as usage happens; this is the safety net that
 // catches drift, and it logs any it finds rather than quietly correcting it.
 Schedule::job(new RebuildUsageCountersJob)->dailyAt('04:00');
+
+// Removes knowledge documents deleted more than 30 days ago, for good: the
+// row, its passages and its files. Until then they can be restored.
+Schedule::job(new PurgeDeletedKnowledgeDocumentsJob)->dailyAt('04:15');
 
 // Starts each hotel's housekeeping day: stay-over rooms become dirty with one
 // cleaning task each. Hourly, so every time zone gets its own local date; the

@@ -47,7 +47,8 @@ class RecommendationAgent implements Agent, Conversational, HasTools
             - A knowledge-base search tool covering this hotel's own articles/policies and the shared global
               knowledge base. Use it before recommending: check for any eligibility rules (e.g. age/health
               restrictions) or other policy relevant to the activities you're considering, and let anything
-              you find override your own judgment.
+              you find override your own judgment. When a result whose scope is "hotel" and one whose scope is
+              "general" disagree, follow the "hotel" result: it is this hotel's own rule.
             - A tool to fetch the guest's own reservation, including party composition (adults/children), room
               tier, and reservation value.
             - A tool to fetch this hotel's recent guest messages — check for anything from this guest that

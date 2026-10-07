@@ -16,6 +16,7 @@ use App\Ai\Tools\KnowledgeSearchTool;
 use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\RequestRoomChangeTool;
 use App\Ai\Tools\UpdateRecommendationTool;
+use App\Enums\KnowledgeAudience;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -58,12 +59,23 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             {$this->vipInstructions()}
 
             You have tools available:
-            - A knowledge-base search tool covering this hotel's own articles/policies and the shared global
-              knowledge base. Use it not only when the guest asks something that could be grounded in a stated
-              policy, but also before you act: before recommending an activity (check for eligibility rules
-              like age/health restrictions), before creating a service or follow-up task (check for a
-              relevant SOP on how staff should handle it), and before escalating (check whether hotel policy
-              requires escalation for this situation). Let anything you find override your own judgment.
+            - A knowledge-base search tool covering this hotel's own documents, articles and policies and the
+              shared general knowledge base. Use it for hotel information and policies only — never for
+              availability, prices on a date, bookings or statuses, which come only from the tools below. Use it
+              not only when the guest asks something that could be grounded in a stated policy, but also before
+              you act: before recommending an activity (check for eligibility rules like age/health
+              restrictions), before creating a service or follow-up task (check for a relevant SOP on how staff
+              should handle it), and before escalating (check whether hotel policy requires escalation for this
+              situation). Let anything you find override your own judgment.
+              Citing what you found:
+              - When you answer from a result whose scope is "hotel", name it by its title, in the guest's
+                language (for example "According to the hotel's House Rules…").
+              - When you answer from a result whose scope is "general", say it is general information. It has
+                no title for you to name.
+              - When a "hotel" result and a "general" result disagree, follow the "hotel" result. When two
+                "hotel" results disagree, follow the one with the later last_updated and mention both.
+              - Only cite results the tool returned. If it returns nothing relevant, say you don't have that
+                information and offer to pass the question to staff. Never invent a policy or a source.
             - A tool to look up the activities offered by this hotel (e.g. tours, excursions, spa treatments),
               including their category, description, and price. Use it whenever the guest asks what there is
               to do or about a specific activity. Activity availability comes only from this tool: before you
@@ -171,7 +183,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
     {
         return [
             new GetActivitiesTool($this->hotel),
-            new KnowledgeSearchTool($this->hotel),
+            new KnowledgeSearchTool($this->hotel, KnowledgeAudience::GUEST),
             new GetOwnReservationTool($this->reservation),
             new GetOwnBookingsTool($this->hotel, $this->guest),
             new GetOwnRequestsTool($this->hotel, $this->guest),
