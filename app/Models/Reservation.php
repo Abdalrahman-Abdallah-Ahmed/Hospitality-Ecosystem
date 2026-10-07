@@ -74,6 +74,55 @@ class Reservation extends Model
     }
 
     /**
+     * Current or upcoming: checked in (whatever the planned departure date),
+     * or pending/confirmed and not departed yet in the hotel's time zone. The Concierge files service, maintenance and
+     * room-change requests only for an active reservation (SPEC-007 R6); a
+     * guest recognised by a past stay gets information and escalation only.
+     */
+    public function isActive(): bool
+    {
+        // In the house is current, even past the planned departure date (a
+        // late checkout, or a stay extended at the desk).
+        if ($this->status === ReservationStatus::CHECKED_IN) {
+            return true;
+        }
+
+        if (! in_array($this->status, [ReservationStatus::PENDING, ReservationStatus::CONFIRMED], true)) {
+            return false;
+        }
+
+        $hotel = $this->relationLoaded('hotel')
+            ? $this->hotel
+            : Hotel::withoutGlobalScopes()->find($this->hotel_id);
+
+        return $this->departure_date->toDateString() >= now($hotel?->timezone ?? config('app.timezone'))->toDateString();
+    }
+
+    /**
+     * The guest's current or upcoming reservation at the hotel: checked in
+     * first, then the soonest arrival. Sender recognition ranks reservations
+     * by date without looking at status, so the one it picked can be a
+     * cancelled or checked-out one while another is still live.
+     */
+    public static function activeFor(Hotel $hotel, Guest $guest): ?self
+    {
+        $today = now($hotel->timezone ?? config('app.timezone'))->toDateString();
+
+        return static::withoutGlobalScope('hotel')
+            ->where('hotel_id', $hotel->id)
+            ->where('guest_id', $guest->id)
+            // Checked in counts whatever the planned departure date, like isActive().
+            ->where(fn ($query) => $query->where('status', ReservationStatus::CHECKED_IN->value)
+                ->orWhere(fn ($query) => $query
+                    ->whereIn('status', [ReservationStatus::PENDING->value, ReservationStatus::CONFIRMED->value])
+                    ->whereDate('departure_date', '>=', $today)))
+            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [ReservationStatus::CHECKED_IN->value])
+            ->orderBy('arrival_date')
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
      * The room of the first live line that has one. The Concierge's guest
      * requests fall back to it when the guest is not in the house yet.
      */

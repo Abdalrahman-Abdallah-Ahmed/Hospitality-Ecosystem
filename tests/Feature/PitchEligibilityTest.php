@@ -251,6 +251,15 @@ it('blocks while a service request from the last 24 hours is open', function () 
     expect(gateOf(decideTurn($guest, $hotel, $reservation), PitchGate::OPEN_SERVICE_REQUEST)['passed'])->toBeFalse();
 });
 
+it('blocks while a maintenance or room-change request is open, like a service request', function (GuestSignal $signal) {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    guestSignalTask($guest, $signal);
+    TurnSignalAgent::fake()->preventStrayPrompts();
+
+    expect(gateOf(decideTurn($guest, $hotel, $reservation), PitchGate::OPEN_SERVICE_REQUEST)['passed'])->toBeFalse();
+})->with([GuestSignal::MAINTENANCE_REQUEST, GuestSignal::ROOM_CHANGE_REQUEST]);
+
 it('does not block on an old, a finished, or a booking follow-up task', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);

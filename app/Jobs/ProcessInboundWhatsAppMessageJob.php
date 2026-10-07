@@ -56,8 +56,6 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
 
     public const NOT_PAIRED_REPLY = 'This number is not yet paired to your account. Please pair your WhatsApp device from the dashboard before using the advisor here.';
 
-    public const UNKNOWN_SENDER_REPLY = "Sorry, we couldn't recognize this number. Please contact the hotel directly for assistance.";
-
     public const FAILED_REPLY = "Sorry, something went wrong on our side and I couldn't answer that. Please try again in a moment, or contact the hotel directly.";
 
     public const UNAVAILABLE_REPLY = "Sorry, I can't answer messages right now. Please contact the hotel directly for assistance.";
@@ -126,6 +124,14 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
+        // Unknown numbers are ignored in the webhook (SPEC-007 Q3); one that
+        // still arrives here gets no reply either.
+        if ($this->senderType === SenderType::UNKNOWN) {
+            $inbound->update(['status' => InboundMessageStatus::IGNORED]);
+
+            return;
+        }
+
         $this->recordContact();
 
         if ($inbound->reply_text === null) {
@@ -169,10 +175,6 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
     {
         if ($this->senderType === SenderType::ADMIN && ! $this->devicePaired) {
             return self::NOT_PAIRED_REPLY;
-        }
-
-        if ($this->senderType === SenderType::UNKNOWN) {
-            return self::UNKNOWN_SENDER_REPLY;
         }
 
         // An earlier attempt started the turn and died before storing a

@@ -210,7 +210,12 @@ class CreateBookingTool implements Tool
             return null;
         }
 
+        // This guest's reservation's recommendations, or hotel-wide ones;
+        // never another guest's, which must not be credited with this
+        // booking (SPEC-007 FR-032).
         return Recommendation::where('hotel_id', $this->hotel->id)
+            ->where(fn ($query) => $query->whereNull('reservation_id')
+                ->when($this->reservation, fn ($query) => $query->orWhere('reservation_id', $this->reservation->id)))
             ->find($request->string('recommendation_id')->toString());
     }
 }

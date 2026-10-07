@@ -391,8 +391,10 @@ Open requests, oldest first, paginated (`page`, `per_page`):
 ```
 
 Cancels the booking; `reason` defaults to the guest's. The request closes with
-`resolution = approved`, who decided and when. `404` when the booking has no
-open request; `422` (request left open) when the booking can no longer be
+`resolution = approved`, who decided and when. The guest is told the booking
+is cancelled (*added 2026-10-06*): on WhatsApp if they wrote within the last 24
+hours, otherwise by email. Cancelling the booking any other way while a request
+is open does the same. `404` when the booking has no open request; `422` (request left open) when the booking can no longer be
 cancelled, for example because it was realised meanwhile.
 
 ### `POST /api/booking/{id}/cancellation-request/decline`
@@ -402,8 +404,11 @@ cancelled, for example because it was realised meanwhile.
 ```
 
 `note` is required. The booking stays as it is; the request closes with
-`resolution = declined` and the note, so the guest can be told why. `200` with
-the request; `404` when there is none open.
+`resolution = declined` and the note. The guest is told the booking still
+stands, and the note is included in that message (*added 2026-10-06*), so write
+it for the guest. Same WhatsApp-or-email rule as approval. `200` with the
+request; `404` when there is none open. The task's `guest_notice_*` fields show
+whether the guest was reached.
 
 ## Related Docs
 

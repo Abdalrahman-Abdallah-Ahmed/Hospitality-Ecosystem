@@ -203,7 +203,9 @@ class PitchEligibilityService
 
         $open = Task::where('hotel_id', $hotel->id)
             ->where('guest_id', $guest->id)
-            ->where('guest_signal', GuestSignal::SERVICE_REQUEST->value)
+            // Any open complaint: a service, maintenance or room-change
+            // request (SPEC-007 R17).
+            ->whereIn('guest_signal', GuestSignal::complaintValues())
             ->whereIn('status', [TaskStatus::PENDING->value, TaskStatus::IN_PROGRESS->value])
             ->where('created_at', '>=', $now->copy()->subHours($hours))
             ->exists();

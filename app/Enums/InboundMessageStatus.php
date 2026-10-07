@@ -13,6 +13,9 @@ enum InboundMessageStatus: string
     /** Handled as a device-pairing code rather than a conversation turn. */
     case PAIRING = 'pairing';
 
+    /** The sender matched no guest or staff member; no reply is generated. */
+    case IGNORED = 'ignored';
+
     case REPLIED = 'replied';
 
     /** The reply could not be delivered after every retry. */

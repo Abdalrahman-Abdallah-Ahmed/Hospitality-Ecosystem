@@ -257,6 +257,10 @@ Hard delete. Tasks referencing this category have `task_category_id` set to `NUL
   "description": null,
   "created_by": "ai",
   "guest_signal": null,
+  "guest_notice_status": null,
+  "guest_notice_channel": null,
+  "guest_notice_reason": null,
+  "guest_notice_at": null,
   "status": "pending",
   "priority": "normal",
   "due_date": null,
@@ -276,6 +280,18 @@ Field notes:
 
 - `created_by` is a fixed enum: `ai`, `system`, `guest`, `maintenance_schedule`, `manual`. Defaults to `ai` if omitted.
 - `guest_signal` (read-only, *added 2026-09-19*) says why a guest-related task exists: `escalation` (the concierge handed the guest to a human), `service_request` (the guest needs something or something is broken), `booking_follow_up` (staff should help an interested guest book an activity), or `null` (a task not raised by the concierge). Only the WhatsApp concierge sets it; create and update ignore it. While a guest has an escalation this stay, or a `service_request` from the last 24 hours that is still `pending` or `in_progress`, the concierge does not suggest activities to them. Completing or cancelling a service request lifts that block. An escalation keeps it in place until the guest leaves, whatever the task's status.
+- `guest_signal` values *added 2026-10-06* (SPEC-007):
+  - `maintenance_request`: the guest reported something broken in their room. Always filed under the hotel's Maintenance category and team.
+  - `room_change_request`: the guest asked to move rooms. It has no team and no category, so every staff member who can see the hotel's tasks sees it, and the hotel's admins are emailed. Staff decide and carry out any move through room assignment; the request itself moves nobody. At most one is open per stay, or per reservation before arrival.
+  - `cancellation_request` (Phase 6) is also shown here: a guest's request to cancel an activity booking.
+
+  Clients must not assume a fixed list of `guest_signal` values. An open `maintenance_request` or `room_change_request` pauses activity suggestions just like a `service_request`. At most one `escalation` is open per guest per hotel: when the guest asks again, the new reason is appended to the open one.
+- `guest_notice_status`, `guest_notice_channel`, `guest_notice_reason`, `guest_notice_at` (read-only, *added 2026-10-06*) record whether the guest was told how their request ended. They are `null` until the request closes.
+  - `guest_notice_status`: `pending` (being sent), `sent`, `skipped` or `failed`.
+  - `guest_notice_channel` (when `sent`): `whatsapp` when the guest wrote to the hotel's WhatsApp number within the last 24 hours, otherwise `email` to the guest's address on file.
+  - `guest_notice_reason` (when not sent): `cancelled` (the request was cancelled, so the guest is not told), `no_contact` (outside the WhatsApp window and no email address) or `send_failed` (every channel failed after retries).
+
+  Only service, maintenance and room-change requests, and decided booking cancellation requests, notify the guest. Escalations, booking follow-ups and staff-created tasks never do. Each request notifies at most once, even if it is reopened and completed again. The message is a fixed text in English (Arabic for Arabic-speaking guests); it names the kind of request and the hotel, never the task title, description or staff names. Create and update ignore these fields.
 - `stay_id` (*added 2026-09-24*) links the task to one guest stay (one room of a reservation; see [stays-api-documentation.md](stays-api-documentation.md)). A check-out creates a cleaning task with it set, and the WhatsApp concierge sets it on a guest's request when it knows which room the guest is in.
 - `status` is a fixed enum: `pending`, `in_progress`, `completed`, `cancelled`. Defaults to `pending`.
 - Read-only housekeeping fields (*added 2026-10-04*, see [§4](#4-housekeeping-and-maintenance)): `housekeeping_kind` (`cleaning` / `inspection` / `null`), `cleaning_reason` (`check_out` / `stay_over` / `re_clean` / `return_to_service` / `manual`), `inspection_result` (`pass` / `fail`) and `inspection_note`, `source_task_id` (the housekeeping task a maintenance task was reported from) and `completed_at`. Create and update ignore them.
@@ -286,7 +302,7 @@ Field notes:
 
 ### 3.1 List Tasks — `GET /api/task`
 
-Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `stay_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `guest_signal`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`.
+Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `reservation_id`, `stay_id`, `guest_id`, `assigned_to_team_id`, `assigned_to_user_id`, `task_category_id`, `created_by_user_id`, `title`, `description`, `created_by`, `guest_signal`, `guest_notice_status`, `guest_notice_channel`, `guest_notice_reason`, `guest_notice_at`, `status`, `priority`, `due_date`, `created_at`, `updated_at`, `deleted_at`. A useful board/kanban filter: `filter[status]=in_progress` or `filter[assigned_to_team_id]=<team-id>`. Guest requests by kind: `filter[guest_signal]=maintenance_request` or `filter[guest_signal]=room_change_request`. Guests who could not be told about their request: `filter[guest_notice_status]=failed`.
 
 **Breaking change — response shape:** `body` is no longer the paginator directly. It's now:
 
@@ -399,6 +415,8 @@ Same hotel-ownership and enum-value validation as create applies to whichever fi
 **`guest_id` on update is only re-derived when you send `reservation_id` in that same request.** If your `PUT` payload omits `reservation_id` entirely (e.g. you're only changing `status` or `priority`), the task's existing `guest_id` is left as-is — it isn't wiped to `null` just because you didn't resend the reservation. If you do send `reservation_id` (including explicitly sending `null` to detach it), `guest_id` is recalculated from it, same as on create.
 
 Changing `status` on a cleaning task moves its room's housekeeping status ([§4.1](#41-cleaning-tasks-move-the-room)). Completing an **inspection** task here is refused (`422`) — use [the inspection action](#43-complete-an-inspection--post-apitaskidinspection).
+
+Setting `status` to `completed` on a guest's service, maintenance or room-change request queues the guest's notice (see `guest_notice_*` in [the task object](#the-task-object)). The response does not wait for it, and a failed notice never changes the task's status. Setting `status` to `cancelled` on one of those records `guest_notice_status: skipped` with `guest_notice_reason: cancelled` and sends nothing.
 
 Success: `200`, `body` is the updated [task object](#the-task-object). When the completed task is the maintenance task tracking an out-of-order room, `body.room_ready_to_return` is `true`: the room stays out of order until someone calls `POST /api/room/{id}/return-to-service`.
 

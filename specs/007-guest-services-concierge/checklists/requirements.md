@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,8 +31,8 @@
 
 ## Notes
 
-- 3 open clarifications: guest notice on cancelled requests (US1-5), notices outside the
-  24-hour messaging window (US2-2, FR-010), and unknown-number handling (US7-1).
+- Clarifications resolved 2026-10-06: completion-only notices, email outside the 24-hour
+  window, no reply to unknown numbers. Recorded in the spec's Clarifications section.
 - Domain terms (task, category, team, stay, Concierge, D-numbers) are kept because they
   are the business vocabulary of the plan and the earlier specs.
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`

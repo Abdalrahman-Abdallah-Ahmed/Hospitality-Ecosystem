@@ -29,8 +29,15 @@ class TaskResource extends JsonResource
             'description' => $this->description,
             'created_by' => $this->created_by,
             // Read-only: why a guest-related task exists (escalation,
-            // service_request, booking_follow_up). Set by the concierge.
+            // service_request, maintenance_request, room_change_request,
+            // cancellation_request, booking_follow_up). Set by the concierge.
             'guest_signal' => $this->guest_signal,
+            // Read-only: whether the guest was told how the request ended,
+            // how, or why not (SPEC-007). Null until the request closes.
+            'guest_notice_status' => $this->guest_notice_status,
+            'guest_notice_channel' => $this->guest_notice_channel,
+            'guest_notice_reason' => $this->guest_notice_reason,
+            'guest_notice_at' => $this->guest_notice_at,
             'status' => $this->status,
             'priority' => $this->priority,
             'due_date' => $this->due_date,

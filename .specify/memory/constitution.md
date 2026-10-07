@@ -1,6 +1,20 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 2.0.0 → 2.1.0
+Bump rationale: MINOR — materially expanded guidance in "Guest Identity and WhatsApp":
+guests are still contacted through their WhatsApp number whenever WhatsApp rules allow,
+and a transactional notice MAY now go by email when WhatsApp rules forbid a message
+(e.g. outside the 24-hour window). No WhatsApp templates required. Email is never used
+for AI conversation turns or promotional messages. Decided in the Phase 7 clarification
+Q2 (specs/007-guest-services-concierge).
+
+Modified sections: Domain Model and Product Constraints → Guest Identity and WhatsApp.
+Added sections: none. Removed sections: none.
+Templates: not modified (they read the constitution at runtime).
+Deferred TODOs: none.
+
+Previous (2.0.0) report follows.
 Version change: 1.0.0 → 2.0.0 (same day as ratification)
 Bump rationale: MAJOR — an MVP requirement is removed: conversation search moves from MVP
 to post-MVP (Conversations and Guest Memories; MVP Boundary). Conversations stay in the
@@ -266,7 +280,12 @@ Implementation MUST:
 ### Guest Identity and WhatsApp
 
 - WhatsApp is the primary AI interface for MVP. The registered WhatsApp phone number is the
-  primary guest identity, and guests MUST be contacted through it.
+  primary guest identity and the primary contact channel, and guests MUST be contacted
+  through it whenever WhatsApp rules allow.
+- When WhatsApp rules forbid a message (for example outside the 24-hour customer-service
+  window), a transactional notice to the guest MAY be sent by email to the guest's address
+  on file instead. WhatsApp template messages are not required for this. Email MUST NOT be
+  used for AI conversation turns or promotional messages.
 - Unknown numbers MUST NOT receive privileged guest operations until identity is established.
   Identity resolution MUST be conservative and never attach one guest's conversation or
   actions to another guest.
@@ -486,4 +505,4 @@ These rules MUST NOT be violated without an explicit, recorded architectural dec
   verify adherence to the Core Principles and Non-Negotiable Rules. Complexity or deviation
   MUST be justified in the plan's Complexity Tracking section.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-22 | **Last Amended**: 2026-09-22
+**Version**: 2.1.0 | **Ratified**: 2026-09-22 | **Last Amended**: 2026-10-06

@@ -1,9 +1,11 @@
 <?php
 
 use App\Ai\Tools\CheckInTool;
+use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\GetAvailabilityTool;
 use App\Ai\Tools\GetGuestAvailabilityTool;
 use App\Ai\Tools\GetStaysTool;
+use App\Ai\Tools\RequestRoomChangeTool;
 use App\Enums\AttributionMethod;
 use App\Enums\OutcomeType;
 use App\Enums\UserRole;
@@ -539,4 +541,25 @@ it('keeps one hotel out of another hotel activity availability, bookings and can
         ->and(fdGet($this, $adminA, "/api/activity/{$activityA->id}/availability?from=2026-10-09")->json('body.days.0.booked'))->toBe(2)
         ->and($bookingB->fresh()->notes)->toBeNull()
         ->and($bookingB->fresh()->status->value)->toBe('pending');
+});
+
+it('keeps one hotel out of another hotel guest requests and their notices (SPEC-007 FR-037)', function () {
+    $whatsApp = gsFakeWhatsApp();
+    [$adminA, $hotelA] = gsHotel();
+    [$adminB, $hotelB] = gsHotel();
+    $guestB = gsGuest($hotelB);
+    $reservationB = gsInHouse($hotelB, $guestB);
+    gsRunTool(new RequestRoomChangeTool($guestB, $hotelB, $reservationB), ['reason' => 'Noisy']);
+    gsRunTool(new CreateGuestServiceRequestTool($guestB, $hotelB, $reservationB), ['kind' => 'maintenance_request', 'title' => 'AC', 'description' => 'Broken']);
+    $roomChangeB = Task::withoutGlobalScope('hotel')->where('guest_signal', 'room_change_request')->sole();
+    $maintenanceB = Task::withoutGlobalScope('hotel')->where('guest_signal', 'maintenance_request')->sole();
+    hkSetTaskStatus($this, $adminB, $maintenanceB, 'cancelled')->assertOk();
+
+    fdGet($this, $adminA, "/api/task/{$roomChangeB->id}")->assertForbidden();
+    hkSetTaskStatus($this, $adminA, $roomChangeB, 'completed')->assertForbidden();
+
+    expect(fdGet($this, $adminA, '/api/task?filter[guest_signal]=room_change_request')->assertOk()->json('body.data'))->toBe([])
+        ->and(fdGet($this, $adminA, '/api/task?filter[guest_notice_status]=skipped')->assertOk()->json('body.data'))->toBe([])
+        ->and($roomChangeB->fresh()->status->value)->toBe('pending')
+        ->and($whatsApp->sent)->toBe([]);
 });

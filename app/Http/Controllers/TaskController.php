@@ -16,6 +16,7 @@ use App\Services\CreationNotificationService;
 use App\Services\HousekeepingService;
 use App\Services\MaintenanceService;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -169,11 +170,22 @@ class TaskController extends Controller
 
         $before = $task->getAttributes();
 
-        DB::transaction(function () use ($task, $validated, $housekeeping, $before): void {
-            $housekeeping->lockRooms([$before['room_id'] ?? null, $validated['room_id'] ?? null]);
-            $task->update($validated);
-            $housekeeping->taskChanged($task, $before);
-        });
+        try {
+            DB::transaction(function () use ($task, $validated, $housekeeping, $before): void {
+                $housekeeping->lockRooms([$before['room_id'] ?? null, $validated['room_id'] ?? null]);
+                $task->update($validated);
+                $housekeeping->taskChanged($task, $before);
+            });
+        } catch (QueryException $e) {
+            // Reopening a guest's escalation or room-change request while the
+            // guest already has another one open (SPEC-007 partial unique
+            // indexes): a conflict to report, not a server error.
+            if ($message = $this->openRequestConflict($e)) {
+                return apiResponse($message, 422);
+            }
+
+            throw $e;
+        }
 
         $notifications->taskReassigned($task, $before);
 
@@ -201,6 +213,23 @@ class TaskController extends Controller
         }
 
         return apiResponse('Answer a cancellation request by approving or declining it on its booking.', 422);
+    }
+
+    /**
+     * The message for a write that would leave a guest with two open requests
+     * of a kind they may only have one of, or null for any other error.
+     */
+    private function openRequestConflict(QueryException $e): ?string
+    {
+        if ($e->getCode() !== '23505') {
+            return null;
+        }
+
+        return match (true) {
+            str_contains($e->getMessage(), 'tasks_one_open_escalation_per_guest') => 'This guest already has another open escalation. Close it, or add to it, before reopening this one.',
+            str_contains($e->getMessage(), 'tasks_one_open_room_change_per_stay') => 'This stay already has another open room-change request. Close it before reopening this one.',
+            default => null,
+        };
     }
 
     /**

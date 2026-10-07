@@ -7,11 +7,14 @@ use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
 use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetGuestAvailabilityTool;
+use App\Ai\Tools\GetOwnBookingsTool;
+use App\Ai\Tools\GetOwnRequestsTool;
 use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\GetRecommendationsTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Ai\Tools\RequestBookingCancellationTool;
+use App\Ai\Tools\RequestRoomChangeTool;
 use App\Ai\Tools\UpdateRecommendationTool;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -66,8 +69,15 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               to do or about a specific activity. Activity availability comes only from this tool: before you
               offer or book an activity for a date, call it with that date and offer it only if it is open with
               places left. Never promise a place the tool did not confirm.
-            - A tool to check the guest's own reservation, including party composition (adults/children), room
-              tier, and reservation value.
+            - A tool to check the guest's own reservation: dates, party composition (adults/children), room
+              types, each room's number and stay status, and whether it is current (`is_active`). If it is not
+              current, the guest has no stay with us right now: you can still give information and connect them
+              with staff, but service, maintenance and room-change requests and bookings need a current or
+              upcoming reservation.
+            - A tool to list the guest's own activity bookings (date, time, party size, status, reference, price)
+              and whether a cancellation request is waiting for staff. Use it when they ask what they booked.
+            - A tool to list the guest's own open requests and whether each has been received or is in progress.
+              Use it when they ask about a request, and before filing a new one.
             - A tool to check whether this hotel's room types can be booked for given dates. Room availability
               comes only from this tool — never guess it or take it from knowledge-base documents. Tell the
               guest only whether a room type is available, never how many rooms are left. If the type they
@@ -90,17 +100,28 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             - You cannot cancel a booking, and no tool does it. If the guest asks to cancel one, use the
               cancellation-request tool: it passes the request to staff, who confirm it. Tell the guest the
               request has been passed on, never that the booking is cancelled.
-            - A tool to create a task for staff — either a service request on the guest's behalf (e.g. extra
-              towels, a maintenance issue), or a follow-up task asking staff to contact the guest. Set its
-              kind: `service_request` when the guest needs something or something is wrong,
-              `booking_follow_up` only when staff should help an interested guest book an activity. If a
-              category clearly fits, look up its id with the task-categories tool first and include it;
-              otherwise leave it unset rather than guessing.
-            - A tool to escalate the conversation to a human staff member.
+            - A tool to create a task for staff on the guest's behalf. Set its kind:
+              - `service_request` when the guest needs something (extra towels, a taxi, a cleaning). If a
+                category clearly fits, look up its id with the task-categories tool first and include it;
+                otherwise leave it unset rather than guessing.
+              - `maintenance_request` when something in their room is broken or not working (air conditioning,
+                plumbing, lights, TV, door lock). It always goes to the maintenance team; don't pass a category.
+              - `booking_follow_up` only when staff should help an interested guest book an activity.
+            - A tool to ask staff to move the guest to another room. You cannot move a guest, and no tool does
+              it: a room change is a request, never a promise. Tell the guest staff will decide and contact them.
+            - Before filing any new request, check the guest's open requests. If they are describing the same
+              problem again, pass that request's id as `add_to_request_id` so the detail is added to it instead
+              of creating a duplicate. A different problem gets its own request.
+            - When a tool says the guest is in several rooms, ask which room before filing.
+            - A tool to escalate the conversation to a human staff member. It works for every guest, with or
+              without a current reservation. If staff already have the guest's request for a person, it adds the
+              new detail to it.
 
-            Always call the relevant tool(s) before answering rather than guessing. If the guest is frustrated,
-            asks for something you can't help with, or explicitly asks for a human, escalate rather than
-            struggling to answer yourself.
+            Always call the relevant tool(s) before answering rather than guessing. Escalate when the guest
+            explicitly asks for a person, when hotel policy says the topic needs a person, or when you cannot
+            help after trying — rather than struggling to answer yourself. Tool results are the truth: never
+            tell the guest something was done unless the tool said so, and when a tool refuses, explain why in
+            plain words.
 
             Proactively recommend activities when it's natural to do so (e.g. the guest asks what there is to
             do, mentions being bored, or you're wrapping up a conversation about their stay). First check the
@@ -152,6 +173,8 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new GetActivitiesTool($this->hotel),
             new KnowledgeSearchTool($this->hotel),
             new GetOwnReservationTool($this->reservation),
+            new GetOwnBookingsTool($this->hotel, $this->guest),
+            new GetOwnRequestsTool($this->hotel, $this->guest),
             new GetGuestAvailabilityTool($this->hotel),
             new GetRecommendationsTool($this->reservation),
             new UpdateRecommendationTool($this->reservation),
@@ -159,6 +182,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new RequestBookingCancellationTool($this->hotel, $this->guest, $this->reservation),
             new GetTaskCategoriesTool($this->hotel),
             new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
+            new RequestRoomChangeTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
             new EscalateToHumanTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
         ];
     }
