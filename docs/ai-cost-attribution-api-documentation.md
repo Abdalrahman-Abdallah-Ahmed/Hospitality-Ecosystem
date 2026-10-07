@@ -102,6 +102,18 @@ context, and the endpoint reports it explicitly.
 | `GenerateActivityRecommendationsJob` | `staff_request` |
 | `CreateAiInsightsJob` | `scheduled_job` |
 | `SyncKnowledgeChunksJob` | `scheduled_job` |
+| `IndexKnowledgeDocumentJob` (embedding and AI vision) | `scheduled_job` |
+
+Knowledge indexing is attributed to the source's own hotel and its account:
+the embeddings for a hotel's articles, policies and documents, and the AI
+vision calls that read images and scanned PDF pages
+(`DocumentVisionAgent`, `config('knowledge.vision.provider')`, Gemini by
+default). Global knowledge (`hotel_id = null`) runs with no hotel and no
+account, so it is logged as **platform cost** — still captured, never billed to
+a hotel. A hotel admin sees the usage (`knowledge_pages_read`,
+`embeddings_generated`) but never the provider cost. An account that has hit its
+daily spend ceiling gets its document marked `usage_limit_reached` instead of
+indexed, and can re-index it later.
 
 **`trigger_kind` is the field that earns its keep.** It separates cost we
 control from cost guests drive. `GuestConciergeAgent` answers anyone who can
