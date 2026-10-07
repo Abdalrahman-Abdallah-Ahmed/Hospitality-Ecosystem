@@ -1,13 +1,17 @@
 <?php
 
+use App\Ai\Agents\DocumentVisionAgent;
+use App\Ai\Tools\KnowledgeSearchTool;
 use App\Enums\BookingOrigin;
 use App\Enums\ChargeModel;
+use App\Enums\KnowledgeAudience;
 use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\KnowledgeDocument;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
@@ -26,12 +30,16 @@ use App\Services\StayLifecycleService;
 use App\Services\TransactionService;
 use App\Services\WhatsAppMessageService;
 use App\Support\Audit\EventLogger;
+use App\Support\Knowledge\ChunkSynchronizer;
+use App\Support\Knowledge\Extraction\Segment;
 use App\Support\Reservations\ReservationCreator;
 use App\Support\Tenancy\TenantContext;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Laravel\Ai\Embeddings;
 use Laravel\Ai\Tools\Request;
 use Tests\TestCase;
 
@@ -737,4 +745,120 @@ function gsFakeWhatsApp(int $failures = 0): object
     app()->instance(WhatsAppMessageService::class, $fake);
 
     return $fake;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Knowledge documents and RAG (SPEC 008)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A hotel and its admin.
+ *
+ * @return array{0: User, 1: Hotel}
+ */
+function knHotel(): array
+{
+    $hotel = avHotel();
+
+    return [$hotel->owner, $hotel->fresh()];
+}
+
+/**
+ * @param  list<Permission>  $permissions
+ */
+function knEmployee(Hotel $hotel, array $permissions): User
+{
+    return fdEmployee($hotel, $permissions);
+}
+
+function knSuperAdmin(): User
+{
+    return User::factory()->role(UserRole::SUPER_ADMIN)->create();
+}
+
+/**
+ * The same unit vector for every input, so every passage is maximally similar
+ * to every query and the tests isolate scoping, not relevance ranking.
+ */
+function knFakeEmbeddings(): void
+{
+    Embeddings::fake(function ($prompt) {
+        $value = 1 / sqrt($prompt->dimensions);
+
+        return array_fill(0, count($prompt->inputs), array_fill(0, $prompt->dimensions, $value));
+    });
+}
+
+function knFixturePath(string $fixture): string
+{
+    return __DIR__.'/Fixtures/knowledge/'.$fixture;
+}
+
+function knUpload(string $fixture, ?string $as = null): UploadedFile
+{
+    $path = knFixturePath($fixture);
+
+    return new UploadedFile($path, $as ?? $fixture, null, null, true);
+}
+
+/**
+ * An indexed document with live passages, written straight to the models
+ * (no pipeline run). `$hotel = null` makes it global.
+ *
+ * @param  list<array{location: ?string, text: string}>|null  $segments
+ * @param  array<string, mixed>  $attributes
+ */
+function knDocument(?Hotel $hotel, array $attributes = [], ?array $segments = null): KnowledgeDocument
+{
+    $segments ??= [['location' => 'Page 1', 'text' => 'Checkout is at 11:00.']];
+
+    $document = KnowledgeDocument::withoutGlobalScope('hotel')->create([
+        'hotel_id' => $hotel?->id,
+        'title' => 'House Rules',
+        'original_filename' => 'house-rules.pdf',
+        'disk' => config('knowledge.disk'),
+        'path' => 'knowledge/'.($hotel?->id ?? 'global').'/'.Str::uuid().'/file.pdf',
+        'mime_type' => 'application/pdf',
+        'size' => 1000,
+        'content_hash' => hash('sha256', Str::random(32)),
+        'segments' => $segments,
+        'content' => collect($segments)->map(fn ($s) => trim(($s['location'] ?? '')."\n".$s['text']))->implode("\n\n"),
+        'status' => 'indexed',
+        'indexed_at' => now(),
+        'page_count' => count($segments),
+        ...$attributes,
+    ]);
+
+    $chunks = ChunkSynchronizer::syncSegments(
+        source: $document,
+        segments: array_map(fn (array $segment) => Segment::fromArray($segment), $segments),
+        hotelId: $document->hotel_id,
+        category: $document->category?->value,
+    );
+
+    $document->forceFill(['chunk_count' => $chunks, 'index_fingerprint' => $document->inputFingerprint()])->saveQuietly();
+
+    return $document->fresh();
+}
+
+/**
+ * Fakes the vision agent: one response, `pages` as DocumentVisionAgent returns them.
+ *
+ * @param  list<array{page: int, text: string, description: string}>  $pages
+ */
+function knFakeVision(array $pages): void
+{
+    DocumentVisionAgent::fake([['pages' => $pages]]);
+}
+
+function knRequest($test, User $user, string $method, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->json($method, $uri, $payload);
+}
+
+function knSearch(Hotel $hotel, string $query = 'checkout', KnowledgeAudience $audience = KnowledgeAudience::STAFF): string
+{
+    return (string) (new KnowledgeSearchTool($hotel, $audience))->handle(new Request(['query' => $query]));
 }

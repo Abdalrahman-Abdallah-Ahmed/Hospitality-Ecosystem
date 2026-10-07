@@ -357,7 +357,8 @@ it('logs embeddings from the knowledge base sync', function () {
         'title' => 'Breakfast times',
         'content' => str_repeat('Breakfast is served from 7am to 10:30am in the main restaurant. ', 20),
         'category' => KnowledgeBaseCategory::HOSPITALITY_BEST_PRACTICES->value,
-        'is_active' => true,
+        // Only a published article is synced; a draft is never put into search.
+        'status' => 'published',
     ]));
 
     (new SyncKnowledgeChunksJob($article))->handle(app(MeteringService::class));

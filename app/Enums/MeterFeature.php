@@ -24,6 +24,7 @@ enum MeterFeature: string
     case AI_INSIGHTS_GENERATED = 'ai_insights_generated';
     case RECOMMENDATIONS_GENERATED = 'recommendations_generated';
     case EMBEDDINGS_GENERATED = 'embeddings_generated';
+    case KNOWLEDGE_PAGES_READ = 'knowledge_pages_read';
 
     // Value signals.
     case RECOMMENDATIONS_DELIVERED = 'recommendations_delivered';
@@ -50,6 +51,7 @@ enum MeterFeature: string
             self::AI_INSIGHTS_GENERATED => 'insights',
             self::RECOMMENDATIONS_GENERATED, self::RECOMMENDATIONS_DELIVERED => 'recommendations',
             self::EMBEDDINGS_GENERATED => 'chunks',
+            self::KNOWLEDGE_PAGES_READ => 'pages',
             self::BOOKINGS_CREATED, self::BOOKINGS_REALISED => 'bookings',
             self::CONVERSATIONS_HANDLED => 'conversations',
             self::TRANSACTION_ROWS_IMPORTED => 'rows',
@@ -75,7 +77,8 @@ enum MeterFeature: string
             self::AI_MESSAGES,
             self::AI_INSIGHTS_GENERATED,
             self::RECOMMENDATIONS_GENERATED,
-            self::EMBEDDINGS_GENERATED => 'cost_driver',
+            self::EMBEDDINGS_GENERATED,
+            self::KNOWLEDGE_PAGES_READ => 'cost_driver',
 
             self::RECOMMENDATIONS_DELIVERED,
             self::BOOKINGS_CREATED,
@@ -123,6 +126,7 @@ enum MeterFeature: string
             self::RECOMMENDATIONS_GENERATED => 'Recommendations generated',
             self::RECOMMENDATIONS_DELIVERED => 'Recommendations delivered',
             self::EMBEDDINGS_GENERATED => 'Knowledge base indexing',
+            self::KNOWLEDGE_PAGES_READ => 'Knowledge pages read by AI',
             self::BOOKINGS_CREATED => 'Bookings created',
             self::BOOKINGS_REALISED => 'Bookings realised',
             self::CONVERSATIONS_HANDLED => 'Conversations handled',

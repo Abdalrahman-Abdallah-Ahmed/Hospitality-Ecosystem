@@ -20,6 +20,7 @@ use App\Models\HotelGroup;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeChunk;
+use App\Models\KnowledgeDocument;
 use App\Models\PitchDecision;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
@@ -230,6 +231,15 @@ function tenantOwnedModelFactories(): array
                 'embedding' => array_fill(0, 1536, 0.0),
             ]);
         },
+        KnowledgeDocument::class => fn (Hotel $hotel) => KnowledgeDocument::create([
+            'hotel_id' => $hotel->id,
+            'title' => 'House Rules',
+            'original_filename' => 'rules.pdf',
+            'path' => 'knowledge/'.$hotel->id.'/doc/rules.pdf',
+            'mime_type' => 'application/pdf',
+            'size' => 10,
+            'content_hash' => hash('sha256', uniqid()),
+        ]),
         WhatsAppDevice::class => function (Hotel $hotel) {
             $user = User::factory()->role(UserRole::EMPLOYEE)->create();
 
@@ -562,4 +572,31 @@ it('keeps one hotel out of another hotel guest requests and their notices (SPEC-
         ->and(fdGet($this, $adminA, '/api/task?filter[guest_notice_status]=skipped')->assertOk()->json('body.data'))->toBe([])
         ->and($roomChangeB->fresh()->status->value)->toBe('pending')
         ->and($whatsApp->sent)->toBe([]);
+});
+
+it('keeps one hotel out of another hotel knowledge documents (SPEC-008 FR-040)', function () {
+    knFakeEmbeddings();
+    [$adminA] = knHotel();
+    [, $hotelB] = knHotel();
+    $documentB = knDocument($hotelB, ['title' => 'B house rules']);
+    $deletedB = knDocument($hotelB, ['title' => 'B old menu']);
+    $deletedB->delete();
+
+    $call = fn (string $method, string $uri, array $payload = []) => knRequest($this, $adminA, $method, $uri, $payload);
+
+    $call('GET', "/api/knowledge-documents/{$documentB->id}")->assertNotFound();
+    $call('GET', "/api/knowledge-documents/{$documentB->id}/download")->assertNotFound();
+    $call('PUT', "/api/knowledge-documents/{$documentB->id}", ['title' => 'Mine now'])->assertNotFound();
+    $call('POST', "/api/knowledge-documents/{$documentB->id}/file")->assertStatus(422);
+    $call('GET', "/api/knowledge-documents/{$documentB->id}/text")->assertNotFound();
+    $call('PUT', "/api/knowledge-documents/{$documentB->id}/text", ['segments' => [['location' => 'Page 1', 'text' => 'x']]])->assertNotFound();
+    $call('DELETE', "/api/knowledge-documents/{$documentB->id}/text")->assertNotFound();
+    $call('POST', "/api/knowledge-documents/{$documentB->id}/reindex")->assertNotFound();
+    $call('DELETE', "/api/knowledge-documents/{$documentB->id}")->assertNotFound();
+    $call('POST', "/api/knowledge-documents/{$deletedB->id}/restore")->assertNotFound();
+
+    expect($call('GET', '/api/knowledge-documents')->assertOk()->json('body.data'))->toBe([])
+        ->and($call('GET', '/api/knowledge-documents/deleted')->assertOk()->json('body.data'))->toBe([])
+        ->and($documentB->fresh())->title->toBe('B house rules')->deleted_at->toBeNull()
+        ->and(KnowledgeDocument::withoutGlobalScope('hotel')->withTrashed()->find($deletedB->id)->trashed())->toBeTrue();
 });

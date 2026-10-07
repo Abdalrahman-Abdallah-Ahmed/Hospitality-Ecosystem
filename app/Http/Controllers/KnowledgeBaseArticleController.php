@@ -18,14 +18,17 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('viewAny', KnowledgeBaseArticle::class);
 
-        // A super admin has no hotel of their own and is unrestricted by the
-        // tenant scope, so this explicitly pins them to hotel_id IS NULL — the
-        // shared/global knowledge base — by design, rather than every hotel's
-        // articles. Everyone else is already scoped to their own hotel(s).
+        // These are hotel routes: always one hotel's articles. A super admin
+        // names the hotel; the global knowledge base is managed from
+        // /api/admin/knowledge-base-articles.
         $query = KnowledgeBaseArticle::with(['hotel']);
 
         if ($request->user()->isSuperAdmin()) {
-            $query->whereNull('hotel_id');
+            if (! $request->filled('hotel_id')) {
+                return apiResponse('A hotel_id is required.', 422);
+            }
+
+            $query->where('hotel_id', $request->input('hotel_id'));
         }
 
         $articles = GenericQuery::apply($query, $request);
@@ -39,24 +42,26 @@ class KnowledgeBaseArticleController extends Controller
     public function store(GenericStoreRequest $request)
     {
         $this->authorize('create', KnowledgeBaseArticle::class);
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
         $user = $request->user();
 
-        if ($user->isSuperAdmin()) {
-            // Super admins only ever manage the shared/global knowledge base,
-            // never a specific hotel's — any spoofed hotel_id is ignored.
-            $hotelId = null;
-        } else {
-            $hotel = $user->hotel;
-            if (! $hotel) {
-                return apiResponse('You do not belong to any hotel.', 403);
-            }
-            $hotelId = $hotel->id;
+        // Every article created here belongs to a hotel: a scoped user's own,
+        // or the one a super admin names. Global articles are created only
+        // from /api/admin/knowledge-base-articles.
+        if ($user->isSuperAdmin() && ! $request->filled('hotel_id')) {
+            return apiResponse('A hotel_id is required.', 422);
+        }
+
+        $hotel = resolveHotel($user, $request->input('hotel_id'));
+
+        if (! $hotel) {
+            return $user->isSuperAdmin()
+                ? apiResponse('Hotel not found.', 404)
+                : apiResponse('You do not belong to any hotel.', 403);
         }
 
         $article = KnowledgeBaseArticle::create([
-            ...$validated,
-            'hotel_id' => $hotelId,
+            ...unsetAttributes($request->validated(), ['hotel_id']),
+            'hotel_id' => $hotel->id,
         ]);
 
         return apiResponse('Article created successfully.', 201, KnowledgeBaseArticleResource::make($article->load(['hotel'])));
@@ -67,6 +72,7 @@ class KnowledgeBaseArticleController extends Controller
      */
     public function show(KnowledgeBaseArticle $knowledgeBaseArticle)
     {
+        $this->rejectGlobal($knowledgeBaseArticle);
         $this->authorize('view', $knowledgeBaseArticle);
 
         $knowledgeBaseArticle->load('hotel');
@@ -79,6 +85,7 @@ class KnowledgeBaseArticleController extends Controller
      */
     public function update(GenericUpdateRequest $request, KnowledgeBaseArticle $knowledgeBaseArticle)
     {
+        $this->rejectGlobal($knowledgeBaseArticle);
         $this->authorize('update', $knowledgeBaseArticle);
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
         $user = $request->user();
@@ -101,9 +108,20 @@ class KnowledgeBaseArticleController extends Controller
      */
     public function destroy(KnowledgeBaseArticle $knowledgeBaseArticle)
     {
+        $this->rejectGlobal($knowledgeBaseArticle);
         $this->authorize('delete', $knowledgeBaseArticle);
         $knowledgeBaseArticle->delete();
 
         return apiResponse('Article deleted successfully.', 200);
+    }
+
+    /**
+     * Global articles are only reachable from /api/admin/knowledge-base-articles.
+     * Scoped users never see them here anyway (the tenant scope); this closes
+     * the same door for an unrestricted super admin.
+     */
+    private function rejectGlobal(KnowledgeBaseArticle $article): void
+    {
+        abort_if($article->hotel_id === null, 404);
     }
 }

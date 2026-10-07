@@ -43,10 +43,18 @@ renamed, or the history stops adding up. They live in `App\Enums\MeterFeature`.
 | `ai_messages` | `ProcessInboundWhatsAppMessageJob`, `AiAdvisorController@chat` |
 | `ai_insights_generated` | `CreateAiInsightsJob` |
 | `recommendations_generated` | `GenerateActivityRecommendationsJob` |
-| `embeddings_generated` | `SyncKnowledgeChunksJob` |
+| `embeddings_generated` | `SyncKnowledgeChunksJob`, `IndexKnowledgeDocumentJob` |
+| `knowledge_pages_read` | `IndexKnowledgeDocumentJob`, once per image or scanned PDF page read by AI vision (unit `pages`, label "Knowledge pages read by AI") |
 
 `embeddings_generated` is the one people forget: no visible output, real
 money, and re-run in full every time an article is edited.
+
+Both knowledge meters are recorded for a hotel's own sources only. Global
+knowledge (`hotel_id = null`) has no account to bill: its AI usage is still in
+the AI usage log, as platform cost, but no meter event is written for it.
+`knowledge_pages_read` is only written when the vision call succeeded; a
+document refused for having more than 50 scanned pages makes no call and
+records nothing.
 
 ### Value signals — what the customer gets
 

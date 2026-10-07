@@ -38,6 +38,8 @@ An employee with no staff role has:
 
 `rooms.update_housekeeping_status` and `rooms.set_out_of_order` are never defaults either: both change which rooms can be sold. A housekeeper who should report faults and complete inspections needs `tasks.update`; one who should also be able to take a room off sale when reporting needs `rooms.set_out_of_order`.
 
+None of the five `knowledge_documents.*` permissions is a default, not even `view` (2026-10-07): whatever is uploaded, corrected or switched on is what the guest AI tells guests, so a hotel grants them on purpose. Global knowledge (shared by every hotel) is not a permission at all: it is managed only by super admins under `/api/admin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md).
+
 `GET /api/permissions` returns this list as `employee_defaults`, so the UI does not need to hard-code it.
 
 ### Permission Reference
@@ -70,6 +72,11 @@ An employee with no staff role has:
 | `hotel_policies.create` | `POST /api/hotel-policy` |
 | `hotel_policies.update` | `PUT /api/hotel-policy/{id}` |
 | `hotel_policies.delete` | `DELETE /api/hotel-policy/{id}` |
+| `knowledge_documents.view` | `GET /api/knowledge-documents`, `GET /api/knowledge-documents/{id}`, `GET /api/knowledge-documents/{id}/download`, `GET /api/knowledge-documents/{id}/text` |
+| `knowledge_documents.create` | `POST /api/knowledge-documents` |
+| `knowledge_documents.update` | `PUT /api/knowledge-documents/{id}`, `POST /api/knowledge-documents/{id}/file`, `PUT /api/knowledge-documents/{id}/text`, `DELETE /api/knowledge-documents/{id}/text` |
+| `knowledge_documents.delete` | `DELETE /api/knowledge-documents/{id}`, `GET /api/knowledge-documents/deleted`, `POST /api/knowledge-documents/{id}/restore` |
+| `knowledge_documents.reindex` | `POST /api/knowledge-documents/{id}/reindex` |
 | `knowledge_base_articles.view` | `GET /api/knowledge-base-articles`, `GET /api/knowledge-base-articles/{id}` |
 | `knowledge_base_articles.create` | `POST /api/knowledge-base-articles` |
 | `knowledge_base_articles.update` | `PUT /api/knowledge-base-articles/{id}` |
