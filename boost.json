@@ -4,9 +4,10 @@
     ],
     "cloud": false,
     "skills": [
+        "infer-conventions",
         "ai-sdk-development",
         "laravel-best-practices",
-        "pest-testing",
+        "testing-best-practices",
         "tailwindcss-development"
     ]
 }

@@ -26,7 +26,16 @@ jobs:
 
             git pull origin main
 
-            chmod -R ug+rwX storage bootstrap/cache
+            # The web server (PHP-FPM) writes compiled views, cache and logs
+            # under storage/ and bootstrap/cache, so it owns those files and
+            # ec2-user cannot chmod them. Hand them to ec2-user with the web
+            # server's group (read from storage/ itself), group-writable, and
+            # make new files inherit that group, so both the deploy (artisan
+            # optimize) and the app can write there.
+            WEB_GROUP="$(stat -c '%G' storage)"
+            sudo chown -R "ec2-user:${WEB_GROUP}" storage bootstrap/cache
+            sudo chmod -R ug+rwX storage bootstrap/cache
+            sudo find storage bootstrap/cache -type d -exec chmod g+s {} +
 
             # --no-dev: test and debugging tooling has no place on the server.
             composer install --no-dev --optimize-autoloader --no-interaction
