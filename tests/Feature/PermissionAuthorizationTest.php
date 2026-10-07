@@ -9,6 +9,8 @@ use App\Models\Task;
 use App\Models\User;
 use App\Services\BookingCancellationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -300,6 +302,70 @@ it('grants nothing when the assigned role can no longer be read', function () {
     $this->withHeaders(permissionApiHeaders())->actingAs($employee->fresh(), 'sanctum')
         ->getJson('/api/guest')->assertForbidden();
 });
+
+it('never gives employees without a role any knowledge document permission, and lists them for the role editor', function () {
+    $documentPermissions = array_filter(Permission::cases(), fn (Permission $p) => $p->group() === 'knowledge_documents');
+
+    expect($documentPermissions)->toHaveCount(5);
+    foreach ($documentPermissions as $permission) {
+        expect(Permission::employeeDefaults())->not->toContain($permission);
+    }
+
+    $hotel = hotelForPermissions();
+    $listed = collect($this->withHeaders(permissionApiHeaders())->actingAs(User::find($hotel->owner_id), 'sanctum')
+        ->getJson('/api/permissions')->assertOk()->json('body'))->flatten()->all();
+
+    foreach ($documentPermissions as $permission) {
+        expect($listed)->toContain($permission->value);
+    }
+});
+
+it('lets an employee work on knowledge documents only when their role grants it', function (string $action, Permission $permission) {
+    Storage::fake('local');
+    Queue::fake();
+    knFakeEmbeddings();
+    $hotel = avHotel();
+    $document = knDocument($hotel, ['title' => 'House Rules']);
+    Storage::disk('local')->put($document->path, 'stored file');
+    $deleted = knDocument($hotel, ['title' => 'Old menu']);
+    $deleted->delete();
+
+    $call = fn ($user) => match ($action) {
+        'list' => knRequest($this, $user, 'GET', '/api/knowledge-documents'),
+        'show' => knRequest($this, $user, 'GET', "/api/knowledge-documents/{$document->id}"),
+        'download' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->get("/api/knowledge-documents/{$document->id}/download", ['Accept' => 'application/json']),
+        'view text' => knRequest($this, $user, 'GET', "/api/knowledge-documents/{$document->id}/text"),
+        'upload' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')
+            ->post('/api/knowledge-documents', ['file' => knUpload('plain.txt'), 'title' => 'Notes'], ['Accept' => 'application/json']),
+        'edit' => knRequest($this, $user, 'PUT', "/api/knowledge-documents/{$document->id}", ['title' => 'Renamed']),
+        'replace file' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')
+            ->post("/api/knowledge-documents/{$document->id}/file", ['file' => knUpload('notes.md')], ['Accept' => 'application/json']),
+        'correct text' => knRequest($this, $user, 'PUT', "/api/knowledge-documents/{$document->id}/text", ['segments' => [['location' => 'Page 1', 'text' => 'Checkout is at 12:00.']]]),
+        'discard corrections' => knRequest($this, $user, 'DELETE', "/api/knowledge-documents/{$document->id}/text"),
+        'reindex' => knRequest($this, $user, 'POST', "/api/knowledge-documents/{$document->id}/reindex"),
+        'delete' => knRequest($this, $user, 'DELETE', "/api/knowledge-documents/{$document->id}"),
+        'list deleted' => knRequest($this, $user, 'GET', '/api/knowledge-documents/deleted'),
+        'restore' => knRequest($this, $user, 'POST', "/api/knowledge-documents/{$deleted->id}/restore"),
+    };
+
+    $call(fdEmployee($hotel, []))->assertForbidden();
+    $call(employeeWithPermissions($hotel))->assertForbidden();
+    expect($call(fdEmployee($hotel, [$permission]))->getStatusCode())->toBeIn([200, 201, 202]);
+})->with([
+    'list' => ['list', Permission::KNOWLEDGE_DOCUMENTS_VIEW],
+    'show' => ['show', Permission::KNOWLEDGE_DOCUMENTS_VIEW],
+    'download' => ['download', Permission::KNOWLEDGE_DOCUMENTS_VIEW],
+    'view text' => ['view text', Permission::KNOWLEDGE_DOCUMENTS_VIEW],
+    'upload' => ['upload', Permission::KNOWLEDGE_DOCUMENTS_CREATE],
+    'edit' => ['edit', Permission::KNOWLEDGE_DOCUMENTS_UPDATE],
+    'replace file' => ['replace file', Permission::KNOWLEDGE_DOCUMENTS_UPDATE],
+    'correct text' => ['correct text', Permission::KNOWLEDGE_DOCUMENTS_UPDATE],
+    'discard corrections' => ['discard corrections', Permission::KNOWLEDGE_DOCUMENTS_UPDATE],
+    'reindex' => ['reindex', Permission::KNOWLEDGE_DOCUMENTS_REINDEX],
+    'delete' => ['delete', Permission::KNOWLEDGE_DOCUMENTS_DELETE],
+    'list deleted' => ['list deleted', Permission::KNOWLEDGE_DOCUMENTS_DELETE],
+    'restore' => ['restore', Permission::KNOWLEDGE_DOCUMENTS_DELETE],
+]);
 
 it('gives employees without a role booking edits but never the capacity override', function () {
     expect(Permission::employeeDefaults())
