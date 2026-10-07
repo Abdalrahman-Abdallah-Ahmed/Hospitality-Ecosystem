@@ -3,13 +3,18 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
+use App\Enums\CancellationResolution;
 use App\Enums\CleaningReason;
 use App\Enums\CreatedBy;
+use App\Enums\GuestNoticeChannel;
+use App\Enums\GuestNoticeReason;
+use App\Enums\GuestNoticeStatus;
 use App\Enums\GuestSignal;
 use App\Enums\HousekeepingKind;
 use App\Enums\InspectionResult;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
+use App\Jobs\SendGuestRequestNoticeJob;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,6 +58,17 @@ class Task extends Model
         'cleaning_reason' => CleaningReason::class,
         'inspection_result' => InspectionResult::class,
         'completed_at' => 'datetime',
+        // A cancellation request's answer. Set only by
+        // BookingCancellationService and BookingService (forceFill).
+        'resolution' => CancellationResolution::class,
+        'resolved_at' => 'datetime',
+        // Whether the guest was told how their request ended (SPEC-007).
+        // Written only by SendGuestRequestNoticeJob and the migration;
+        // never fillable.
+        'guest_notice_status' => GuestNoticeStatus::class,
+        'guest_notice_channel' => GuestNoticeChannel::class,
+        'guest_notice_reason' => GuestNoticeReason::class,
+        'guest_notice_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -64,6 +80,51 @@ class Task extends Model
                 $task->completed_at = $task->status === TaskStatus::COMPLETED ? now() : null;
             }
         });
+
+        // A guest request just closed: tell the guest (SPEC-007, R7). A model
+        // hook rather than an explicit call like CreationNotificationService,
+        // because at least six paths close tasks (task API, inspections,
+        // housekeeping, maintenance, cancellation approve and decline) and a
+        // path that forgot the call would leave a guest never told. Seeders
+        // and imports never close guest-signalled tasks.
+        static::updated(function (self $task): void {
+            if ($task->wasChanged('status')) {
+                $task->queueGuestNotice();
+            }
+        });
+    }
+
+    /**
+     * Queue the guest's notice for this request, once it is closed: completed
+     * or cancelled service, maintenance and room-change requests, and decided
+     * cancellation requests. Escalations, follow-ups and staff tasks never
+     * notify. Runs after commit, so a rolled-back close tells nobody.
+     */
+    public function queueGuestNotice(): void
+    {
+        $closed = in_array($this->status, [TaskStatus::COMPLETED, TaskStatus::CANCELLED], true);
+        $notifies = $this->guest_signal?->notifiesOnCompletion() || $this->guest_signal === GuestSignal::CANCELLATION_REQUEST;
+
+        if ($closed && $notifies && $this->guest_id !== null && $this->awaitsGuestNotice()) {
+            SendGuestRequestNoticeJob::dispatch($this->id)->afterCommit();
+        }
+    }
+
+    /**
+     * Not told yet. A request staff cancelled was recorded as skipped with
+     * nothing sent, so if it is reopened and completed the guest is still
+     * owed the completion notice; a stale pending claim was abandoned. Every
+     * other recorded outcome is final.
+     */
+    public function awaitsGuestNotice(): bool
+    {
+        return $this->guest_notice_status === null
+            || ($this->guest_notice_status === GuestNoticeStatus::SKIPPED
+                && $this->guest_notice_reason === GuestNoticeReason::CANCELLED
+                && $this->status === TaskStatus::COMPLETED)
+            // A claim left by a worker that died mid-send.
+            || ($this->guest_notice_status === GuestNoticeStatus::PENDING
+                && $this->guest_notice_at?->lt(now()->subMinutes(SendGuestRequestNoticeJob::STALE_CLAIM_MINUTES)));
     }
 
     /**
@@ -76,7 +137,8 @@ class Task extends Model
             'assigned_to_user_id', 'task_category_id', 'title', 'description',
             'created_by', 'guest_signal', 'status', 'priority', 'due_date',
             'housekeeping_kind', 'cleaning_reason', 'inspection_result', 'inspection_note',
-            'source_task_id',
+            'source_task_id', 'booking_id', 'resolution', 'resolution_note',
+            'guest_notice_status', 'guest_notice_channel', 'guest_notice_reason',
         ];
     }
 
@@ -86,6 +148,32 @@ class Task extends Model
     public function scopeOpen(Builder $query): Builder
     {
         return $query->whereIn('status', [TaskStatus::PENDING, TaskStatus::IN_PROGRESS]);
+    }
+
+    /**
+     * Tasks the Concierge files for a guest: service, maintenance and
+     * room-change requests, cancellation requests and escalations.
+     */
+    public function scopeGuestRequests(Builder $query): Builder
+    {
+        return $query->whereIn('guest_signal', [
+            GuestSignal::SERVICE_REQUEST->value,
+            GuestSignal::MAINTENANCE_REQUEST->value,
+            GuestSignal::ROOM_CHANGE_REQUEST->value,
+            GuestSignal::CANCELLATION_REQUEST->value,
+            GuestSignal::ESCALATION->value,
+        ]);
+    }
+
+    /**
+     * One guest's tasks at one hotel. The Concierge runs without tenant
+     * context, so both are named.
+     */
+    public function scopeOwnedByGuest(Builder $query, Hotel $hotel, Guest $guest): Builder
+    {
+        return $query->withoutGlobalScope('hotel')
+            ->where('hotel_id', $hotel->id)
+            ->where('guest_id', $guest->id);
     }
 
     public function isOpen(): bool
@@ -144,5 +232,23 @@ class Task extends Model
     public function maintenanceTasks()
     {
         return $this->hasMany(Task::class, 'source_task_id');
+    }
+
+    /**
+     * The booking a guest asked to cancel (SPEC-043).
+     */
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
+    }
+
+    public function resolvedBy()
+    {
+        return $this->belongsTo(User::class, 'resolved_by_user_id');
+    }
+
+    public function isCancellationRequest(): bool
+    {
+        return $this->guest_signal === GuestSignal::CANCELLATION_REQUEST;
     }
 }

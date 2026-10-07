@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\InboundMessageStatus;
+use App\Enums\SenderType;
 use App\Http\Requests\CheckPairedRequest;
 use App\Http\Requests\WhatsAppDevicePairRequest;
 use App\Http\Resources\WhatsAppDeviceResource;
@@ -292,6 +293,16 @@ class WhatsAppController extends Controller
         }
 
         $recognition = $this->identify($phoneNumber);
+
+        // A number that is no guest and no staff member gets no reply at all
+        // (SPEC-007 clarification Q3): no job, no AI, nothing in any hotel.
+        // De-duplication, the rate limit and pairing above still apply.
+        if ($recognition->type === SenderType::UNKNOWN) {
+            $inbound->update(['status' => InboundMessageStatus::IGNORED]);
+
+            return;
+        }
+
         $pairing = $this->pairingStatus($phoneNumber);
         $hotel = $recognition->hotelId ? Hotel::find($recognition->hotelId) : null;
 
@@ -349,7 +360,9 @@ class WhatsAppController extends Controller
             return false;
         }
 
-        if ($attempts === $limit + 1) {
+        // Told once — and only a known sender: an unknown number never gets a
+        // reply, not even this one (SPEC-007 FR-035).
+        if ($attempts === $limit + 1 && $this->identify($phoneNumber)->type !== SenderType::UNKNOWN) {
             SendWhatsAppMessageJob::dispatch(
                 $phoneNumber,
                 "You're sending messages faster than we can answer. Please wait a minute and try again."

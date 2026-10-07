@@ -20,13 +20,19 @@ use App\Models\Task;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
+use App\Models\WhatsAppInboundMessage;
 use App\Services\BookingService;
+use App\Services\StayLifecycleService;
 use App\Services\TransactionService;
+use App\Services\WhatsAppMessageService;
+use App\Support\Audit\EventLogger;
 use App\Support\Reservations\ReservationCreator;
+use App\Support\Tenancy\TenantContext;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Laravel\Ai\Tools\Request;
 use Tests\TestCase;
 
 /*
@@ -156,6 +162,7 @@ function wp5Booking(Hotel $hotel, array $overrides = []): Booking
 {
     return app(BookingService::class)->create(array_merge([
         'hotel_id' => $hotel->id,
+        'scheduled_date' => now()->toDateString(),
         'item_name' => 'Sunset dive',
         'charge_model' => ChargeModel::PAY_ON_SITE->value,
         'origin' => BookingOrigin::GUEST_REQUEST->value,
@@ -493,4 +500,241 @@ function hkVacatedRoom($test, string $timezone = 'UTC'): array
 function hkSetTaskStatus($test, User $user, Task $task, string $status): TestResponse
 {
     return hkPut($test, $user, "/api/task/{$task->id}", ['status' => $status]);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Activity availability and booking fixtures (SPEC-041/043)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * An active activity of the hotel, re-read so database defaults are loaded.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function abActivity(Hotel $hotel, array $attributes = []): Activity
+{
+    return Activity::withoutGlobalScope('hotel')->findOrFail(Activity::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Sunset cruise',
+        'price' => 50,
+        'currency' => 'USD',
+        'is_active' => true,
+        ...$attributes,
+    ])->id);
+}
+
+function abGuest(Hotel $hotel): Guest
+{
+    return Guest::create([
+        'hotel_id' => $hotel->id,
+        'external_id' => 'ext-'.Str::random(8),
+        'channel' => 'booking_com',
+        'first_name' => 'Guest',
+        'last_name' => Str::random(5),
+    ]);
+}
+
+/**
+ * A booking of `$pax` people on `$date` (Y-m-d, or Y-m-d H:i for a time),
+ * taken through BookingService so it is checked like any other.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function abBook(Hotel $hotel, Activity $activity, string $date, int $pax = 1, array $attributes = []): Booking
+{
+    $schedule = strlen($date) > 10 ? ['scheduled_for' => $date] : ['scheduled_date' => $date];
+
+    return app(BookingService::class)->create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => abGuest($hotel)->id,
+        'activity_id' => $activity->id,
+        'item_name' => $activity->name,
+        'pax' => $pax,
+        'charge_model' => ChargeModel::PAY_ON_SITE->value,
+        'origin' => BookingOrigin::STAFF->value,
+        ...$schedule,
+        ...$attributes,
+    ]);
+}
+
+function abPatch($test, User $user, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->patchJson($uri, $payload);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Guest services (SPEC 007)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A hotel with its default Housekeeping and Maintenance teams and categories
+ * (created on hotel creation), and its admin.
+ *
+ * @return array{0: User, 1: Hotel}
+ */
+function gsHotel(string $timezone = 'UTC'): array
+{
+    $hotel = avHotel($timezone);
+
+    return [$hotel->owner, $hotel->fresh()];
+}
+
+/**
+ * A guest reachable on WhatsApp and by email unless overridden.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function gsGuest(Hotel $hotel, array $attributes = []): Guest
+{
+    return Guest::create([
+        'hotel_id' => $hotel->id,
+        'first_name' => 'Lina',
+        'last_name' => 'Haddad',
+        'phone_number' => '+20 100 '.random_int(1000000, 9999999),
+        'email' => 'guest-'.Str::lower(Str::random(6)).'@example.com',
+        'external_id' => 'ext-'.Str::random(8),
+        'channel' => 'booking_com',
+        ...$attributes,
+    ]);
+}
+
+/**
+ * A reservation for `$guest` arriving today, checked in, with one in-house
+ * stay per room number.
+ *
+ * @param  list<string>  $roomNumbers
+ */
+function gsInHouse(Hotel $hotel, Guest $guest, array $roomNumbers = ['214']): Reservation
+{
+    $type = avType($hotel, 'Deluxe '.Str::random(4));
+    $rooms = array_map(fn (string $number) => Room::create([
+        'hotel_id' => $hotel->id,
+        'room_type_id' => $type->id,
+        'room_number' => $number,
+        'status' => 'available',
+        'housekeeping_status' => 'clean',
+    ]), $roomNumbers);
+
+    $reservation = ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
+        'arrival_date' => now($hotel->timezone)->toDateString(),
+        'departure_date' => now($hotel->timezone)->addDays(3)->toDateString(),
+        'status' => 'confirmed',
+        'adults' => 2,
+        'children' => 0,
+        'reservation_value' => 600,
+    ], array_map(fn (Room $room) => ['room_type_id' => $type->id, 'room_id' => $room->id], $rooms));
+
+    foreach (fdStays($reservation) as $stay) {
+        app(StayLifecycleService::class)->checkIn($stay);
+    }
+
+    return $reservation->fresh();
+}
+
+/**
+ * A confirmed reservation for `$guest` arriving in 3 days, rooms unassigned.
+ */
+function gsUpcoming(Hotel $hotel, Guest $guest): Reservation
+{
+    $type = avType($hotel, 'Deluxe '.Str::random(4));
+    avRooms($hotel, $type, 1);
+
+    return ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
+        'arrival_date' => now($hotel->timezone)->addDays(3)->toDateString(),
+        'departure_date' => now($hotel->timezone)->addDays(5)->toDateString(),
+        'status' => 'confirmed',
+        'adults' => 2,
+        'children' => 0,
+        'reservation_value' => 400,
+    ], [['room_type_id' => $type->id, 'room_id' => null]]);
+}
+
+/**
+ * A checked-out reservation for `$guest` that departed 30 days ago.
+ */
+function gsPast(Hotel $hotel, Guest $guest): Reservation
+{
+    $type = avType($hotel, 'Deluxe '.Str::random(4));
+    avRooms($hotel, $type, 1);
+
+    return ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
+        'arrival_date' => now($hotel->timezone)->subDays(33)->toDateString(),
+        'departure_date' => now($hotel->timezone)->subDays(30)->toDateString(),
+        'status' => 'checked_out',
+        'adults' => 2,
+        'children' => 0,
+        'reservation_value' => 300,
+    ], [['room_type_id' => $type->id, 'room_id' => null]]);
+}
+
+/**
+ * An inbound WhatsApp message from `$phoneDigits` at `$at`, which opens (or,
+ * when old enough, no longer opens) the 24-hour window.
+ */
+function gsInbound(string $phoneDigits, CarbonInterface $at): WhatsAppInboundMessage
+{
+    $message = WhatsAppInboundMessage::create([
+        'wamid' => 'wamid.'.Str::random(16),
+        'phone_number' => $phoneDigits,
+        'message_type' => 'text',
+        'status' => 'replied',
+    ]);
+    $message->forceFill(['created_at' => $at, 'updated_at' => $at])->saveQuietly();
+
+    return $message;
+}
+
+/**
+ * Runs a Concierge tool as the AI agent, the way the WhatsApp job does.
+ *
+ * @param  array<string, mixed>  $args
+ */
+function gsRunTool(object $tool, array $args = []): string
+{
+    return EventLogger::asAiAgent(fn () => (string) $tool->handle(new Request($args)));
+}
+
+/**
+ * Swaps the WhatsApp sender for one that records each message, and the
+ * tenant scope active while it was sent. `$failures` sends throw first.
+ */
+function gsFakeWhatsApp(int $failures = 0): object
+{
+    $fake = new class($failures) extends WhatsAppMessageService
+    {
+        /** @var list<array{to: string, text: string, hotel_ids: ?array}> */
+        public array $sent = [];
+
+        public int $attempts = 0;
+
+        public function __construct(public int $failures) {}
+
+        public function send(string $to, string $text): void
+        {
+            $this->attempts++;
+
+            if ($this->failures-- > 0) {
+                throw new RuntimeException('Graph API unavailable');
+            }
+
+            $this->sent[] = ['to' => $to, 'text' => $text, 'hotel_ids' => TenantContext::hotelIds()];
+        }
+    };
+
+    app()->instance(WhatsAppMessageService::class, $fake);
+
+    return $fake;
 }

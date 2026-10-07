@@ -9,12 +9,14 @@ use App\Models\TaskNotificationReceipt;
 use App\Models\Team;
 use App\Models\User;
 use App\Notifications\AiTaskCreatedNotification;
+use App\Notifications\BookingCancellationRequestedNotification;
 use App\Notifications\HousekeepingRoutingNotification;
 use App\Notifications\TaskAssignedNotification;
 use App\Notifications\WhatsAppReservationCreatedNotification;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 /**
@@ -162,6 +164,29 @@ class CreationNotificationService
                 $user->notify(new TaskAssignedNotification($task));
             }
         }
+    }
+
+    /**
+     * A guest asked to cancel a booking: the hotel's admins are emailed once
+     * (spec Q4). This replaces taskCreated(..., createdByAi: true) for these
+     * requests, so admins get one email about it, not a booking one and a
+     * generic "AI created a task" one. Called only when the request is new.
+     */
+    public function bookingCancellationRequested(Task $task): void
+    {
+        $admins = collect($this->admins($task->hotel_id));
+
+        if ($admins->isEmpty()) {
+            Log::warning('A booking cancellation request has no hotel admin to notify; it waits in the queue.', [
+                'hotel_id' => $task->hotel_id,
+                'task_id' => $task->id,
+                'booking_id' => $task->booking_id,
+            ]);
+
+            return;
+        }
+
+        Notification::send($admins, new BookingCancellationRequestedNotification($task));
     }
 
     /**

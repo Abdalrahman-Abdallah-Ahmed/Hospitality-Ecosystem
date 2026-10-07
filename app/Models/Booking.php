@@ -7,6 +7,8 @@ use App\Enums\BookingOrigin;
 use App\Enums\BookingStatus;
 use App\Enums\ChargeModel;
 use App\Enums\EvidenceLevel;
+use App\Enums\GuestSignal;
+use App\Enums\TaskStatus;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -35,6 +37,7 @@ class Booking extends Model
         'hotel_id',
         'guest_id',
         'stay_id',
+        'reservation_id',
         'activity_id',
         'recommendation_id',
         'reference',
@@ -54,6 +57,7 @@ class Booking extends Model
         'cancellation_reason',
         'evidence_level',
         'context',
+        'notes',
     ];
 
     protected $casts = [
@@ -62,6 +66,10 @@ class Booking extends Model
         'origin' => BookingOrigin::class,
         'evidence_level' => EvidenceLevel::class,
         'scheduled_for' => 'datetime',
+        // The hotel-local schedule. Not fillable: BookingService derives it
+        // from scheduled_for in the hotel's timezone (forceFill).
+        'scheduled_date' => 'date',
+        'last_date' => 'date',
         'confirmed_at' => 'datetime',
         'realised_at' => 'datetime',
         'cancelled_at' => 'datetime',
@@ -80,6 +88,7 @@ class Booking extends Model
             'item_name', 'status', 'scheduled_for', 'pax', 'charge_model',
             'expected_value', 'currency', 'origin', 'channel', 'confirmed_at',
             'realised_at', 'cancelled_at', 'cancellation_reason',
+            'reservation_id', 'scheduled_date', 'scheduled_time', 'last_date', 'notes',
         ];
     }
 
@@ -113,6 +122,15 @@ class Booking extends Model
         return $this->belongsTo(Stay::class);
     }
 
+    /**
+     * The reservation the booking was made under. Set before arrival, when
+     * there is no stay yet.
+     */
+    public function reservation(): BelongsTo
+    {
+        return $this->belongsTo(Reservation::class);
+    }
+
     public function activity(): BelongsTo
     {
         return $this->belongsTo(Activity::class);
@@ -136,6 +154,25 @@ class Booking extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * The guest's requests to cancel it, answered or not (SPEC-043).
+     */
+    public function cancellationRequests(): HasMany
+    {
+        return $this->hasMany(Task::class)
+            ->where('guest_signal', GuestSignal::CANCELLATION_REQUEST->value);
+    }
+
+    /**
+     * The request still waiting for staff. At most one (unique index).
+     */
+    public function openCancellationRequest(): HasOne
+    {
+        return $this->hasOne(Task::class)
+            ->where('guest_signal', GuestSignal::CANCELLATION_REQUEST->value)
+            ->whereIn('status', [TaskStatus::PENDING->value, TaskStatus::IN_PROGRESS->value]);
     }
 
     /**

@@ -123,24 +123,115 @@ Two paths.
 agent. When a guest says "yes, book me on the sunset dive", the agent records
 the commitment and gives them their reference code. It sets
 `origin = recommendation` when the booking follows an offer the agent made,
-`guest_request` otherwise.
+`guest_request` otherwise. Since 2026-10-05 it:
+
+- books only for a guest with a reservation at the hotel, and only dates from
+  today to that reservation's departure date;
+- links the booking to the reservation, and to the stay once the guest is in
+  house;
+- goes through the same availability check as the desk (below). When a date
+  is refused, it tells the guest why and offers up to 3 nearby dates that fit
+  the party during their stay;
+- never books past capacity, and returns the existing booking when the same
+  request is retried within 10 minutes.
+
+The concierge **cannot cancel a booking**. When a guest asks, it creates a
+[cancellation request](#cancellation-requests) for staff.
 
 **Staff, through the API below.** The walk-up at the desk, and — more
 importantly — everything that happens afterwards.
 
+## Availability at booking time
+
+Every booking for a catalogue activity (`activity_id` set) is checked against
+the activity when it is created, and again when its activity, date, time or
+party changes. The rules, checked in this order, with the first failure
+reported:
+
+| `reason` | When |
+| --- | --- |
+| `inactive` | The activity is inactive or deleted. |
+| `past_date` | The date is before today, in the hotel's timezone. |
+| `out_of_season` | Outside `available_from` / `available_until`. |
+| `closure_period` | Inside one of `unavailable_periods`; `closure_reason` carries its reason. |
+| `closed_weekday` | `operating_hours` is set and has no window that weekday. |
+| `time_required` | The weekday has windows and no time was given. |
+| `outside_opening_hours` | The start time is in none of that day's windows (a start at a window's end is outside it). |
+| `party_exceeds_capacity` | The party is larger than `daily_capacity`. |
+| `fully_booked` | Not enough places are left that day. |
+
+- `daily_capacity` is shared by every window on a date. Empty means unlimited.
+- Pending, confirmed and realised bookings hold their places. Cancelled and
+  no-show bookings free them. A pending booking holds its places from the
+  start and is never released automatically.
+- An activity that takes several days (`duration_days`) must be open, and have
+  places, on every day it covers. The party counts against each of those days.
+- A booking with no `activity_id` (free text) is never checked.
+- Changing a booking's activity, date, time or party sizes never counts the
+  booking's own places against it.
+
+A refusal is a `422`:
+
+```json
+{
+  "message": "Sunset cruise is fully booked on 2026-10-09 (0 of 12 places left).",
+  "errors": { "scheduled_for": ["Sunset cruise is fully booked on 2026-10-09 (0 of 12 places left)."] },
+  "unavailable": {
+    "reason": "fully_booked",
+    "date": "2026-10-09",
+    "windows": [{ "start": "17:00", "end": "19:00" }],
+    "capacity": 12,
+    "booked": 12,
+    "remaining": 0,
+    "closure_reason": null,
+    "overridable": true
+  }
+}
+```
+
+`overridable` is true only for `fully_booked` and `party_exceeds_capacity`.
+Staff holding `bookings.override_capacity` can then resend with
+`"capacity_override": true`. The override only lifts capacity, never a closed
+day or the season, and every one is audited as `booking.capacity_overridden`
+with the date, capacity, booked load and party. Sending it without the
+permission is a `403`; AI agents can never override.
+
+`GET /api/activity/{id}/availability` returns the same figures per date for
+the booking calendar. See
+[activity-api-documentation.md](/D:/Hospitality%20Ecosystem/docs/activity-api-documentation.md#6-activity-availability).
+
+## When a booking happens
+
+Times are the **hotel's local time**.
+
+- `scheduled_for` without an offset (`"2026-10-09 17:30"`) is read in the
+  hotel's timezone. With an offset (`"2026-10-09T13:30:00Z"`) it is an instant
+  and is converted.
+- `scheduled_date` alone (`"2026-10-09"`) books an activity that has no
+  opening hours.
+- A catalogue booking needs one of them.
+
+The booking returns `scheduled_date`, `scheduled_time` (`HH:MM`) and
+`last_date` (the last day a multi-day activity covers) in hotel-local terms.
+`scheduled_for` is the real instant, in UTC.
+
 ## The API
 
 ```
-GET  /api/booking                    list
-GET  /api/booking/{id}               one booking
-POST /api/booking                    take a booking
-POST /api/booking/{id}/status        move it through its lifecycle
+GET   /api/booking                                       list (and calendar filters)
+GET   /api/booking/{id}                                  one booking
+POST  /api/booking                                       take a booking
+PATCH /api/booking/{id}                                  correct a live booking
+POST  /api/booking/{id}/status                           move it through its lifecycle
+GET   /api/booking/cancellation-requests                 open guest cancellation requests
+POST  /api/booking/{id}/cancellation-request/approve     cancel it as the guest asked
+POST  /api/booking/{id}/cancellation-request/decline     keep it, with a note
 ```
 
 Headers as everywhere else: `X-API-KEY`, `Authorization: Bearer …`,
 `Accept: application/json`.
 
-**There is no update and no delete.** A booking is cancelled, with a reason.
+**There is no delete.** A booking is cancelled, with a reason.
 
 ### Who can call it
 
@@ -151,8 +242,25 @@ attendance instrument only admins can reach will not record attendance.
 
 Since 2026-09-15 this is the default for employees without a
 [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md).
-A role replaces it: `bookings.view` (list, show), `bookings.create`,
-`bookings.update_status`. No role can grant editing or deleting a booking.
+A role replaces it: `bookings.view` (list, show, cancellation queue),
+`bookings.create`, `bookings.update` (correct a live booking),
+`bookings.update_status` (lifecycle, approve or decline a cancellation
+request), and `bookings.override_capacity` (never a default). No role can grant
+deleting a booking.
+
+### `GET /api/booking`
+
+The generic `filter`, `search`, `sort` and pagination parameters, plus:
+
+| Query | Meaning |
+| --- | --- |
+| `activity_id` | only this activity |
+| `reservation_id` | only this reservation |
+| `scheduled_from`, `scheduled_to` | `scheduled_date` in the range, inclusive (`YYYY-MM-DD`) |
+| `cancellation_requested` | `1`: only bookings with an open cancellation request; `0`: only those without |
+
+Without `sort`, bookings come in `scheduled_date`, then `scheduled_time` order.
+Each booking carries `cancellation_requested` (bool).
 
 ### `POST /api/booking`
 
@@ -160,10 +268,12 @@ A role replaces it: `bookings.view` (list, show), `bookings.create`,
 {
   "guest_id": "01a00c93-…",
   "activity_id": "01a00c93-…",
+  "reservation_id": "01a00c93-…",
   "recommendation_id": null,
   "charge_model": "pay_on_site",
-  "scheduled_for": "2026-09-10T18:00:00Z",
+  "scheduled_for": "2026-10-09 17:30",
   "pax": 2,
+  "notes": "Vegetarian lunch",
   "channel": "desk"
 }
 ```
@@ -173,12 +283,47 @@ A role replaces it: `bookings.view` (list, show), `bookings.create`,
 | `guest_id` | **required**, must belong to your hotel. |
 | `activity_id` | optional, must belong to your hotel. |
 | `item_name` | **required when there is no `activity_id`** — a guest can book something not in the catalogue yet. |
+| `scheduled_for` / `scheduled_date` | **one is required with `activity_id`.** See [When a booking happens](#when-a-booking-happens). |
 | `charge_model` | **required** — `included`, `pay_on_site`, `folio`, `prepaid`. |
 | `recommendation_id` | optional. When present the booking is credited to that recommendation immediately, as a directly observed (L1) conversion. |
 | `origin` | optional — `staff` (default) or `guest_request`. **`recommendation` is not accepted**: it is derived from `recommendation_id`, so a booking can never claim a credit the link does not support. |
-| `scheduled_for`, `pax`, `expected_value`, `currency`, `channel` | optional. `expected_value`/`currency` default to the activity's price. |
+| `reservation_id`, `stay_id` | optional, must belong to your hotel. A stay given without a reservation brings its reservation; a stay of a different reservation is a `422`. |
+| `pax` | optional, at least 1 (default 1). |
+| `notes` | optional, up to 2000 characters. |
+| `capacity_override` | optional; see [Availability at booking time](#availability-at-booking-time). |
+| `expected_value`, `currency`, `channel` | optional. `expected_value`/`currency` default to the activity's price. |
 
 `201` with the booking, including its `reference` — give that code to the guest.
+`422` with `unavailable` when the activity cannot take it.
+
+### `PATCH /api/booking/{id}`
+
+Corrects a **pending or confirmed** booking. Send only what changes:
+
+| Field | Rules |
+| --- | --- |
+| `activity_id` | another activity of your hotel; checked like a new booking. |
+| `scheduled_for` / `scheduled_date` | a new date and time; checked. |
+| `pax` | at least 1; checked when it changes. |
+| `notes` | up to 2000 characters; never checked. |
+| `item_name` | only for a booking with no activity. |
+| `reservation_id`, `stay_id` | as on create. |
+| `capacity_override` | as on create. |
+
+`guest_id`, `recommendation_id`, `origin`, `reference`, `status`,
+`charge_model` and `created_by_user_id` are refused (`422`): who a booking is
+for and how it came about never change, and its status moves only through the
+status endpoint.
+
+- A cancelled, realised or no-show booking cannot be changed: `422`
+  `A cancelled booking can no longer be changed.`
+- A booking whose date has passed can still have its party corrected; moving
+  it to a past date is refused.
+- A catalogue booking with no date (taken before dates were recorded) must be
+  given one before anything else changes.
+
+`200` with the booking. Every change is in the audit trail as
+`booking.updated`.
 
 ### `POST /api/booking/{id}/status`
 
@@ -202,6 +347,68 @@ a message such as `A realised booking cannot be marked confirmed.` — a cancell
 booking cannot be reopened, and a realised one cannot be marked anything else.
 Letting a stale process rewrite what happened is worse than making someone
 create a new booking.
+
+Cancelling a booking also closes any open cancellation request for it as
+approved.
+
+## Cancellation requests
+
+A guest who asks the WhatsApp concierge to cancel a booking gets a
+**cancellation request**, never a cancellation. The request is a task
+(`guest_signal = cancellation_request`, no team) linked to the booking, and
+each admin of the hotel is emailed once. The booking keeps its status and
+places until staff answer. A booking has at most one open request; asking
+again returns it.
+
+Answer it on the booking, not as a plain task: the task endpoints refuse to
+complete, cancel or delete an open request (`422`), since the guest would get
+no answer.
+
+### `GET /api/booking/cancellation-requests`
+
+Open requests, oldest first, paginated (`page`, `per_page`):
+
+```json
+{
+  "id": "task-uuid",
+  "status": "pending",
+  "reason": "Flight changed",
+  "resolution": null,
+  "created_at": "2026-10-05T09:12:00Z",
+  "guest": { "id": "…", "first_name": "Sara", "last_name": "Haddad" },
+  "booking": {
+    "id": "…", "reference": "DCB-4K2P", "item_name": "Sunset cruise", "status": "confirmed",
+    "scheduled_date": "2026-10-09", "scheduled_time": "17:30", "pax": 4,
+    "activity": { "id": "…", "name": "Sunset cruise" }
+  }
+}
+```
+
+### `POST /api/booking/{id}/cancellation-request/approve`
+
+```json
+{ "reason": "Guest's flight changed" }
+```
+
+Cancels the booking; `reason` defaults to the guest's. The request closes with
+`resolution = approved`, who decided and when. The guest is told the booking
+is cancelled (*added 2026-10-06*): on WhatsApp if they wrote within the last 24
+hours, otherwise by email. Cancelling the booking any other way while a request
+is open does the same. `404` when the booking has no open request; `422` (request left open) when the booking can no longer be
+cancelled, for example because it was realised meanwhile.
+
+### `POST /api/booking/{id}/cancellation-request/decline`
+
+```json
+{ "note": "Non-refundable within 24 hours" }
+```
+
+`note` is required. The booking stays as it is; the request closes with
+`resolution = declined` and the note. The guest is told the booking still
+stands, and the note is included in that message (*added 2026-10-06*), so write
+it for the guest. Same WhatsApp-or-email rule as approval. `200` with the
+request; `404` when there is none open. The task's `guest_notice_*` fields show
+whether the guest was reached.
 
 ## Related Docs
 

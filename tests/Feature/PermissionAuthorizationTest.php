@@ -7,6 +7,7 @@ use App\Models\Hotel;
 use App\Models\StaffRole;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\BookingCancellationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -132,6 +133,7 @@ it('lets an employee read a resource only when their role grants it', function (
     'availability' => [availabilityProbeUrl(), Permission::AVAILABILITY_VIEW],
     'ai insights' => ['/api/ai-insights', Permission::AI_INSIGHTS_VIEW],
     'bookings' => ['/api/booking', Permission::BOOKINGS_VIEW],
+    'booking cancellation requests' => ['/api/booking/cancellation-requests', Permission::BOOKINGS_VIEW],
     'dashboard' => ['/api/dashboard', Permission::DASHBOARD_VIEW],
     'guests' => ['/api/guest', Permission::GUESTS_VIEW],
     'hotel policies' => ['/api/hotel-policy', Permission::HOTEL_POLICIES_VIEW],
@@ -298,3 +300,45 @@ it('grants nothing when the assigned role can no longer be read', function () {
     $this->withHeaders(permissionApiHeaders())->actingAs($employee->fresh(), 'sanctum')
         ->getJson('/api/guest')->assertForbidden();
 });
+
+it('gives employees without a role booking edits but never the capacity override', function () {
+    expect(Permission::employeeDefaults())
+        ->toContain(Permission::BOOKINGS_UPDATE)
+        ->not->toContain(Permission::BOOKINGS_OVERRIDE_CAPACITY);
+});
+
+it('lets an employee run booking and activity actions only when their role grants it', function (string $action, Permission $permission) {
+    test()->travelTo('2026-10-05 09:00:00');
+    $hotel = avHotel();
+    $activity = abActivity($hotel, ['daily_capacity' => 2]);
+    $booking = abBook($hotel, $activity, '2026-10-09', 1);
+    app(BookingCancellationService::class)
+        ->request($booking, Guest::withoutGlobalScope('hotel')->find($booking->guest_id), 'Flight changed');
+
+    $call = fn ($user) => match ($action) {
+        'edit booking' => abPatch($this, $user, "/api/booking/{$booking->id}", ['notes' => 'Window seat']),
+        'activity availability' => fdGet($this, $user, "/api/activity/{$activity->id}/availability?from=2026-10-09"),
+        'approve cancellation' => fdPost($this, $user, "/api/booking/{$booking->id}/cancellation-request/approve"),
+        'decline cancellation' => fdPost($this, $user, "/api/booking/{$booking->id}/cancellation-request/decline", ['note' => 'Non-refundable']),
+        'override capacity' => fdPost($this, $user, '/api/booking', [
+            'guest_id' => abGuest($hotel)->id,
+            'activity_id' => $activity->id,
+            'scheduled_date' => '2026-10-09',
+            'pax' => 2,
+            'charge_model' => 'pay_on_site',
+            'capacity_override' => true,
+        ]),
+    };
+
+    // The override is checked on top of taking the booking.
+    $base = $action === 'override capacity' ? [Permission::BOOKINGS_CREATE] : [];
+
+    $call(fdEmployee($hotel, $base))->assertForbidden();
+    expect($call(fdEmployee($hotel, [...$base, $permission]))->status())->toBeIn([200, 201]);
+})->with([
+    'edit booking' => ['edit booking', Permission::BOOKINGS_UPDATE],
+    'activity availability' => ['activity availability', Permission::ACTIVITIES_VIEW],
+    'approve cancellation' => ['approve cancellation', Permission::BOOKINGS_UPDATE_STATUS],
+    'decline cancellation' => ['decline cancellation', Permission::BOOKINGS_UPDATE_STATUS],
+    'override capacity' => ['override capacity', Permission::BOOKINGS_OVERRIDE_CAPACITY],
+]);

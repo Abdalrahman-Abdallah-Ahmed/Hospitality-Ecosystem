@@ -6,9 +6,11 @@ use App\Enums\InboundMessageStatus;
 use App\Enums\SenderType;
 use App\Enums\UserRole;
 use App\Jobs\ProcessInboundWhatsAppMessageJob;
+use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\Task;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Models\WhatsAppInboundMessage;
@@ -214,12 +216,36 @@ it('sends a pairing-guidance reply and never invokes the advisor for an unpaired
 
 // unknown sender
 
-it('sends a fallback reply for an unrecognized phone number', function () {
-    $payload = whatsappInboundPayload('201151793758', 'Hello?');
-    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))
-        ->assertOk();
+it('ignores an unrecognized phone number: no reply, no agent, nothing in any hotel', function () {
+    GuestConciergeAgent::fake(['must not be used']);
+    AdminAdvisorAgent::fake(['must not be used']);
 
-    Http::assertSent(fn ($request) => str_contains($request['text']['body'], "couldn't recognize"));
+    $payload = whatsappPayloadOf(whatsappMessage('201151793758', 'Hello? Cancel booking DCB-4K2P', 'wamid.UNKNOWN1'));
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+    $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+
+    $inbound = WhatsAppInboundMessage::sole();
+    expect($inbound->status)->toBe(InboundMessageStatus::IGNORED)
+        ->and($inbound->hotel_id)->toBeNull()
+        ->and($inbound->reply_text)->toBeNull()
+        ->and(Task::withoutGlobalScope('hotel')->count())->toBe(0)
+        ->and(Booking::withoutGlobalScope('hotel')->count())->toBe(0);
+    Http::assertNothingSent();
+    GuestConciergeAgent::assertNeverPrompted();
+    AdminAdvisorAgent::assertNeverPrompted();
+});
+
+it('never sends the rate-limit notice to an unrecognized number', function () {
+    config(['services.whatsapp.inbound_per_minute' => 2]);
+
+    foreach (range(1, 4) as $i) {
+        $payload = whatsappPayloadOf(whatsappMessage('201151793758', "Spam {$i}", "wamid.SPAM{$i}"));
+        $this->postJson('/api/whatsapp', $payload, whatsappSignatureHeader($payload))->assertOk();
+    }
+
+    expect(WhatsAppInboundMessage::where('status', InboundMessageStatus::THROTTLED)->count())->toBe(2)
+        ->and(WhatsAppInboundMessage::where('status', InboundMessageStatus::IGNORED)->count())->toBe(2);
+    Http::assertNothingSent();
 });
 
 // pairing via WhatsApp message

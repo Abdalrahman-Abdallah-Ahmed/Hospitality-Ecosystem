@@ -37,7 +37,8 @@ it('raises a VIP guest service request to high priority whatever priority the mo
     $hotel = vipConciergeHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Sara', 'is_vip' => true]);
 
-    (new CreateGuestServiceRequestTool($guest, $hotel))->handle(towelRequest('low'));
+    // Service requests need a current or upcoming reservation (SPEC-007 FR-030).
+    (new CreateGuestServiceRequestTool($guest, $hotel, gsUpcoming($hotel, $guest)))->handle(towelRequest('low'));
 
     expect(Task::sole()->priority)->toBe(Priority::HIGH);
 });
@@ -46,7 +47,8 @@ it('keeps the chosen priority for a guest who is not VIP', function () {
     $hotel = vipConciergeHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Sara']);
 
-    (new CreateGuestServiceRequestTool($guest, $hotel))->handle(towelRequest('low'));
+    // Service requests need a current or upcoming reservation (SPEC-007 FR-030).
+    (new CreateGuestServiceRequestTool($guest, $hotel, gsUpcoming($hotel, $guest)))->handle(towelRequest('low'));
 
     expect(Task::sole()->priority)->toBe(Priority::LOW);
 });

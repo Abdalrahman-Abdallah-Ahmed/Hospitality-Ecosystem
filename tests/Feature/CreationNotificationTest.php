@@ -112,7 +112,8 @@ it('emails the admins when the concierge files a guest service request', functio
     $admin = notifiedUser($hotel, UserRole::ADMIN);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Sara']);
 
-    (new CreateGuestServiceRequestTool($guest, $hotel))->handle(new Request([
+    // Service requests need a current or upcoming reservation (SPEC-007 FR-030).
+    (new CreateGuestServiceRequestTool($guest, $hotel, gsUpcoming($hotel, $guest)))->handle(new Request([
         'title' => 'Extra towels',
         'description' => 'Two more towels for room 203',
     ]));

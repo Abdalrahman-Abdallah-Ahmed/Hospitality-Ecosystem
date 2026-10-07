@@ -22,15 +22,17 @@ Rules that apply whatever a role grants:
   - Hotel settings (`/api/hotel`)
   - AI advisor chat (`/api/ai-advisor/chat`)
   - Account usage (`/api/usage`)
-- **Hard limits.** Nobody can edit or delete a booking or a transaction; they are cancelled or reversed instead. Only a super admin can create or delete a hotel.
+- **Hard limits.** Nobody can delete a booking or edit or delete a transaction; they are cancelled or reversed instead. A live booking's date, time, party and notes can be corrected (`bookings.update`). Only a super admin can create or delete a hotel.
 
 ### Default Permissions
 
 An employee with no staff role has:
 
-`activities.view`, `availability.view`, `bookings.view`, `bookings.create`, `bookings.update_status`, `dashboard.view`, `guests.view`, `recommendations.record_outcome`
+`activities.view`, `availability.view`, `bookings.view`, `bookings.create`, `bookings.update`, `bookings.update_status`, `dashboard.view`, `guests.view`, `recommendations.record_outcome`
 
 `availability.view` was added on purpose: it is read-only, shows staff nothing sensitive, and anyone taking a booking needs it to avoid overselling. `reservations.overbook` is never a default.
+
+`bookings.update` was added on purpose (2026-10-05): the people who take and cancel bookings can also correct a booking's date or party size. That is a smaller act than cancelling, and it is checked against the activity's availability like a new booking. `bookings.override_capacity` (booking past an activity's daily capacity) is never a default.
 
 `stays.view`, `stays.check_in` and `stays.check_out` are never defaults: the stays lists show guest names, rooms and dates, and check-in/out change room status and occupancy, so a hotel grants them on purpose to its front-desk roles.
 
@@ -42,7 +44,7 @@ An employee with no staff role has:
 
 | Permission | Endpoints it opens |
 | --- | --- |
-| `activities.view` | `GET /api/activity`, `GET /api/activity/{id}` |
+| `activities.view` | `GET /api/activity`, `GET /api/activity/{id}`, `GET /api/activity/{id}/availability` |
 | `activities.create` | `POST /api/activity` |
 | `activities.update` | `PUT /api/activity/{id}` |
 | `activities.delete` | `DELETE /api/activity/{id}` |
@@ -53,9 +55,11 @@ An employee with no staff role has:
 | `ai_insights.view` | `GET /api/ai-insights` |
 | `ai_insights.generate` | `POST /api/ai-insights` |
 | `availability.view` | `GET /api/availability` (an employee default) |
-| `bookings.view` | `GET /api/booking`, `GET /api/booking/{id}` |
+| `bookings.view` | `GET /api/booking`, `GET /api/booking/{id}`, `GET /api/booking/cancellation-requests` |
 | `bookings.create` | `POST /api/booking` |
-| `bookings.update_status` | `POST /api/booking/{id}/status` |
+| `bookings.update` | `PATCH /api/booking/{id}` (an employee default) |
+| `bookings.update_status` | `POST /api/booking/{id}/status`, `POST /api/booking/{id}/cancellation-request/approve`, `POST /api/booking/{id}/cancellation-request/decline` |
+| `bookings.override_capacity` | `capacity_override: true` on `POST /api/booking` and `PATCH /api/booking/{id}` (never a default) |
 | `dashboard.view` | `GET /api/dashboard` |
 | `guests.view` | `GET /api/guest`, `GET /api/guest/{id}` |
 | `guests.create` | `POST /api/guest` |
@@ -183,11 +187,13 @@ HTTP `200`:
         "permissions": [
           { "value": "bookings.view", "action": "view", "label": "View" },
           { "value": "bookings.create", "action": "create", "label": "Create" },
-          { "value": "bookings.update_status", "action": "update_status", "label": "Update Status" }
+          { "value": "bookings.update", "action": "update", "label": "Update" },
+          { "value": "bookings.update_status", "action": "update_status", "label": "Update Status" },
+          { "value": "bookings.override_capacity", "action": "override_capacity", "label": "Override Capacity" }
         ]
       }
     ],
-    "employee_defaults": ["activities.view", "availability.view", "bookings.view", "bookings.create", "bookings.update_status", "dashboard.view", "guests.view", "recommendations.record_outcome"]
+    "employee_defaults": ["activities.view", "availability.view", "bookings.view", "bookings.create", "bookings.update", "bookings.update_status", "dashboard.view", "guests.view", "recommendations.record_outcome"]
   }
 }
 ```

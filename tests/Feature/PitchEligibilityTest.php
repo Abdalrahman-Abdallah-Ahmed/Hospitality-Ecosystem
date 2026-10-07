@@ -18,6 +18,7 @@ use App\Enums\UserRole;
 use App\Jobs\ProcessInboundWhatsAppMessageJob;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
+use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\MeterEvent;
@@ -249,6 +250,15 @@ it('blocks while a service request from the last 24 hours is open', function () 
 
     expect(gateOf(decideTurn($guest, $hotel, $reservation), PitchGate::OPEN_SERVICE_REQUEST)['passed'])->toBeFalse();
 });
+
+it('blocks while a maintenance or room-change request is open, like a service request', function (GuestSignal $signal) {
+    $hotel = pitchHotel();
+    [$guest, $reservation] = pitchGuest($hotel);
+    guestSignalTask($guest, $signal);
+    TurnSignalAgent::fake()->preventStrayPrompts();
+
+    expect(gateOf(decideTurn($guest, $hotel, $reservation), PitchGate::OPEN_SERVICE_REQUEST)['passed'])->toBeFalse();
+})->with([GuestSignal::MAINTENANCE_REQUEST, GuestSignal::ROOM_CHANGE_REQUEST]);
 
 it('does not block on an old, a finished, or a booking follow-up task', function () {
     $hotel = pitchHotel();
@@ -519,7 +529,18 @@ it('offers a recommendation regardless of prior bookings, timeframe or capacity'
         'daily_capacity' => 1,
         'operating_hours' => ['tuesday' => [['start' => '10:00', 'end' => '12:00']]],
     ]);
-    wp5Booking($hotel, ['guest_id' => $guest->id, 'stay_id' => $stay->id, 'activity_id' => $awkward->activity_id]);
+    // Taken while it was still in season: the booking check (SPEC-041) would
+    // refuse it today, so the row is written as it would stand now.
+    Booking::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'stay_id' => $stay->id,
+        'activity_id' => $awkward->activity_id,
+        'reference' => 'PIT-0001',
+        'item_name' => 'PADI Open Water',
+        'charge_model' => 'pay_on_site',
+        'origin' => 'guest_request',
+    ]);
     classifierSays();
 
     $turn = decideTurn($guest, $hotel, $reservation);
