@@ -27,9 +27,11 @@ class KnowledgeChunk extends Model
         'token_count',
         'metadata',
         'embedding',
+        'is_active',
     ];
 
     protected $casts = [
+        'is_active' => 'boolean',
         'chunk_index' => 'integer',
         'token_count' => 'integer',
         'metadata' => 'array',

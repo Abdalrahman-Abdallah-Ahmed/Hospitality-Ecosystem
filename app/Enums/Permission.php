@@ -46,6 +46,12 @@ enum Permission: string
     case HOTEL_POLICIES_UPDATE = 'hotel_policies.update';
     case HOTEL_POLICIES_DELETE = 'hotel_policies.delete';
 
+    case KNOWLEDGE_DOCUMENTS_VIEW = 'knowledge_documents.view';
+    case KNOWLEDGE_DOCUMENTS_CREATE = 'knowledge_documents.create';
+    case KNOWLEDGE_DOCUMENTS_UPDATE = 'knowledge_documents.update';
+    case KNOWLEDGE_DOCUMENTS_DELETE = 'knowledge_documents.delete';
+    case KNOWLEDGE_DOCUMENTS_REINDEX = 'knowledge_documents.reindex';
+
     case KNOWLEDGE_BASE_ARTICLES_VIEW = 'knowledge_base_articles.view';
     case KNOWLEDGE_BASE_ARTICLES_CREATE = 'knowledge_base_articles.create';
     case KNOWLEDGE_BASE_ARTICLES_UPDATE = 'knowledge_base_articles.update';
@@ -123,6 +129,8 @@ enum Permission: string
      *   grants them on purpose to its front-desk roles.
      * - Correcting a room's housekeeping status and taking rooms out of order
      *   are never defaults: both change which rooms can be sold.
+     * - Knowledge documents are never a default, not even viewing: whatever is
+     *   uploaded, corrected or switched on is what the guest AI tells guests.
      *
      * @return list<self>
      */
