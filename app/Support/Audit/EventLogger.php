@@ -28,6 +28,12 @@ class EventLogger
 
     private static ?ActorKind $actorKindOverride = null;
 
+    /** The human an AI agent is acting for, when no one is signed in (queue jobs). */
+    private static ?Model $onBehalfOf = null;
+
+    /** @var array<string, mixed> Which agent, tool and conversation produced the write. */
+    private static array $aiContext = [];
+
     public static function isRecording(): bool
     {
         return self::$recording;
@@ -47,7 +53,7 @@ class EventLogger
             return;
         }
 
-        $actor = Auth::user();
+        $actor = Auth::user() ?? self::$onBehalfOf;
 
         EventLog::create([
             'hotel_id' => self::resolveHotelId($subject),
@@ -84,18 +90,27 @@ class EventLogger
 
     /**
      * Run a callback with every event it produces attributed to an AI agent
-     * (actor_kind = ai_agent, no human actor), restoring the prior setting
-     * afterward. For the AI jobs and the agent tools that write records.
+     * (actor_kind = ai_agent), restoring the prior setting afterward. For the
+     * AI jobs and the agent tools that write records.
+     *
+     * $onBehalfOf names the human the agent acts for, recorded as the actor
+     * when no one is signed in (a WhatsApp turn runs in a queue job). $ai is
+     * stored as `context.ai` — which agent, tool and conversation did it — so
+     * an AI write can be traced without reading the conversation.
+     *
+     * @param  array<string, mixed>  $ai
      */
-    public static function asAiAgent(callable $callback): mixed
+    public static function asAiAgent(callable $callback, ?Model $onBehalfOf = null, array $ai = []): mixed
     {
-        $previous = self::$actorKindOverride;
+        $previous = [self::$actorKindOverride, self::$onBehalfOf, self::$aiContext];
         self::$actorKindOverride = ActorKind::AI_AGENT;
+        self::$onBehalfOf = $onBehalfOf ?? self::$onBehalfOf;
+        self::$aiContext = $ai !== [] ? $ai : self::$aiContext;
 
         try {
             return $callback();
         } finally {
-            self::$actorKindOverride = $previous;
+            [self::$actorKindOverride, self::$onBehalfOf, self::$aiContext] = $previous;
         }
     }
 
@@ -141,6 +156,10 @@ class EventLogger
 
         if (app()->runningInConsole()) {
             $context['queue'] = true;
+        }
+
+        if (self::$actorKindOverride === ActorKind::AI_AGENT && self::$aiContext !== []) {
+            $context['ai'] = self::$aiContext;
         }
 
         return $context ?: null;

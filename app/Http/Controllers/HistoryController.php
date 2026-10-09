@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\EventLogResource;
+use App\Models\Activity;
 use App\Models\AiInsights;
 use App\Models\EventLog;
 use App\Models\Guest;
+use App\Models\KnowledgeBaseArticle;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\Stay;
@@ -27,6 +29,8 @@ class HistoryController extends Controller
         'recommendation' => Recommendation::class,
         'task' => Task::class,
         'ai-insights' => AiInsights::class,
+        'activity' => Activity::class,
+        'knowledge-base-article' => KnowledgeBaseArticle::class,
     ];
 
     /**
