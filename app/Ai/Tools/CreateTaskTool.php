@@ -2,21 +2,19 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
-use App\Exceptions\HousekeepingException;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
 use App\Models\User;
-use App\Services\CreationNotificationService;
-use App\Services\HousekeepingService;
+use App\Services\Tasks\TaskCommands;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -29,9 +27,19 @@ use Stringable;
  * for work to be done — attributed to the AI acting for a staff member, and
  * able to assign a team or a person, which the guest-side tool deliberately
  * cannot do.
+ *
+ * It creates through TaskCommands, the task endpoint's own rules (team from
+ * category, category must belong to the team, housekeeping hooks,
+ * notifications). Before that it refuses an obvious duplicate: an open task
+ * with the same room, category and title from the last day (R9) — a model
+ * retry or a repeated message, not a second job.
  */
 class CreateTaskTool implements Tool
 {
+    use AdminToolSupport;
+
+    private const DUPLICATE_WINDOW_HOURS = 24;
+
     public function __construct(
         private readonly Hotel $hotel,
         private readonly User $creator,
@@ -39,7 +47,7 @@ class CreateTaskTool implements Tool
 
     public function description(): Stringable|string
     {
-        return 'Create a task for hotel staff — maintenance, housekeeping, or any other work the admin wants recorded. Can be assigned to a team or a specific staff member, and linked to a room.';
+        return 'Create a task for hotel staff — maintenance, housekeeping, or any other work the admin wants recorded. Can be assigned to a team or a specific staff member, and linked to a room. If the same open task already exists it is reported instead of created twice.';
     }
 
     public function handle(Request $request): Stringable|string
@@ -50,18 +58,17 @@ class CreateTaskTool implements Tool
             return 'A task title is required.';
         }
 
-        $categoryId = $this->belongingId($request, 'task_category_id', TaskCategory::class);
-        // No team named: the category's team (FR-015).
-        $teamId = $this->belongingId($request, 'assigned_to_team_id', Team::class)
-            ?? ($categoryId ? TaskCategory::whereKey($categoryId)->value('team_id') : null);
-        $housekeeping = app(HousekeepingService::class);
         $roomId = $this->roomId($request);
+        $categoryId = $this->belongingId($request, 'task_category_id', TaskCategory::class);
+
+        if ($existing = $this->openDuplicate($title, $roomId, $categoryId)) {
+            return $this->alreadyExists($existing->id, "open task \"{$existing->title}\"");
+        }
 
         $attributes = [
-            'hotel_id' => $this->hotel->id,
             'room_id' => $roomId,
             'task_category_id' => $categoryId,
-            'assigned_to_team_id' => $teamId,
+            'assigned_to_team_id' => $this->belongingId($request, 'assigned_to_team_id', Team::class),
             'assigned_to_user_id' => $this->assignedUserId($request),
             'created_by_user_id' => $this->creator->getKey(),
             'title' => $title,
@@ -75,21 +82,17 @@ class CreateTaskTool implements Tool
             'due_date' => $request->filled('due_date') ? $request->string('due_date')->toString() : null,
         ];
 
-        try {
-            $task = DB::transaction(function () use ($attributes, $housekeeping, $roomId): Task {
-                $housekeeping->lockRooms([$roomId]);
-                $task = Task::create($attributes);
-                $housekeeping->taskCreated($task);
+        $task = $this->attempt(fn () => app(TaskCommands::class)->create($this->hotel, $attributes, createdByAi: true));
 
-                return $task;
-            });
-        } catch (HousekeepingException $exception) {
-            return $exception->getMessage().' Nothing was created.';
+        if (is_string($task)) {
+            return $task;
         }
 
-        app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
-
-        return "Task \"{$task->title}\" created (task id: {$task->id}), priority {$task->priority->value}.";
+        return $this->done(
+            ['task_id' => $task->id],
+            ['task' => 'created', 'priority' => $task->priority->value, 'assigned_to_team_id' => $task->assigned_to_team_id],
+            "Task \"{$task->title}\" created (task id: {$task->id}), priority {$task->priority->value}.",
+        );
     }
 
     public function schema(JsonSchema $schema): array
@@ -109,16 +112,25 @@ class CreateTaskTool implements Tool
         ];
     }
 
+    private function openDuplicate(string $title, ?string $roomId, ?string $categoryId): ?Task
+    {
+        return Task::withoutGlobalScope('hotel')
+            ->where('hotel_id', $this->hotel->id)
+            ->whereIn('status', [TaskStatus::PENDING, TaskStatus::IN_PROGRESS])
+            ->where('room_id', $roomId)
+            ->where('task_category_id', $categoryId)
+            ->whereRaw('lower(title) = ?', [mb_strtolower($title)])
+            ->where('created_at', '>=', now()->subHours(self::DUPLICATE_WINDOW_HOURS))
+            ->first();
+    }
+
     private function roomId(Request $request): ?string
     {
         if (! $request->filled('room_number')) {
             return null;
         }
 
-        return Room::withoutGlobalScope('hotel')
-            ->where('hotel_id', $this->hotel->id)
-            ->where('room_number', $request->string('room_number')->toString())
-            ->value('id');
+        return $this->findRoomByNumber($request->string('room_number')->toString())?->id;
     }
 
     /**
@@ -138,10 +150,7 @@ class CreateTaskTool implements Tool
             return null;
         }
 
-        return $model::withoutGlobalScope('hotel')
-            ->where('hotel_id', $this->hotel->id)
-            ->find($request->string($field)->toString())
-            ?->getKey();
+        return $this->findOwn($model, $request->string($field)->toString())?->getKey();
     }
 
     /**

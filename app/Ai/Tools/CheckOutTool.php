@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
 use App\Ai\Tools\Concerns\FindsReservationStays;
 use App\Enums\Permission;
 use App\Enums\StayStatus;
@@ -22,8 +23,11 @@ use Stringable;
  * same rules and messages as the front desk (FR-023): each room checked out
  * is left dirty with a cleaning task. Checks stays.check_out for the admin it
  * acts for; writes are audited as the AI agent.
+ *
+ * Hard to reverse, so the admin confirms it first (FR-017): the call pauses
+ * until their next message says yes.
  */
-class CheckOutTool implements Tool
+class CheckOutTool implements ConfirmsBeforeRunning, Tool
 {
     use FindsReservationStays;
 
@@ -37,6 +41,36 @@ class CheckOutTool implements Tool
         return 'Check guests out of a reservation: every room in the house, or only the rooms with the given room '
             .'numbers. Each room checked out is marked dirty and gets a cleaning task for housekeeping. If rooms of the '
             .'reservation never arrived, the last room cannot check out until those are cancelled; the reason comes back.';
+    }
+
+    public function needsConfirmation(Request $request): bool
+    {
+        return true;
+    }
+
+    public function confirmationSummary(Request $request, string $locale): string
+    {
+        $code = trim($request->string('reservation_id')->toString());
+        $reservation = $this->findReservation($this->hotel, $code);
+
+        if (! $reservation) {
+            return $locale === 'ar'
+                ? "تسجيل خروج الحجز {$code} (غير موجود في هذا الفندق) — لن يتغير شيء."
+                : "Check out reservation {$code} (not found in this hotel; nothing will change).";
+        }
+
+        $numbers = $this->roomNumbers((array) ($request['room_numbers'] ?? []));
+        $rooms = $this->staysOf($reservation)
+            ->where('status', StayStatus::IN_HOUSE)
+            ->filter(fn (Stay $stay) => $numbers === [] || in_array($stay->room?->room_number, $numbers, true))
+            ->map(fn (Stay $stay) => $stay->room?->room_number)
+            ->filter()
+            ->implode(', ') ?: ($locale === 'ar' ? 'لا توجد غرف مقيمة' : 'no rooms in the house');
+        $guest = trim(($reservation->guest?->first_name ?? '').' '.($reservation->guest?->last_name ?? '')) ?: ($locale === 'ar' ? 'ضيف' : 'guest');
+
+        return $locale === 'ar'
+            ? "تسجيل خروج الحجز {$reservation->reservation_id} باسم {$guest}: الغرف {$rooms}."
+            : "Check out reservation {$reservation->reservation_id} for {$guest}: rooms {$rooms}.";
     }
 
     public function handle(Request $request): Stringable|string

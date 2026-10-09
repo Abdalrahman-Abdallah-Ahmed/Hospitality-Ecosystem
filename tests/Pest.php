@@ -1,6 +1,8 @@
 <?php
 
 use App\Ai\Agents\DocumentVisionAgent;
+use App\Ai\Tools\Admin\AdminToolset;
+use App\Ai\Tools\Admin\GuardedTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Enums\BookingOrigin;
 use App\Enums\ChargeModel;
@@ -11,6 +13,7 @@ use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeDocument;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
@@ -37,6 +40,7 @@ use App\Support\Tenancy\TenantContext;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Ai\Embeddings;
@@ -861,4 +865,217 @@ function knRequest($test, User $user, string $method, string $uri, array $payloa
 function knSearch(Hotel $hotel, string $query = 'checkout', KnowledgeAudience $audience = KnowledgeAudience::STAFF): string
 {
     return (string) (new KnowledgeSearchTool($hotel, $audience))->handle(new Request(['query' => $query]));
+}
+
+/*
+|--------------------------------------------------------------------------
+| Admin AI tools (SPEC-055) — prefix `aat`
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A hotel whose owner is its admin, with one room type ("Deluxe").
+ *
+ * @return array{0: Hotel, 1: User, 2: RoomType}
+ */
+function aatHotel(string $timezone = 'UTC'): array
+{
+    $hotel = avHotel($timezone);
+
+    return [$hotel->fresh(), $hotel->owner, avType($hotel, 'Deluxe')];
+}
+
+/**
+ * An employee holding exactly these permissions through a staff role.
+ *
+ * @param  list<Permission>  $permissions
+ */
+function aatEmployee(Hotel $hotel, array $permissions = []): User
+{
+    return fdEmployee($hotel, $permissions);
+}
+
+/**
+ * The Admin AI tool with this name, built through the real registry and
+ * guard for `$user`, exactly as the advisor gets it.
+ */
+function aatTool(User $user, string $name, ?string $conversationId = null, string $locale = 'en'): GuardedTool
+{
+    $tool = collect(AdminToolset::for($user, $conversationId, $locale))->first(fn (GuardedTool $tool) => $tool->name() === $name);
+
+    if (! $tool) {
+        throw new RuntimeException("AdminToolset has no tool named {$name}.");
+    }
+
+    return $tool;
+}
+
+/**
+ * Call a tool the way the AI package does; JSON results come back decoded.
+ */
+function aatCall(object $tool, array $args = [], ?string $toolCallId = null): array|string
+{
+    $result = (string) $tool->handle(new Request($args, $toolCallId));
+    $decoded = json_decode($result, true);
+
+    return is_array($decoded) ? $decoded : $result;
+}
+
+function aatRoom(Hotel $hotel, RoomType $type, string $number, array $attributes = []): Room
+{
+    return Room::create([
+        'hotel_id' => $hotel->id,
+        'room_type_id' => $type->id,
+        'room_number' => $number,
+        'status' => 'available',
+        'housekeeping_status' => 'clean',
+        ...$attributes,
+    ]);
+}
+
+function aatGuest(Hotel $hotel, array $attributes = []): Guest
+{
+    return gsGuest($hotel, $attributes);
+}
+
+/**
+ * A reservation through ReservationCreator: one line per entry of `$roomIds`
+ * (null: unassigned), arriving today for two nights unless overridden.
+ *
+ * @param  list<?string>  $roomIds
+ */
+function aatReservation(Hotel $hotel, RoomType $type, array $roomIds, array $attributes = []): Reservation
+{
+    return fdBook($hotel, $type, $roomIds, $attributes);
+}
+
+/**
+ * One hotel's worth of records for the Admin AI tool datasets: rooms 101–103
+ * (Deluxe), a guest, a reservation arriving today with one unassigned
+ * Deluxe line, a task on room 101, an activity with a booking, and a draft
+ * knowledge article. Names carry `$marker`, so an isolation test can tell
+ * whose data a result contains.
+ *
+ * @return array<string, mixed>
+ */
+function aatSeed(string $marker = 'Alpha', string $timezone = 'UTC'): array
+{
+    [$hotel, $admin, $type] = aatHotel($timezone);
+    $hotel->update(['name' => "{$marker} Hotel"]);
+
+    $rooms = collect(['101', '102', '103'])->mapWithKeys(fn (string $number) => [$number => aatRoom($hotel, $type, $number)]);
+    $guest = aatGuest($hotel, ['first_name' => $marker, 'last_name' => "{$marker}son"]);
+    $reservation = aatReservation($hotel, $type, [null], ['guest_id' => $guest->id]);
+    $task = Task::create([
+        'hotel_id' => $hotel->id,
+        'room_id' => $rooms['101']->id,
+        'title' => "{$marker} task",
+        'created_by' => 'manual',
+        'status' => 'pending',
+        'priority' => 'normal',
+    ]);
+    $activity = abActivity($hotel, ['name' => "{$marker} tour"]);
+    $booking = abBook($hotel, $activity, now($hotel->timezone)->addDays(3)->toDateString(), 1, ['guest_id' => $guest->id]);
+    $article = KnowledgeBaseArticle::create([
+        'hotel_id' => $hotel->id,
+        'title' => "{$marker} article",
+        'content' => "{$marker} knowledge.",
+        'status' => 'draft',
+    ]);
+
+    return [
+        'hotel' => $hotel->fresh(),
+        'admin' => $admin->fresh(),
+        'type' => $type,
+        'marker' => $marker,
+        'rooms' => $rooms,
+        'guest' => $guest,
+        'reservation' => $reservation,
+        'code' => $reservation->reservation_id,
+        'task' => $task,
+        'activity' => $activity,
+        'booking' => $booking,
+        'article' => $article,
+    ];
+}
+
+/**
+ * Valid arguments for each Admin AI tool against an `aatSeed()` hotel. Every
+ * tool in AdminToolset must have an entry: the permission and isolation
+ * datasets are built from this map, so a new tool without one fails them.
+ *
+ * @param  array<string, mixed>  $s
+ * @return array<string, mixed>
+ */
+function aatArgs(string $tool, array $s): array
+{
+    $tz = $s['hotel']->timezone;
+
+    return match ($tool) {
+        'KnowledgeSearchTool' => ['query' => 'pool hours'],
+        'GetGuestsTool' => ['search' => $s['guest']->last_name],
+        'GetGuestTool' => ['guest' => $s['guest']->id],
+        'GetGuestMessagesTool', 'GetRoomTypesTool', 'GetTaskCategoriesTool', 'GetHousekeepingBoardTool',
+        'GetMaintenanceTool', 'GetActivitiesTool', 'GetStaffTool', 'GetHotelSettingsTool' => [],
+        'GetReservationsTool' => ['code' => $s['code']],
+        'GetReservationTool' => ['code' => $s['code']],
+        'GetRoomsTool' => ['room_number' => '101'],
+        'GetAvailabilityTool' => ['arrival_date' => now($tz)->toDateString(), 'departure_date' => now($tz)->addDay()->toDateString()],
+        'GetStaysTool' => ['list' => 'arrivals'],
+        'GetTasksTool' => ['room_number' => '101'],
+        'GetBookingsTool' => ['guest' => $s['guest']->last_name],
+        'GetReportTool' => ['report' => 'dashboard'],
+        'CreateGuestTool' => ['phone_number' => '+44 7700 '.random_int(100000, 999999), 'first_name' => 'New'],
+        'UpdateGuestTool' => ['guest_id' => $s['guest']->id, 'nationality' => 'FR'],
+        'CreateReservationTool' => [
+            'guest_phone' => $s['guest']->phone_number,
+            'rooms' => [['room_type' => $s['type']->name, 'quantity' => 1]],
+            'arrival_date' => now($tz)->addDays(20)->toDateString(),
+            'departure_date' => now($tz)->addDays(22)->toDateString(),
+        ],
+        'UpdateReservationTool' => ['code' => $s['code'], 'special_requests' => 'Late arrival'],
+        'CancelReservationTool' => ['code' => $s['code']],
+        'AssignRoomsTool' => ['code' => $s['code'], 'assignments' => [['room_number' => '102']]],
+        'CheckInTool' => ['reservation_id' => $s['code']],
+        'CheckOutTool' => ['reservation_id' => $s['code']],
+        'CreateRoomTool' => ['room_number' => '901', 'room_type' => $s['type']->name],
+        'SetHousekeepingStatusTool' => ['room_number' => '101', 'housekeeping_status' => 'dirty'],
+        'SetRoomOutOfOrderTool' => ['room_number' => '103', 'reason' => 'Water leak'],
+        'UpdateOutOfOrderTool' => ['room_number' => '103', 'reason' => 'Water leak, ceiling'],
+        'ReturnRoomToServiceTool' => ['room_number' => '103'],
+        'CreateTaskTool' => ['title' => 'Replace lamp', 'room_number' => '102'],
+        'UpdateTaskTool' => ['task_id' => $s['task']->id, 'priority' => 'high'],
+        'ReportTaskIssueTool' => ['task_id' => $s['task']->id, 'description' => 'Tap drips'],
+        'CreateActivityTool' => ['name' => 'Kayak', 'price' => 10],
+        'CreateActivityBookingTool' => ['guest' => $s['guest']->id, 'activity' => $s['activity']->name, 'scheduled_for' => now($tz)->addDays(5)->toDateString()],
+        'UpdateBookingStatusTool' => ['booking' => $s['booking']->reference, 'status' => 'confirmed'],
+        'DecideBookingCancellationTool' => ['booking' => $s['booking']->reference, 'decision' => 'decline', 'note' => 'Too late to cancel.'],
+        'CreateKnowledgeArticleTool' => ['title' => 'Shuttle', 'content' => 'The shuttle leaves at 9:00.', 'draft' => true],
+        'UpdateKnowledgeArticleTool' => ['article_id' => $s['article']->id, 'title' => 'Renamed article'],
+        default => throw new RuntimeException("aatArgs() has no arguments for {$tool}: add them."),
+    };
+}
+
+/**
+ * A fingerprint of one hotel's operational rows: how many, and the latest
+ * change. Equal before and after means the hotel's data did not change.
+ *
+ * @return array<string, array{0: int, 1: mixed}>
+ */
+function aatFingerprint(Hotel $hotel): array
+{
+    $tables = ['guests', 'reservations', 'reservation_rooms', 'rooms', 'stays', 'tasks', 'bookings', 'activities', 'knowledge_base_articles', 'room_types'];
+
+    return collect($tables)->mapWithKeys(fn (string $table) => [$table => [
+        DB::table($table)->where('hotel_id', $hotel->id)->count(),
+        DB::table($table)->where('hotel_id', $hotel->id)->max('updated_at'),
+    ]])->all();
+}
+
+/**
+ * Send one advisor chat request as the seeded hotel's admin.
+ */
+function aatChat($test, array $seed, array $payload)
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($seed['admin'], 'sanctum')->postJson('/api/ai-advisor/chat', $payload);
 }
