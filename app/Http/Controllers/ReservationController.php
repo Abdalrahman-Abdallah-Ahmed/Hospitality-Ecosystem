@@ -13,6 +13,7 @@ use App\Imports\ReservationsImport;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Stay;
+use App\Services\Reservations\ReservationCommands;
 use App\Services\StayLifecycleService;
 use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
@@ -28,7 +29,10 @@ class ReservationController extends Controller
 {
     private const RELATIONS = ['hotel', 'guest', 'reservationRooms.roomType', 'reservationRooms.room'];
 
-    public function __construct(private readonly StayLifecycleService $lifecycle) {}
+    public function __construct(
+        private readonly StayLifecycleService $lifecycle,
+        private readonly ReservationCommands $reservations,
+    ) {}
 
     /**
      * Display a listing of the resource.
@@ -176,7 +180,7 @@ class ReservationController extends Controller
         }
 
         DB::transaction(function () use ($reservation, $validated, $request, $overbook, $lifecycle) {
-            ReservationCreator::update(
+            $this->reservations->update(
                 $reservation,
                 $validated,
                 $request->has('rooms') ? $request->input('rooms') : null,

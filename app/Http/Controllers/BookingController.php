@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\BookingOrigin;
 use App\Enums\BookingStatus;
 use App\Http\Requests\BookingIndexRequest;
 use App\Http\Requests\StoreBookingRequest;
@@ -11,7 +10,6 @@ use App\Http\Requests\UpdateBookingStatusRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Activity;
 use App\Models\Booking;
-use App\Models\Recommendation;
 use App\Models\Stay;
 use App\Services\BookingService;
 use App\Support\RequestRules\GenericQuery;
@@ -82,62 +80,10 @@ class BookingController extends Controller
         }
 
         $override = $this->capacityOverride($request);
-        $validated = $request->validated();
 
-        // exists:… only proves the row exists somewhere, not that it is ours.
-        if ($invalid = invalidRelation($hotel, [
-            'guests' => $validated['guest_id'],
-            'activities' => $validated['activity_id'] ?? null,
-            'stays' => $validated['stay_id'] ?? null,
-            'reservations' => $validated['reservation_id'] ?? null,
-        ])) {
-            return apiResponse('The selected '.Str::singular($invalid).' does not belong to this hotel.', 422);
-        }
-
-        $reservationId = $this->reservationFor($validated['stay_id'] ?? null, $validated['reservation_id'] ?? null);
-
-        if ($reservationId === false) {
-            return apiResponse('The selected stay does not belong to the selected reservation.', 422);
-        }
-
-        $activity = isset($validated['activity_id'])
-            ? Activity::where('hotel_id', $hotel->id)->find($validated['activity_id'])
-            : null;
-
-        $recommendation = isset($validated['recommendation_id'])
-            ? Recommendation::where('hotel_id', $hotel->id)->find($validated['recommendation_id'])
-            : null;
-
-        if (isset($validated['recommendation_id']) && ! $recommendation) {
-            return apiResponse('The selected recommendation does not belong to this hotel.', 422);
-        }
-
-        $booking = app(BookingService::class)->create([
-            'hotel_id' => $hotel->id,
-            'guest_id' => $validated['guest_id'],
-            'stay_id' => $validated['stay_id'] ?? null,
-            'reservation_id' => $reservationId,
-            'activity_id' => $activity?->id,
-            'recommendation_id' => $recommendation?->id,
-            'item_name' => $validated['item_name'] ?? $activity?->name,
-            // Raw, so BookingService reads a time without an offset in the
-            // hotel's timezone.
-            'scheduled_for' => $validated['scheduled_for'] ?? null,
-            'scheduled_date' => $validated['scheduled_date'] ?? null,
-            'pax' => $validated['pax'] ?? 1,
-            'notes' => $validated['notes'] ?? null,
-            'charge_model' => $validated['charge_model'],
-            'expected_value' => $validated['expected_value'] ?? $activity?->price,
-            'currency' => $validated['currency'] ?? $activity?->currency ?? $hotel->currency,
-            // Derived, never taken from the request: a booking may only claim
-            // recommendation origin when it actually carries the link.
-            'origin' => $recommendation
-                ? BookingOrigin::RECOMMENDATION->value
-                : ($validated['origin'] ?? BookingOrigin::STAFF->value),
-            'channel' => $validated['channel'] ?? 'desk',
-            'created_by_user_id' => $request->user()->id,
-            'capacity_override' => $override,
-        ]);
+        // Shared with the Admin AI: the hotel checks, reservation-from-stay
+        // and derived origin live in BookingService.
+        $booking = app(BookingService::class)->takeStaffBooking($hotel, $request->user(), $request->validated(), $override);
 
         return apiResponse('Booking created successfully.', 201, BookingResource::make($booking->load(['guest', 'activity'])->loadExists('openCancellationRequest as cancellation_requested')));
     }
@@ -167,7 +113,7 @@ class BookingController extends Controller
         $stayId = array_key_exists('stay_id', $validated) ? $validated['stay_id'] : $booking->stay_id;
 
         if (array_key_exists('reservation_id', $validated) || ($validated['stay_id'] ?? null) !== null) {
-            $reservationId = $this->reservationFor(
+            $reservationId = app(BookingService::class)->reservationFor(
                 $stayId,
                 array_key_exists('reservation_id', $validated) ? $validated['reservation_id'] : null,
             );
@@ -232,25 +178,5 @@ class BookingController extends Controller
         $this->authorize('overrideCapacity', Booking::class);
 
         return true;
-    }
-
-    /**
-     * The reservation a booking belongs to: the one given, or the stay's when
-     * only a stay is given. False when the stay belongs to a different one.
-     * Both ids are already proven to be this hotel's.
-     */
-    private function reservationFor(?string $stayId, ?string $reservationId): string|false|null
-    {
-        if ($stayId === null) {
-            return $reservationId;
-        }
-
-        $stayReservationId = Stay::withoutGlobalScope('hotel')->whereKey($stayId)->value('reservation_id');
-
-        if ($reservationId !== null && $stayReservationId !== $reservationId) {
-            return false;
-        }
-
-        return $stayReservationId;
     }
 }

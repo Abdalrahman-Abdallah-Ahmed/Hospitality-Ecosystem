@@ -7,6 +7,7 @@ use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\KnowledgeBaseArticleResource;
 use App\Models\KnowledgeBaseArticle;
+use App\Services\Knowledge\ArticleCommands;
 use App\Support\RequestRules\GenericQuery;
 
 class KnowledgeBaseArticleController extends Controller
@@ -59,10 +60,7 @@ class KnowledgeBaseArticleController extends Controller
                 : apiResponse('You do not belong to any hotel.', 403);
         }
 
-        $article = KnowledgeBaseArticle::create([
-            ...unsetAttributes($request->validated(), ['hotel_id']),
-            'hotel_id' => $hotel->id,
-        ]);
+        $article = app(ArticleCommands::class)->create($hotel, unsetAttributes($request->validated(), ['hotel_id']));
 
         return apiResponse('Article created successfully.', 201, KnowledgeBaseArticleResource::make($article->load(['hotel'])));
     }
@@ -87,18 +85,17 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->rejectGlobal($knowledgeBaseArticle);
         $this->authorize('update', $knowledgeBaseArticle);
-        $validated = unsetAttributes($request->validated(), ['hotel_id']);
         $user = $request->user();
+        $hotel = null;
 
         if (! $user->isSuperAdmin()) {
             $hotel = $user->hotel;
             if (! $hotel) {
                 return apiResponse('You do not belong to any hotel.', 403);
             }
-            $validated['hotel_id'] = $hotel->id;
         }
 
-        $knowledgeBaseArticle->update($validated);
+        app(ArticleCommands::class)->update($knowledgeBaseArticle, unsetAttributes($request->validated(), ['hotel_id']), $hotel);
 
         return apiResponse('Article updated successfully.', 200, KnowledgeBaseArticleResource::make($knowledgeBaseArticle->load(['hotel'])));
     }

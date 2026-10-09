@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
+use App\Enums\BookingOrigin;
 use App\Enums\BookingStatus;
 use App\Enums\CancellationResolution;
 use App\Enums\ChargeModel;
@@ -11,10 +12,14 @@ use App\Enums\DeliveryChannel;
 use App\Enums\MeterFeature;
 use App\Enums\OutcomeType;
 use App\Enums\TaskStatus;
+use App\Exceptions\DomainRuleException;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Hotel;
+use App\Models\Recommendation;
+use App\Models\Stay;
 use App\Models\Transaction;
+use App\Models\User;
 use App\Services\Metering\MeteringService;
 use App\Support\Audit\EventLogger;
 use App\Support\Bookings\BookingReference;
@@ -24,6 +29,7 @@ use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -539,5 +545,93 @@ class BookingService
             BookingStatus::NO_SHOW => [BookingStatus::REALISED],
             BookingStatus::REALISED, BookingStatus::CANCELLED => [],
         };
+    }
+
+    /**
+     * A booking staff take on a guest's behalf: the desk endpoint and the
+     * Admin AI (SPEC-055 R4). Every reference is checked against the hotel,
+     * the reservation comes from the stay when only a stay is given, and the
+     * origin is derived rather than taken on trust.
+     *
+     * @param  array<string, mixed>  $validated  as StoreBookingRequest validates it
+     *
+     * @throws DomainRuleException when a reference is not this hotel's, or the stay is not the reservation's
+     */
+    public function takeStaffBooking(Hotel $hotel, User $by, array $validated, bool $capacityOverride = false): Booking
+    {
+        // exists:… only proves the row exists somewhere, not that it is ours.
+        if ($invalid = invalidRelation($hotel, [
+            'guests' => $validated['guest_id'],
+            'activities' => $validated['activity_id'] ?? null,
+            'stays' => $validated['stay_id'] ?? null,
+            'reservations' => $validated['reservation_id'] ?? null,
+        ])) {
+            throw new DomainRuleException('The selected '.Str::singular($invalid).' does not belong to this hotel.', 422);
+        }
+
+        $reservationId = $this->reservationFor($validated['stay_id'] ?? null, $validated['reservation_id'] ?? null);
+
+        if ($reservationId === false) {
+            throw new DomainRuleException('The selected stay does not belong to the selected reservation.', 422);
+        }
+
+        $activity = isset($validated['activity_id'])
+            ? Activity::where('hotel_id', $hotel->id)->find($validated['activity_id'])
+            : null;
+
+        $recommendation = isset($validated['recommendation_id'])
+            ? Recommendation::where('hotel_id', $hotel->id)->find($validated['recommendation_id'])
+            : null;
+
+        if (isset($validated['recommendation_id']) && ! $recommendation) {
+            throw new DomainRuleException('The selected recommendation does not belong to this hotel.', 422);
+        }
+
+        return $this->create([
+            'hotel_id' => $hotel->id,
+            'guest_id' => $validated['guest_id'],
+            'stay_id' => $validated['stay_id'] ?? null,
+            'reservation_id' => $reservationId,
+            'activity_id' => $activity?->id,
+            'recommendation_id' => $recommendation?->id,
+            'item_name' => $validated['item_name'] ?? $activity?->name,
+            // Raw, so create() reads a time without an offset in the hotel's
+            // timezone.
+            'scheduled_for' => $validated['scheduled_for'] ?? null,
+            'scheduled_date' => $validated['scheduled_date'] ?? null,
+            'pax' => $validated['pax'] ?? 1,
+            'notes' => $validated['notes'] ?? null,
+            'charge_model' => $validated['charge_model'],
+            'expected_value' => $validated['expected_value'] ?? $activity?->price,
+            'currency' => $validated['currency'] ?? $activity?->currency ?? $hotel->currency,
+            // Derived, never taken from the request: a booking may only claim
+            // recommendation origin when it actually carries the link.
+            'origin' => $recommendation
+                ? BookingOrigin::RECOMMENDATION->value
+                : ($validated['origin'] ?? BookingOrigin::STAFF->value),
+            'channel' => $validated['channel'] ?? 'desk',
+            'created_by_user_id' => $by->id,
+            'capacity_override' => $capacityOverride,
+        ]);
+    }
+
+    /**
+     * The reservation a booking belongs to: the one given, or the stay's when
+     * only a stay is given. False when the stay belongs to a different one.
+     * Both ids are already proven to be this hotel's.
+     */
+    public function reservationFor(?string $stayId, ?string $reservationId): string|false|null
+    {
+        if ($stayId === null) {
+            return $reservationId;
+        }
+
+        $stayReservationId = Stay::withoutGlobalScope('hotel')->whereKey($stayId)->value('reservation_id');
+
+        if ($reservationId !== null && $stayReservationId !== $reservationId) {
+            return false;
+        }
+
+        return $stayReservationId;
     }
 }
