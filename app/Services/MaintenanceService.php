@@ -18,6 +18,7 @@ use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
 use App\Models\Task;
+use App\Models\TaskCategory;
 use App\Models\User;
 use App\Support\Audit\EventLogger;
 use App\Support\Housekeeping\HousekeepingDefaults;
@@ -215,6 +216,39 @@ class MaintenanceService
 
             return ['task' => $task, 'created' => true, 'out_of_order' => $outOfOrder];
         });
+    }
+
+    /**
+     * Why an issue cannot be reported on this task, or null when it can.
+     * Issues are reported on a housekeeping task for a room, while it is open
+     * or on the hotel day it was completed (FR-022). Shared by the issue
+     * endpoint and the Admin AI.
+     */
+    public function issueRefusal(Task $task, Hotel $hotel): ?string
+    {
+        $isHousekeeping = $task->housekeeping_kind !== null
+            || ($task->task_category_id
+                && $hotel->housekeeping_team_id
+                && TaskCategory::whereKey($task->task_category_id)->value('team_id') === $hotel->housekeeping_team_id);
+
+        if (! $isHousekeeping) {
+            return 'Issues can only be reported on a housekeeping task.';
+        }
+
+        if (! $task->room_id) {
+            return 'This task is not for a room.';
+        }
+
+        if ($task->isOpen()) {
+            return null;
+        }
+
+        $completedToday = $task->status === TaskStatus::COMPLETED
+            && $task->completed_at !== null
+            && $task->completed_at->copy()->setTimezone($hotel->timezone)->toDateString()
+                === CarbonImmutable::now($hotel->timezone)->toDateString();
+
+        return $completedToday ? null : 'Issues can be reported on a housekeeping task while it is open or on the day it was completed.';
     }
 
     /**

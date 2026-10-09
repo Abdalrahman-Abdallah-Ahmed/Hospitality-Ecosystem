@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Agents\Concerns\RemembersWholeTurns;
 use App\Ai\Tools\CreateBookingTool;
 use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
@@ -21,7 +22,6 @@ use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Support\Pitching\PitchTurn;
-use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
@@ -31,7 +31,7 @@ use Stringable;
 
 class GuestConciergeAgent implements Agent, Conversational, HasTools
 {
-    use Promptable, RemembersConversations;
+    use Promptable, RemembersWholeTurns;
 
     public function __construct(
         public Guest $guest,

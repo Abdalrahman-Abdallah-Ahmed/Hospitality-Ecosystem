@@ -123,7 +123,7 @@ it('gives the Admin AI the three tools and the Concierge none, telling guests to
     [$hotel] = fdHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-ai', 'channel' => 'booking_com']);
 
-    $adminTools = collect((new AdminAdvisorAgent($hotel->owner))->tools())->map(fn ($tool) => $tool::class);
+    $adminTools = collect((new AdminAdvisorAgent($hotel->owner))->tools())->map(fn ($tool) => $tool->inner()::class);
     expect($adminTools)->toContain(CheckInTool::class, CheckOutTool::class, GetStaysTool::class);
 
     $concierge = new GuestConciergeAgent($guest, $hotel);

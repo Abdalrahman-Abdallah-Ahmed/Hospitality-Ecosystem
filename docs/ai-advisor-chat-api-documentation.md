@@ -1,8 +1,8 @@
 # AI Advisor Chat API Documentation
 
-This document describes the AI Advisor chat endpoint, defined by `App\Http\Controllers\AiAdvisorController` and backed by `App\Ai\Agents\AdminAdvisorAgent`.
+This document describes the AI Advisor chat endpoint, defined by `App\Http\Controllers\AiAdvisorController` and backed by `App\Services\Ai\AdvisorTurn` and `App\Ai\Agents\AdminAdvisorAgent`.
 
-The advisor is a conversational assistant for a **hotel admin** (not a super admin, not an employee — see [Who Can Call This Endpoint](#who-can-call-this-endpoint)). It answers questions grounded in the admin's own hotel data (reservations, tasks, guest messages) and the knowledge base (this hotel's own articles/policies plus the shared global knowledge base). It is a single `POST` action, not a CRUD resource — there is no `index`/`show`/`update`/`destroy` for conversations through this API.
+The advisor is a conversational operations assistant for a **hotel admin** (not a super admin, not an employee — see [Who Can Call This Endpoint](#who-can-call-this-endpoint)). It reads and changes the admin's own hotel through tools (SPEC-055): guests, reservations, rooms, availability, stays, tasks, housekeeping, maintenance, activities, bookings, reports and the knowledge base. Hard-to-reverse changes wait for the admin's confirmation. It is a single `POST` action, not a CRUD resource.
 
 ## Base URL
 
@@ -19,140 +19,44 @@ Accept: application/json
 Content-Type: application/json
 ```
 
-Same rules as every other authenticated endpoint in this app: `X-API-KEY` is checked by the `api.key` middleware, and `Authorization: Bearer {login_token}` is required because the route sits inside `auth:sanctum`. A missing/invalid token returns HTTP `401` before any controller logic runs.
+`X-API-KEY` is checked by the `api.key` middleware; `Authorization: Bearer {login_token}` is required because the route sits inside `auth:sanctum`. A missing/invalid token returns HTTP `401` before any controller logic runs.
 
 ## Who Can Call This Endpoint
 
-There is no policy class here — the controller checks the role directly:
-
 | Caller | Result |
 | --- | --- |
-| Regular admin (`role: admin`) with an owned hotel | Allowed. |
-| Regular admin with no owned hotel | `403`, `"You do not belong to any hotel."` |
+| Regular admin (`role: admin`) with a hotel | Allowed. |
+| Regular admin with no hotel | `403`, `"You do not belong to any hotel."` |
 | Employee | `403`, `"This action is unauthorized."` |
 | Super admin | `403`, `"This action is unauthorized."` |
 
-**Super admins are rejected**, not given global-only access. This is different from the knowledge-base-article endpoints, where a super admin gets a global-KB view — the advisor's other tools (reservations, tasks, guest messages) only make sense for a specific hotel, so this endpoint is entirely hotel-admin-scoped. If a super-admin-facing assistant is ever needed, it would be a separate endpoint/agent, not this one.
-
-## Response Format
-
-Successful responses use the standard wrapper:
-
-```json
-{
-  "message": "Advisor replied successfully.",
-  "code": 200,
-  "body": {
-    "conversation_id": "01977e3a-2b1c-7000-9000-abcdef123456",
-    "reply": "Guests can check out as late as 2pm without a fee, per your hotel's cancellation policy..."
-  }
-}
-```
-
-- `body.conversation_id`: always present on success. Save it and send it back on the next call to continue the same conversation.
-- `body.reply`: the advisor's free-form text answer. There is no structured/JSON reply shape — this is plain conversational text, not a field to parse.
-
-**Validation errors (`422`) use Laravel's default shape**, not this wrapper — see [Validation Errors](#validation-errors).
+Every tool still checks the acting admin's permission each time it runs (see [Tool catalog](#tool-catalog)), and runs only inside the admin's own hotel. Admins hold every permission, so for them this never refuses today; it keeps the tools safe if the advisor is ever opened to employees.
 
 ## Request Body
 
 ```json
 {
-  "message": "What's our policy on late checkouts?",
-  "conversation_id": null
+  "message": "Cancel reservation BK-1042",
+  "conversation_id": "01977e3a-2b1c-7000-9000-abcdef123456",
+  "decision": null,
+  "pending_ids": null
 }
 ```
 
 | Field | Rules | Notes |
 | --- | --- | --- |
-| `message` | required, string, max 4000 characters | The admin's question or message. |
-| `conversation_id` | optional, string | Omit or send `null` to start a **new** conversation. Send a previously-returned `conversation_id` to **continue** an existing one. |
+| `message` | required unless `decision` is sent; string; max 4000 | The admin's message. While actions wait for confirmation, a message that is exactly a confirm word (`yes`, `ok`, `confirm`, `go ahead`, `نعم`, `موافق`…) or a decline word (`no`, `cancel`, `لا`…) answers them. Anything else is a new request and drops the waiting actions. |
+| `conversation_id` | optional string; required with `decision` | Omit or `null` to start a new conversation; send one you received to continue it. Someone else's id returns `404`. |
+| `decision` | optional, `confirm` or `decline` | **New.** The Confirm / Cancel buttons' answer to the actions waiting for confirmation. Wins over `message`. |
+| `pending_ids` | optional array of strings | **New.** The ids the UI showed as waiting. If sent, they must be exactly what is waiting, otherwise `409` — so the admin never confirms a list they did not see. |
 
 ### Starting vs. continuing a conversation
 
-- **Omit `conversation_id`** (or send it as `null`) → the backend starts a brand-new conversation for this admin and returns a fresh `conversation_id` in the response. Use this for the first message in a chat session.
-- **Send a `conversation_id`** you previously received → the backend loads that conversation's recent history (up to the last 10 messages — see [Context Window](#context-window)) and continues it, so the advisor has memory of prior turns.
-- **Ownership is enforced.** A `conversation_id` that doesn't belong to the calling admin — whether it's malformed, someone else's, or simply doesn't exist — returns `404 "Conversation not found."`, not the other admin's history. There is no way to read or continue another admin's conversation through this endpoint, even by guessing a valid UUID.
-- The frontend is responsible for persisting `conversation_id` between messages (e.g. in the chat UI's local/session state) — the backend does not infer "the admin's current conversation" automatically; every request either starts fresh or explicitly names the conversation to continue.
+- **Omit `conversation_id`** → a new conversation is created for this admin before the turn runs (so the audit trail can name it) and its id is returned.
+- **Send a `conversation_id`** → the conversation's last 10 messages are loaded and continued (`AdminAdvisorAgent::maxConversationMessages()`); older turns are kept but no longer sent to the model.
+- **Ownership is enforced**: a `conversation_id` that is not the caller's returns `404 "Conversation not found."`.
 
-### Context window
-
-The advisor only keeps the **last 10 messages** of a conversation in context (`AdminAdvisorAgent::maxConversationMessages()`). Older turns are still stored (nothing is deleted) but are no longer sent to the model, so very long-running conversations will gradually "forget" their earliest messages. There is no summarization — it's a hard cutoff by message count, not by relevance.
-
-## What the Advisor Can Do
-
-The advisor has tool access to real data, scoped to the calling admin's own hotel — it does not invent numbers or guess at policies:
-
-- **Reservations** — today's arrivals (guest name, room, status, party size).
-- **Tasks** — the hotel's task list.
-- **Task categories** — the categories and the team each belongs to.
-- **Guest messages** — recent guest conversations.
-- **Rooms** — the hotel's rooms (room number, type, floor, status).
-- **Activities** — what the hotel offers, with category and price.
-- **Knowledge base search** — semantic search over this hotel's own articles/policies *and* the shared global knowledge base (see [Knowledge Base Article API Documentation](/D:/Hospitality%20Ecosystem/docs/knowledge-base-article-api-documentation.md)).
-
-If none of the tools have relevant information for a question, the advisor is instructed to say so rather than fabricate an answer — but this is a model instruction, not a hard guarantee; treat replies as advisory, not authoritative source-of-truth data.
-
-### What the Advisor Can Create
-
-A chat turn can **write to the hotel's data**. Five create tools are available,
-and a single message may produce real records:
-
-| Tool | Creates | Notes |
-| --- | --- | --- |
-| `CreateReservationTool` | A reservation | Matches or creates the guest by phone number |
-| `CreateRoomTool` | A room | Room numbers are unique per hotel; a duplicate is refused, not overwritten |
-| `CreateActivityTool` | An activity | Immediately recommendable to guests |
-| `CreateTaskTool` | A staff task | Optionally assigned to a team/person and linked to a room |
-| `CreateGuestTool` | A guest | Matched by phone; an existing guest is returned **unchanged**, never duplicated |
-
-#### Emails sent by these tools
-
-- `CreateReservationTool` stamps the reservation `source: "whatsapp"` and emails
-  every admin of the hotel about it — from the web chat as well as from WhatsApp.
-- `CreateTaskTool` emails every admin of the hotel that the AI created a task,
-  and emails the assigned staff member, if there is one.
-
-The guest concierge's tools do the same for tasks: escalating to a human or
-filing a guest service request emails the hotel's admins. "Admins" means users
-with the `admin` role who can reach the hotel through their own `hotel_id`, the
-`hotel_user` pivot, or group-wide access. Emails are queued and sent by the
-queue worker.
-
-#### The hotel is never taken from the model
-
-Every tool is constructed with `$this->user->hotel` — the authenticated admin's
-own hotel. No argument the model produces can change which property is written
-to.
-
-Ids passed *inside* arguments are a different matter, and are verified rather
-than trusted: a category, team, staff member, or room belonging to another
-hotel is **dropped**, and the record is created without it. A model can emit
-any plausible-looking uuid it has seen, and assigning one hotel's task to
-another hotel's team would put a staff member's work list in front of the
-wrong property. An unassigned task is visible and fixable; a misrouted one is
-not. `tests/Feature/AdminCreateToolsTest.php` asserts this.
-
-#### The advisor cannot write hotel policies
-
-The guest concierge searches hotel policies when answering and lets what it
-finds override its own judgment, so a policy is quoted to guests as the hotel's
-own word. The advisor is therefore deliberately given no policy-writing tool,
-and is instructed to decline drafting or recommending policy wording. Policies
-are created by a person through the
-[Hotel Policy API](/D:/Hospitality%20Ecosystem/docs/hotel-policy-api-documentation.md).
-
-#### Nothing here replaces the REST endpoints
-
-These tools exist so an admin can act mid-conversation, not as an alternative
-API. They apply no policy authorization, return no validation error shape, and
-skip the `Http/Requests` rules the REST endpoints enforce. Build UI against the
-REST endpoints; treat the advisor as a convenience path with a human reading
-every confirmation it returns.
-
-## Success Response
-
-HTTP `200 OK`:
+## Response Format
 
 ```json
 {
@@ -160,45 +64,140 @@ HTTP `200 OK`:
   "code": 200,
   "body": {
     "conversation_id": "01977e3a-2b1c-7000-9000-abcdef123456",
-    "reply": "..."
+    "reply": "Please confirm:\n1. Cancel reservation BK-1042 for Layla Haddad: 2 room(s) (Deluxe 301, Deluxe 302), arriving 2026-10-14.\nReply YES to confirm or NO to cancel. This expires in 10 minutes.",
+    "pending_confirmation": {
+      "ids": ["toolu_01…"],
+      "items": [
+        { "id": "toolu_01…", "tool": "CancelReservationTool", "summary": "Cancel reservation BK-1042 for Layla Haddad: 2 room(s) (Deluxe 301, Deluxe 302), arriving 2026-10-14." }
+      ],
+      "expires_at": "2026-10-09T10:40:00+00:00",
+      "locale": "en"
+    }
   }
 }
 ```
+
+- `body.reply`: free-form text, in the admin's language (English or Arabic). Render it as a chat bubble; do not parse it.
+- `body.pending_confirmation`: `null` unless hard-to-reverse actions are waiting. Then:
+  - `items` lists at most 10 actions; each `summary` is written by the tool from the stored records, not by the model, so it is exactly what will run;
+  - `expires_at` is 10 minutes after the pause;
+  - `locale` is `ar` when the admin wrote in Arabic, otherwise `en`.
+
+The change is additive: a client that sends only `message` and reads only `reply` keeps working, because `reply` already contains the list and the YES/NO question.
+
+## Confirming Hard-to-Reverse Actions
+
+These actions pause before they run until the admin confirms (FR-017):
+
+- cancelling a reservation (`CancelReservationTool`);
+- removing rooms from a reservation (`UpdateReservationTool` with a room list that leaves rooms out);
+- checking out (`CheckOutTool`);
+- putting a room out of order (`SetRoomOutOfOrderTool`);
+- cancelling an activity booking (`UpdateBookingStatusTool` with `status: cancelled`);
+- approving a guest's request to cancel a booking (`DecideBookingCancellationTool` with `decision: approve`).
+
+The pause uses `laravel/ai` tool approvals: the model cannot approve its own call. Only the admin's **very next message** can confirm, and only **within 10 minutes**.
+
+| Situation | Status | Effect |
+| --- | --- | --- |
+| No action waiting, normal message | 200 | Normal turn. |
+| Waiting, `decision: confirm` (or a confirm word), within 10 min | 200 | The listed actions run; `reply` reports each result, including any refusal by a business rule; `pending_confirmation: null`. |
+| Waiting, confirm after 10 min | 200 | Nothing runs; `reply` says the confirmation expired and asks again. |
+| Waiting, `decision: decline` (or a decline word) | 200 | Nothing runs; `reply` acknowledges. |
+| Waiting, any other message (including "yes, but change the date") | 200 | The waiting actions are dropped without running; the new message is handled normally. |
+| `decision` sent with nothing waiting (including a second confirm of the same actions) | 422 | `"There is nothing waiting for confirmation."` A confirmation is used once. |
+| Another message in the same conversation is still being answered (double click, retry) | 409 | `"The previous message in this conversation is still being answered. Try again in a moment."` Only one turn runs per conversation, so a confirmation can never run twice. |
+| `pending_ids` not equal to what is waiting | 409 | `"The actions waiting for confirmation have changed. Review them again."` `body.pending_confirmation` holds what is waiting now. |
+| More than 10 actions in one pause | 200 | Refused; the advisor asks again in batches of at most 10, each confirmed separately. |
+
+### WhatsApp
+
+Paired admins talking to the advisor on WhatsApp get the same flow, in a WhatsApp conversation of its own: a "yes" on WhatsApp never answers actions waiting in the web chat, or the other way round. the reply lists the actions and asks them to answer **YES** or **NO** (in Arabic when they write in Arabic). Only the confirm and decline words apply there.
+
+## Tool Catalog
+
+Each tool checks, every time it runs, the permission the matching staff endpoint checks. A tool given another hotel's id, code or room number answers as if it does not exist. Reads return at most 50 records with the total (`{"total","returned","partial","items"}`); the advisor says "showing 50 of N" when a list is partial.
+
+### Read
+
+| Tool | Permission | Reads |
+| --- | --- | --- |
+| `KnowledgeSearchTool` | `knowledge_base_articles.view` | Hotel and general knowledge, with citations |
+| `GetGuestsTool` | `guests.view` | Guests by name, phone or email |
+| `GetGuestTool` | `guests.view` | One guest: profile, stays, reservations, bookings |
+| `GetGuestMessagesTool` | `guests.view` | Recent guest messages |
+| `GetReservationsTool` | `reservations.view` | By arrival/departure/stay date, status, guest, code |
+| `GetReservationTool` | `reservations.view` | One reservation: party, room lines, assigned rooms, stays |
+| `GetRoomTypesTool` | `room_types.view` | Room types and room counts |
+| `GetRoomsTool` | `rooms.view` | Rooms by type, floor, building, room status, housekeeping status |
+| `GetAvailabilityTool` | `availability.view` | Sellable rooms per type and night |
+| `GetStaysTool` | `stays.view` | Arrivals, departures, in-house for a date |
+| `GetTasksTool` | `tasks.view` | Tasks by team, assignee, category, status, priority, room, due date |
+| `GetTaskCategoriesTool` | `task_categories.view` | Task categories and their teams |
+| `GetHousekeepingBoardTool` | `rooms.view` | The housekeeping board |
+| `GetMaintenanceTool` | `tasks.view` | Maintenance tasks and out-of-order rooms |
+| `GetActivitiesTool` | `activities.view` | Activities and their availability |
+| `GetBookingsTool` | `bookings.view` | Activity bookings, incl. pending cancellation requests |
+| `GetReportTool` | per report: `dashboard`/`occupancy` → `dashboard.view`; `conversion` → `recommendations.view`; `insights` → `ai_insights.view`; `usage` → admins only | Dashboard figures, occupancy per night (≤ 31 nights), recommendation conversion (no ledger values), AI insights, AI usage (no cost) |
+| `GetStaffTool` | admins only | Users (name, email, role, staff role, team, effective permissions) and staff roles. No passwords or tokens. |
+| `GetHotelSettingsTool` | admins only | Allow-listed settings; AI preferences that look like secrets are dropped |
+
+### Write
+
+| Tool | Permission | Confirm | Does what the staff screen does |
+| --- | --- | --- | --- |
+| `CreateGuestTool` | `guests.create` | – | Register a guest; a known phone/email returns the existing guest |
+| `UpdateGuestTool` | `guests.update` | – | Update profile fields the admin gave |
+| `CreateReservationTool` | `reservations.create` | – | Book room types; a known platform code is reported, not booked twice |
+| `UpdateReservationTool` | `reservations.update` | **when removing rooms** | Dates, party, room types, requests. No status field. |
+| `CancelReservationTool` | `reservations.update` | **yes** | Cancel the reservation and its rooms (never deleted) |
+| `AssignRoomsTool` | `reservations.update` | – | Assign, change or remove rooms on lines, all or nothing |
+| `CheckInTool` | `stays.check_in` | – | Check in |
+| `CheckOutTool` | `stays.check_out` | **yes** | Check out |
+| `CreateRoomTool` | `rooms.create` | – | Add a room |
+| `SetHousekeepingStatusTool` | `rooms.update_housekeeping_status` | – | Correct housekeeping status |
+| `SetRoomOutOfOrderTool` | `rooms.set_out_of_order` | **yes** | Take a room out of order |
+| `UpdateOutOfOrderTool` | `rooms.set_out_of_order` | – | Change the reason or expected end |
+| `ReturnRoomToServiceTool` | `rooms.set_out_of_order` | – | Return to service (with a cleaning task) |
+| `CreateTaskTool` | `tasks.create` | – | Create a task; the same open task from the last day is reported, not duplicated |
+| `UpdateTaskTool` | `tasks.update` | – | Assignee, team, status, priority, due date, description |
+| `ReportTaskIssueTool` | `tasks.update` | – | Report a room issue on a housekeeping task |
+| `CreateActivityTool` | `activities.create` | – | Add an activity |
+| `CreateActivityBookingTool` | `bookings.create` | – | Book an activity; never past capacity; the same guest/activity/day is reported, not duplicated |
+| `UpdateBookingStatusTool` | `bookings.update_status` | **when cancelling** | Confirm, realised, no-show, cancel |
+| `DecideBookingCancellationTool` | `bookings.update_status` | **when approving** | Approve or decline a guest's cancellation request |
+| `CreateKnowledgeArticleTool` | `knowledge_base_articles.create` | – | Save the admin's own text as a hotel article (published unless a draft is asked for) |
+| `UpdateKnowledgeArticleTool` | `knowledge_base_articles.update` | – | Correct a hotel article |
+
+Writes go through the same services as the staff endpoints, with the same rules and the same refusal messages (`Not done: <reason>. Nothing was changed.`). A successful write returns `{"ok": true, "ids": {...}, "changed": {...}}`.
+
+### Never
+
+- No delete of any kind — the advisor offers to cancel instead.
+- No change to users, staff roles, permissions or hotel settings.
+- No hotel policy, knowledge document or shared global knowledge writes.
+- No transaction ledger, no AI provider cost or margin.
+- No override of overbooking or activity capacity.
+- No reservation no-show yet: it arrives with SPEC-012.
+
+### Audit trail
+
+Every AI write is in the audit trail as `actor_kind: ai_agent` with the admin as the actor — also on WhatsApp, where no one is signed in — and `context.ai = {agent, tool, tool_call_id, conversation_id}`. Reads are not audited. Confirmations, declines and expiries are not audited either: nothing changed.
+
+### Emails
+
+`CreateReservationTool` emails every admin of the hotel about the reservation, and `CreateTaskTool` emails the admins and the assigned staff member — from the web chat and WhatsApp alike. Task updates notify a newly assigned person, as the task screen does.
 
 ## Error Responses
 
-### Unauthenticated
-
-HTTP `401` — missing/invalid bearer token.
-
-### Not a hotel admin
-
-HTTP `403`, custom wrapper — see the [role table](#who-can-call-this-endpoint) above for the exact message per caller type.
-
-### Unknown or foreign `conversation_id`
-
-HTTP `404`:
-
-```json
-{
-  "message": "Conversation not found.",
-  "code": 404,
-  "body": null
-}
-```
-
-### Validation Errors
-
-For a missing/oversized `message`, Laravel's default shape (not the `message/code/body` wrapper):
-
-```json
-{
-  "message": "The given data was invalid.",
-  "errors": {
-    "message": ["The message field is required."]
-  }
-}
-```
+| Status | When | Body |
+| --- | --- | --- |
+| `401` | Missing/invalid bearer token | — |
+| `403` | Not a hotel admin, or no hotel | `{"message": "...", "code": 403, "body": null}` |
+| `404` | `conversation_id` not the caller's | `"Conversation not found."` |
+| `409` | `pending_ids` do not match what waits | `"The actions waiting for confirmation have changed. Review them again."`, `body.pending_confirmation` |
+| `422` | `decision` with nothing waiting | `"There is nothing waiting for confirmation."` |
+| `422` | Validation (missing `message` and `decision`, etc.) | Laravel's default shape: `{"message": "...", "errors": {...}}` |
 
 ## Example cURL Requests
 
@@ -206,40 +205,35 @@ For a missing/oversized `message`, Laravel's default shape (not the `message/cod
 
 ```bash
 curl -X POST http://your-domain.com/api/ai-advisor/chat \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -H "X-API-KEY: YOUR_API_KEY" \
-  -H "Authorization: Bearer USER_LOGIN_TOKEN" \
-  -d '{ "message": "What'\''s our policy on late checkouts?" }'
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "X-API-KEY: YOUR_API_KEY" -H "Authorization: Bearer USER_LOGIN_TOKEN" \
+  -d '{ "message": "Who arrives tomorrow without a room assigned?" }'
 ```
 
-### Continue that conversation
+### Confirm the waiting actions
 
 ```bash
 curl -X POST http://your-domain.com/api/ai-advisor/chat \
-  -H "Accept: application/json" \
-  -H "Content-Type: application/json" \
-  -H "X-API-KEY: YOUR_API_KEY" \
-  -H "Authorization: Bearer USER_LOGIN_TOKEN" \
+  -H "Accept: application/json" -H "Content-Type: application/json" \
+  -H "X-API-KEY: YOUR_API_KEY" -H "Authorization: Bearer USER_LOGIN_TOKEN" \
   -d '{
-    "message": "And what about early check-in?",
-    "conversation_id": "01977e3a-2b1c-7000-9000-abcdef123456"
+    "conversation_id": "01977e3a-2b1c-7000-9000-abcdef123456",
+    "decision": "confirm",
+    "pending_ids": ["toolu_01…"]
   }'
 ```
 
 ## Summary for the Frontend
 
-- Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
-- Only regular hotel admins can use this endpoint — employees and super admins both get `403`.
-- This is **synchronous**: the HTTP response doesn't come back until the model has finished replying. Build the chat UI around a request that can take several seconds, not an instant response — there is no streaming and no separate "poll for the reply" step.
-- Persist `conversation_id` client-side between turns; omit it (or send `null`) to start over.
-- `reply` is free-form text, not structured data — render it as a chat bubble, don't try to parse fields out of it.
-- A conversation only remembers its last 10 messages — don't expect perfect recall in very long threads.
-- A `conversation_id` you don't own returns `404`, same as if it didn't exist.
-- **A chat turn can create records** — reservations, rooms, activities, tasks, guests, policies. The reply names what was created and its id. Refresh any list the user is looking at after a turn, and surface the confirmation rather than burying it: this is the only signal that data changed.
+- Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`. Only hotel admins can use the endpoint.
+- The request is **synchronous** and can take several seconds; there is no streaming.
+- Persist `conversation_id` between turns; omit it to start over.
+- When `pending_confirmation` is not `null`, show its `items` as a Confirm / Cancel card with a countdown to `expires_at`. Send `decision` plus `pending_ids` from the buttons. Keep showing `reply` as a bubble.
+- **A turn can change hotel data.** Refresh any list the admin is looking at after a turn, and surface what the reply says changed.
 
 ## Related Docs
 
+- [Staff Roles API Documentation](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) — permissions the tools check
 - [Knowledge Base Article API Documentation](/D:/Hospitality%20Ecosystem/docs/knowledge-base-article-api-documentation.md)
 - [AI Cost Attribution API Documentation](/D:/Hospitality%20Ecosystem/docs/ai-cost-attribution-api-documentation.md)
 - [Auth API Documentation](/D:/Hospitality%20Ecosystem/docs/auth-api-documentation.md)

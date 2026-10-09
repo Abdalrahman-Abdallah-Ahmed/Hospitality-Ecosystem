@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\BelongsToHotel;
 use App\Enums\ActivityAudience;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsEvents;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Activity extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, RecordsEvents, SoftDeletes;
 
     protected $keyType = 'string';
 
@@ -47,6 +48,15 @@ class Activity extends Model
         'duration_days' => 'integer',
         'daily_capacity' => 'integer',
     ];
+
+    public function eventLoggedAttributes(): array
+    {
+        return [
+            'category_id', 'name', 'description', 'price', 'currency', 'is_active',
+            'available_from', 'available_until', 'operating_hours', 'unavailable_periods',
+            'audience', 'duration_days', 'daily_capacity',
+        ];
+    }
 
     public function category(): BelongsTo
     {

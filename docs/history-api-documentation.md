@@ -9,7 +9,11 @@ changed it, when, and from what.
 `GET /api/history/{type}/{id}`
 
 `{type}` is one of: `reservation`, `transaction`, `stay`, `guest`,
-`recommendation`, `task`, `ai-insights`. Any other value returns `404`.
+`recommendation`, `task`, `ai-insights`, `activity`, `knowledge-base-article`.
+Any other value returns `404`. (`activity` and `knowledge-base-article` were
+added on 2026-10-09, when both became audited records — SPEC-055.) A global
+knowledge base article belongs to no hotel, so it is not reachable here by a
+hotel user (`404`).
 
 ## Required Headers
 

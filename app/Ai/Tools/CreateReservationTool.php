@@ -10,6 +10,7 @@ use App\Services\CreationNotificationService;
 use App\Support\Audit\EventLogger;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Ai\Contracts\Tool;
@@ -53,6 +54,18 @@ class CreateReservationTool implements Tool
             return $lines;
         }
 
+        // A code from the booking platform identifies the reservation: one
+        // already on file is reported, not booked twice (SPEC-055 R9).
+        $code = trim($request->string('reservation_code')->toString());
+
+        if ($code !== '' && ReservationCreator::isReservationIdInUse($this->hotel->id, $code)) {
+            return json_encode([
+                'ok' => false,
+                'exists' => ['code' => $code],
+                'message' => "Already exists: reservation {$code} is already on file; nothing was created.",
+            ]);
+        }
+
         // Arrivals go through the check-in tool and its rules (FR-020a).
         $status = $request->string('status')->toString() ?: ReservationStatus::PENDING->value;
 
@@ -61,7 +74,7 @@ class CreateReservationTool implements Tool
         }
 
         try {
-            $reservation = EventLogger::asAiAgent(function () use ($request, $lines, $status) {
+            $reservation = EventLogger::asAiAgent(function () use ($request, $lines, $status, $code) {
                 $guest = ReservationCreator::findOrCreateGuest($this->hotel->id, [
                     'phone_number' => $request->string('guest_phone')->toString(),
                     'first_name' => $request->string('guest_first_name')->toString() ?: null,
@@ -72,7 +85,7 @@ class CreateReservationTool implements Tool
                 return ReservationCreator::create([
                     'hotel_id' => $this->hotel->id,
                     'guest_id' => $guest->id,
-                    'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
+                    'reservation_id' => $code !== '' ? $code : 'RES-'.strtoupper(Str::random(8)),
                     'arrival_date' => $request->string('arrival_date')->toString(),
                     'departure_date' => $request->string('departure_date')->toString(),
                     'status' => $status,
@@ -88,7 +101,7 @@ class CreateReservationTool implements Tool
             return collect($e->errors())->flatten()->first();
         }
 
-        app(CreationNotificationService::class)->whatsAppReservationCreated($reservation);
+        DB::afterCommit(fn () => app(CreationNotificationService::class)->whatsAppReservationCreated($reservation));
 
         return json_encode($reservation->load(['guest', 'reservationRooms.roomType', 'reservationRooms.room'])->toArray());
     }
@@ -184,6 +197,8 @@ class CreateReservationTool implements Tool
             'guest_phone' => $schema->string()
                 ->description("The guest's phone number, used to find or create their guest record.")
                 ->required(),
+            'reservation_code' => $schema->string()
+                ->description("The booking platform's reservation code, if the admin gave one (e.g. from a screenshot). One already on file is reported, not booked twice."),
             'guest_first_name' => $schema->string()->description("The guest's first name, if known."),
             'guest_last_name' => $schema->string()->description("The guest's last name, if known."),
             'guest_email' => $schema->string()->description("The guest's email address, if known."),

@@ -3,6 +3,7 @@
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
 use App\Ai\Agents\RecommendationAgent;
+use App\Ai\Tools\Admin\GuardedTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Enums\KnowledgeAudience;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,7 +12,10 @@ uses(RefreshDatabase::class);
 
 function knSearchToolOf(iterable $tools): KnowledgeSearchTool
 {
-    return collect($tools)->first(fn ($tool) => $tool instanceof KnowledgeSearchTool);
+    // The Admin agent's tools are wrapped in the guard; the others are not.
+    return collect($tools)
+        ->map(fn ($tool) => $tool instanceof GuardedTool ? $tool->inner() : $tool)
+        ->first(fn ($tool) => $tool instanceof KnowledgeSearchTool);
 }
 
 it('gives the Concierge the guest view of the knowledge search, and staff agents the staff view', function () {

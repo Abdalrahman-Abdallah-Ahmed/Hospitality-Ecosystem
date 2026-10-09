@@ -2,21 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Ai\Agents\AdminAdvisorAgent;
 use App\Enums\ActorKind;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
+use App\Exceptions\PendingConfirmationChangedException;
 use App\Http\Requests\AiAdvisorChatRequest;
+use App\Services\Ai\AdvisorTurn;
 use App\Services\Metering\MeteringService;
 use App\Support\Ai\AiCostContext;
+use Laravel\Ai\Exceptions\ApprovalMismatchException;
 use Laravel\Ai\Models\Conversation;
 
 class AiAdvisorController extends Controller
 {
     /**
-     * Send a message to the admin advisor and get a reply.
+     * Send a message to the admin advisor and get a reply — or answer the
+     * actions it is waiting to have confirmed (contracts/advisor-chat-api.md).
      */
-    public function chat(AiAdvisorChatRequest $request, MeteringService $metering)
+    public function chat(AiAdvisorChatRequest $request, MeteringService $metering, AdvisorTurn $turn)
     {
         $user = $request->user();
 
@@ -30,8 +33,6 @@ class AiAdvisorController extends Controller
 
         $conversationId = $request->validated('conversation_id');
 
-        $agent = AdminAdvisorAgent::make(user: $user);
-
         if ($conversationId) {
             $ownsConversation = Conversation::query()
                 ->where('id', $conversationId)
@@ -42,20 +43,30 @@ class AiAdvisorController extends Controller
             if (! $ownsConversation) {
                 return apiResponse('Conversation not found.', 404);
             }
-
-            $agent->continue($conversationId, $user);
-        } else {
-            $agent->forUser($user);
         }
 
         // A logged-in human asked for this, so its cost is bounded by staff
         // behaviour rather than by whoever has the hotel's number.
-        $response = AiCostContext::for(
-            kind: AiTriggerKind::STAFF_REQUEST,
-            hotel: $user->hotel,
-            trigger: $user,
-            callback: fn () => $agent->prompt($request->validated('message')),
-        );
+        try {
+            $result = AiCostContext::for(
+                kind: AiTriggerKind::STAFF_REQUEST,
+                hotel: $user->hotel,
+                trigger: $user,
+                callback: fn () => $turn->handle(
+                    $user,
+                    $conversationId,
+                    $request->validated('message'),
+                    $request->validated('decision'),
+                    $request->validated('pending_ids'),
+                ),
+            );
+        } catch (PendingConfirmationChangedException $e) {
+            return apiResponse($e->getMessage(), 409, ['pending_confirmation' => $e->pendingConfirmation]);
+        } catch (ApprovalMismatchException) {
+            return apiResponse('The actions waiting for confirmation have changed. Review them again.', 409, [
+                'pending_confirmation' => null,
+            ]);
+        }
 
         $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
             hotel: $user->hotel,
@@ -66,8 +77,9 @@ class AiAdvisorController extends Controller
         ));
 
         return apiResponse('Advisor replied successfully.', 200, [
-            'conversation_id' => $agent->currentConversation(),
-            'reply' => $response->text,
+            'conversation_id' => $result->conversationId,
+            'reply' => $result->reply,
+            'pending_confirmation' => $result->pendingConfirmation,
         ]);
     }
 }

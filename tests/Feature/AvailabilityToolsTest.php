@@ -129,7 +129,7 @@ it('gives both agents their availability tool', function () {
     $hotel = avHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-av', 'channel' => 'booking_com', 'first_name' => 'Mona']);
 
-    $admin = collect(AdminAdvisorAgent::make(user: $hotel->owner)->tools())->map(fn ($tool) => $tool::class);
+    $admin = collect(AdminAdvisorAgent::make(user: $hotel->owner)->tools())->map(fn ($tool) => $tool->inner()::class);
     $concierge = collect(GuestConciergeAgent::make(guest: $guest, hotel: $hotel, reservation: null)->tools())->map(fn ($tool) => $tool::class);
 
     expect($admin)->toContain(GetAvailabilityTool::class)->not->toContain(GetGuestAvailabilityTool::class)

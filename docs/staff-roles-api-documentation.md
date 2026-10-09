@@ -121,6 +121,26 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `transactions.import` | `POST /api/transaction/import` |
 | `transactions.reverse` | `POST /api/transaction/{id}/reverse` |
 
+### Admin AI tools (SPEC-055)
+
+The AI advisor itself stays admin-only, but each of its tools checks, every time it runs, the same permission as the staff endpoint it mirrors. No new permission was added for it. The full list of tools and the permission each checks is in the [AI Advisor Chat API Documentation](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md#tool-catalog). In short:
+
+| Permission | Advisor tools that check it |
+| --- | --- |
+| `guests.view` / `.create` / `.update` | guest search and lookup, guest messages / create a guest / update a guest |
+| `reservations.view` / `.create` / `.update` | reservation list and lookup / create a reservation / change, cancel, assign rooms |
+| `room_types.view`, `rooms.view`, `rooms.create` | room types / rooms and the housekeeping board / add a room |
+| `rooms.update_housekeeping_status` | set a room's housekeeping status |
+| `rooms.set_out_of_order` | take out of order, update, return to service |
+| `availability.view`, `stays.view`, `stays.check_in`, `stays.check_out` | availability / arrivals, departures, in-house / check in / check out |
+| `tasks.view` / `.create` / `.update`, `task_categories.view` | tasks and maintenance / create a task / update a task, report a room issue / categories |
+| `activities.view` / `.create` | activities / add an activity |
+| `bookings.view` / `.create` / `.update_status` | bookings / book an activity / change status, answer cancellation requests |
+| `knowledge_base_articles.view` / `.create` / `.update` | knowledge search / save an article / correct an article |
+| `dashboard.view`, `recommendations.view`, `ai_insights.view` | dashboard and occupancy / conversion / insights reports |
+
+Users, staff roles, hotel settings and AI usage stay admin-only for the advisor too: it can read them, never change them. No advisor tool ever overrides overbooking or capacity, whatever permissions the user holds.
+
 ## Base URL and Headers
 
 All endpoints are under `/api` and need:

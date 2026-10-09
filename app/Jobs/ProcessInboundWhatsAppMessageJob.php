@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
 use App\Enums\ActorKind;
 use App\Enums\AiTriggerKind;
@@ -15,6 +14,7 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\User;
 use App\Models\WhatsAppInboundMessage;
+use App\Services\Ai\AdvisorTurn;
 use App\Services\GuestContactService;
 use App\Services\Metering\MeteringService;
 use App\Services\Pitching\PitchCoordinator;
@@ -30,6 +30,7 @@ use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
 use Laravel\Ai\Files\Image;
+use Laravel\Ai\Models\Conversation;
 use Throwable;
 
 /**
@@ -224,12 +225,6 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
      */
     private function generate(WhatsAppMessageService $whatsApp): array
     {
-        $agent = $this->senderType === SenderType::ADMIN
-            ? AdminAdvisorAgent::make(user: $this->sender)
-            : GuestConciergeAgent::make(guest: $this->sender, hotel: $this->hotel, reservation: $this->reservation);
-
-        $agent->continueLastConversation($this->sender);
-
         // Only the admin advisor knows what to do with a reservation
         // screenshot (it has the create-reservation tool); a guest sending
         // a photo just falls through to its caption text, if any.
@@ -262,6 +257,13 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         // A guest turn decides whether it may pitch before the concierge
         // runs, inside the same cost context: the turn classifier is an AI
         // call caused by this guest message.
+        if ($this->senderType === SenderType::ADMIN) {
+            return [$this->adviseAdmin($messageText, $attachments), null];
+        }
+
+        $agent = GuestConciergeAgent::make(guest: $this->sender, hotel: $this->hotel, reservation: $this->reservation);
+        $agent->continueLastConversation($this->sender);
+
         $response = TenantContext::runForHotel($this->hotel?->id, fn () => AiCostContext::for(
             kind: $this->senderType === SenderType::GUEST
                 ? AiTriggerKind::GUEST_MESSAGE
@@ -284,5 +286,32 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         ));
 
         return [$response->text, $agent instanceof GuestConciergeAgent ? $agent->pitchTurn : null];
+    }
+
+    /**
+     * An admin's message goes through the same advisor turn as the chat
+     * endpoint (AdvisorTurn), so a hard-to-reverse action waits for their
+     * "yes" here too: the reply lists what will happen and asks them to
+     * answer YES or NO. Their writes are audited as the AI acting for them,
+     * although no one is signed in to a queue job.
+     *
+     * @param  array<int, mixed>  $attachments
+     */
+    private function adviseAdmin(string $messageText, array $attachments): string
+    {
+        $turn = app(AdvisorTurn::class);
+        $conversationId = $turn->whatsAppConversation($this->sender);
+
+        $result = TenantContext::runForHotel($this->hotel?->id, fn () => AiCostContext::for(
+            kind: AiTriggerKind::STAFF_REQUEST,
+            hotel: $this->hotel,
+            trigger: $this->sender,
+            callback: fn () => EventLogger::asAiAgent(
+                fn () => $turn->handle($this->sender, $conversationId, $messageText, attachments: $attachments),
+                onBehalfOf: $this->sender,
+            ),
+        ));
+
+        return $result->reply;
     }
 }

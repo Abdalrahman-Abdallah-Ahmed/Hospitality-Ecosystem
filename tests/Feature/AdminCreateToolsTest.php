@@ -248,7 +248,7 @@ it('gives the admin advisor its create tools, each bound to the admin\'s own hot
     $admin = toolAdmin($hotel);
 
     $tools = collect(AdminAdvisorAgent::make(user: $admin)->tools())
-        ->map(fn ($tool) => class_basename($tool))
+        ->map(fn ($tool) => class_basename($tool->inner()))
         ->all();
 
     expect($tools)->toContain(
