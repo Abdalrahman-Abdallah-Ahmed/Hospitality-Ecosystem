@@ -22,8 +22,13 @@ class AiAdvisorChatRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'message' => 'required|string|max:4000',
-            'conversation_id' => 'nullable|string',
+            'message' => 'required_without:decision|nullable|string|max:4000',
+            'conversation_id' => 'required_with:decision|nullable|string',
+            // The Confirm / Cancel answer to actions waiting for confirmation
+            // (FR-017). `pending_ids`, when sent, must be exactly what waits.
+            'decision' => 'nullable|in:confirm,decline',
+            'pending_ids' => 'nullable|array',
+            'pending_ids.*' => 'string',
         ];
     }
 }
