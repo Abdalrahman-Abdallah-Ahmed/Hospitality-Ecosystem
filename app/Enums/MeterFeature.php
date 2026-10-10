@@ -32,6 +32,7 @@ enum MeterFeature: string
     case BOOKINGS_REALISED = 'bookings_realised';
     case CONVERSATIONS_HANDLED = 'conversations_handled';
     case TRANSACTION_ROWS_IMPORTED = 'transaction_rows_imported';
+    case PROACTIVE_MESSAGES_SENT = 'proactive_messages_sent';
 
     // Scale.
     // `properties` is the hospitality word for what this system calls a
@@ -55,6 +56,7 @@ enum MeterFeature: string
             self::BOOKINGS_CREATED, self::BOOKINGS_REALISED => 'bookings',
             self::CONVERSATIONS_HANDLED => 'conversations',
             self::TRANSACTION_ROWS_IMPORTED => 'rows',
+            self::PROACTIVE_MESSAGES_SENT => 'messages',
             self::PROPERTIES => 'hotels',
             self::USERS => 'users',
             self::GUESTS => 'guests',
@@ -84,7 +86,8 @@ enum MeterFeature: string
             self::BOOKINGS_CREATED,
             self::BOOKINGS_REALISED,
             self::CONVERSATIONS_HANDLED,
-            self::TRANSACTION_ROWS_IMPORTED => 'value_signal',
+            self::TRANSACTION_ROWS_IMPORTED,
+            self::PROACTIVE_MESSAGES_SENT => 'value_signal',
 
             self::PROPERTIES, self::USERS, self::GUESTS, self::STAYS => 'seat',
         };
@@ -131,6 +134,7 @@ enum MeterFeature: string
             self::BOOKINGS_REALISED => 'Bookings realised',
             self::CONVERSATIONS_HANDLED => 'Conversations handled',
             self::TRANSACTION_ROWS_IMPORTED => 'Transaction rows imported',
+            self::PROACTIVE_MESSAGES_SENT => 'Proactive messages sent',
             self::PROPERTIES => 'Hotels',
             self::USERS => 'Users',
             self::GUESTS => 'Guests',

@@ -14,6 +14,7 @@ use App\Ai\Tools\CreateReservationTool;
 use App\Ai\Tools\CreateRoomTool;
 use App\Ai\Tools\CreateTaskTool;
 use App\Ai\Tools\DecideBookingCancellationTool;
+use App\Ai\Tools\DecideRecommendationTool;
 use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetAvailabilityTool;
 use App\Ai\Tools\GetBookingsTool;
@@ -23,6 +24,7 @@ use App\Ai\Tools\GetGuestTool;
 use App\Ai\Tools\GetHotelSettingsTool;
 use App\Ai\Tools\GetHousekeepingBoardTool;
 use App\Ai\Tools\GetMaintenanceTool;
+use App\Ai\Tools\GetRecommendationsForReviewTool;
 use App\Ai\Tools\GetReportTool;
 use App\Ai\Tools\GetReservationsTool;
 use App\Ai\Tools\GetReservationTool;
@@ -49,6 +51,7 @@ use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\KnowledgeBaseArticle;
+use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use App\Models\Room;
@@ -114,6 +117,7 @@ class AdminToolset
             self::read(new GetMaintenanceTool($hotel), Permission::TASKS_VIEW),
             self::read(new GetActivitiesTool($hotel), Permission::ACTIVITIES_VIEW),
             self::read(new GetBookingsTool($hotel), Permission::BOOKINGS_VIEW),
+            self::read(new GetRecommendationsForReviewTool($hotel), Permission::RECOMMENDATIONS_VIEW),
 
             // Read: reports. Each report checks the permission its own screen
             // needs, so the guard leaves the check to the tool.
@@ -150,6 +154,10 @@ class AdminToolset
             self::write(new DecideBookingCancellationTool($hotel), [Permission::BOOKINGS_UPDATE_STATUS], [Booking::class, Task::class]),
 
             // Write: the hotel's own knowledge base articles only (FR-022).
+            // Write: recommendation approval, one at a time and confirmed
+            // (SPEC-071 FR-012); bulk decisions stay in the approval queue.
+            self::write(new DecideRecommendationTool($hotel, $user), [Permission::RECOMMENDATIONS_APPROVE], [Recommendation::class]),
+
             self::write(new CreateKnowledgeArticleTool($hotel), [Permission::KNOWLEDGE_BASE_ARTICLES_CREATE], [KnowledgeBaseArticle::class]),
             self::write(new UpdateKnowledgeArticleTool($hotel), [Permission::KNOWLEDGE_BASE_ARTICLES_UPDATE], [KnowledgeBaseArticle::class]),
         ];

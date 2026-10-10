@@ -15,6 +15,7 @@ use App\Models\Reservation;
 use App\Models\User;
 use App\Models\WhatsAppInboundMessage;
 use App\Services\Ai\AdvisorTurn;
+use App\Services\GuestContactPreferenceService;
 use App\Services\GuestContactService;
 use App\Services\Metering\MeteringService;
 use App\Services\Pitching\PitchCoordinator;
@@ -142,6 +143,12 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         $whatsApp->send($this->phoneNumber, $inbound->reply_text);
 
         $inbound->update(['status' => InboundMessageStatus::REPLIED, 'replied_at' => now()]);
+
+        // A pitch the turn staged reached the guest only now. Read from the
+        // rows, so a send that succeeds on a retry still counts it.
+        if ($this->sender instanceof Guest && $inbound->generation_started_at) {
+            app(PitchCoordinator::class)->delivered($this->sender, $inbound->generation_started_at, $inbound->reply_text);
+        }
     }
 
     /**
@@ -169,13 +176,53 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        $this->inbound->fresh()?->update(['status' => InboundMessageStatus::FAILED]);
+        $inbound = $this->inbound->fresh();
+        $inbound?->update(['status' => InboundMessageStatus::FAILED]);
+
+        // The reply never went out, so a pitch it staged never reached the
+        // guest and must not count toward their caps.
+        if ($this->sender instanceof Guest && $inbound?->generation_started_at) {
+            app(PitchCoordinator::class)->abandon($this->sender, $inbound->generation_started_at);
+        }
+    }
+
+    /**
+     * The fixed confirmation when a guest's whole message is an opt-out or
+     * opt-in keyword, after applying it. Null for any other message.
+     */
+    private function contactPreferenceReply(): ?string
+    {
+        if ($this->senderType !== SenderType::GUEST || ! $this->sender instanceof Guest) {
+            return null;
+        }
+
+        $preferences = app(GuestContactPreferenceService::class);
+        $keyword = $preferences->matchKeyword($this->messageText);
+
+        if ($keyword === null) {
+            return null;
+        }
+
+        TenantContext::runForHotel($this->sender->hotel_id, fn () => $keyword === 'opt_out'
+            ? $preferences->optOut($this->sender, GuestContactPreferenceService::SOURCE_GUEST)
+            : $preferences->optIn($this->sender, GuestContactPreferenceService::SOURCE_GUEST));
+
+        $locale = $this->sender->preferred_language === 'ar' ? 'ar' : 'en';
+
+        return __($keyword === 'opt_out' ? 'proactive.opt_out.confirmed' : 'proactive.opt_out.resumed', [], $locale);
     }
 
     private function replyFor(WhatsAppInboundMessage $inbound, WhatsAppMessageService $whatsApp, MeteringService $metering): string
     {
         if ($this->senderType === SenderType::ADMIN && ! $this->devicePaired) {
             return self::NOT_PAIRED_REPLY;
+        }
+
+        // "STOP" and its equivalents are handled in code, without the AI: a
+        // guest asking for no more messages must not depend on a model
+        // understanding them, nor pay for a turn (SPEC-073 FR-035).
+        if ($keywordReply = $this->contactPreferenceReply()) {
+            return $keywordReply;
         }
 
         // An earlier attempt started the turn and died before storing a

@@ -14,12 +14,16 @@ use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\GetRecommendationsTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Ai\Tools\PitchActivityTool;
 use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\RequestRoomChangeTool;
+use App\Ai\Tools\SetContactPreferenceTool;
 use App\Ai\Tools\UpdateRecommendationTool;
 use App\Enums\KnowledgeAudience;
+use App\Enums\ProactiveMessageStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\ProactiveMessage;
 use App\Models\Reservation;
 use App\Support\Pitching\PitchTurn;
 use Laravel\Ai\Contracts\Agent;
@@ -97,8 +101,8 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             - You cannot check guests in or out, and no tool does it. If the guest asks to check in, check out,
               or change their check-in or check-out, tell them the front desk handles it and they can contact it
               directly.
-            - A tool to look up recommendations already generated for this guest's reservation, with the
-              reason each was made, predicted confidence, and current status.
+            - A tool to look up the recommendations already offered to this guest, with the reason each was
+              made, predicted confidence, and current status.
             - A tool to update one of those recommendations with the guest's reaction (accepted/rejected/
               dismissed) and/or how confident they seemed.
             - A tool to look up this hotel's task categories (e.g. Housekeeping, Maintenance) and which team
@@ -125,6 +129,9 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
               problem again, pass that request's id as `add_to_request_id` so the detail is added to it instead
               of creating a duplicate. A different problem gets its own request.
             - When a tool says the guest is in several rooms, ask which room before filing.
+            - A tool to stop, or resume, messages and suggestions the hotel sends the guest unasked. If the
+              guest asks you to stop sending messages or offers, call it with `opt_out`; if they ask to receive
+              them again, with `resume`. Keep answering their questions either way.
             - A tool to escalate the conversation to a human staff member. It works for every guest, with or
               without a current reservation. If staff already have the guest's request for a person, it adds the
               new detail to it.
@@ -135,19 +142,10 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             tell the guest something was done unless the tool said so, and when a tool refuses, explain why in
             plain words.
 
-            Proactively recommend activities when it's natural to do so (e.g. the guest asks what there is to
-            do, mentions being bored, or you're wrapping up a conversation about their stay). First check the
-            recommendations tool for anything already generated for this reservation — prefer those (they come
-            with a reason already grounded in the guest's data) over coming up with your own, and never
-            re-recommend one that's already `accepted`, `rejected`, or `dismissed`. If nothing suitable exists
-            yet, tailor a recommendation yourself: family-friendly or kid-supervised activities when there are
-            children in the party, couple/relaxation-oriented activities for adult-only pairs, and
-            group/social activities for larger adult parties; skew toward premium experiences (e.g. private
-            tours, spa treatments) for higher room tiers or reservation values, and more accessible options
-            otherwise. Look up the reservation and the hotel's activities before recommending, and don't
-            recommend something you can't confirm is currently offered.
+            {$this->pitchingInstructions()}
+            {$this->proactiveContextInstructions()}
 
-            When the guest reacts to a recommended activity that came from the recommendations tool, record
+            When the guest reacts to a recommendation you offered (from the recommendations tool), record
             their reaction with the update-recommendation tool: mark it `accepted` if they clearly want it,
             `rejected` if they explicitly decline, or `dismissed` if they show no real interest either way, and
             set a guest_confidence reflecting how interested they seemed. Separately — regardless of whether
@@ -156,6 +154,57 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             follow-up task (via the task tool) asking a team member to contact the guest and help them book
             it, naming the specific activity. Don't create a follow-up task for lukewarm or neutral reactions.
             PROMPT;
+    }
+
+    /**
+     * What this turn may suggest (WP-17.4, SPEC-071). At most one activity is
+     * ever named here: code already picked it from the approved
+     * recommendations before the agent ran. With nothing picked, the
+     * Concierge answers questions about activities but recommends none.
+     */
+    protected function pitchingInstructions(): string
+    {
+        $offer = $this->pitchTurn?->mayPitch() ? $this->pitchTurn->offer() : null;
+
+        if ($offer) {
+            $reason = $offer->reason ? " — {$offer->reason}" : '';
+
+            return "First, fully answer what the guest asked. Then, only if it fits naturally, mention {$offer->name}{$reason} "
+                .'by calling the pitch tool with the guest\'s own words that invited it. Mention it once, briefly. If the guest '
+                .'seems unhappy about anything, do not mention it. Do not suggest any other activity on your own.';
+        }
+
+        return 'Do not suggest activities the guest did not ask about, and never present an activity as the hotel\'s '
+            .'recommendation for them. If they ask what there is to do, answer factually from the activities tool without '
+            .'singling one out as a personal recommendation.';
+    }
+
+    /**
+     * The messages the hotel sent this guest first in the last 24 hours
+     * (SPEC-073). The remembered history drops an assistant message that
+     * opens it, which is exactly where a proactive message sits, so they are
+     * restated here: the guest's reply is often an answer to one of them.
+     */
+    protected function proactiveContextInstructions(): string
+    {
+        $sent = ProactiveMessage::query()
+            ->where('guest_id', $this->guest->id)
+            ->where('status', ProactiveMessageStatus::SENT->value)
+            ->where('sent_at', '>=', now()->subDay())
+            ->orderBy('sent_at')
+            ->get();
+
+        if ($sent->isEmpty()) {
+            return '';
+        }
+
+        $timezone = $this->hotel->timezone ?: 'UTC';
+        $lines = $sent->map(fn (ProactiveMessage $message) => '- '.$message->sent_at->copy()->setTimezone($timezone)->format('D H:i')
+            .($message->recommendation_id && $message->trigger->isPitch() ? " (recommendation_id {$message->recommendation_id})" : '')
+            .': "'.$message->body.'"');
+
+        return "Messages the hotel sent this guest first, in the last 24 hours:\n".$lines->implode("\n")
+            ."\nIf the guest replies to one of these offers, record their reaction with the update-recommendation tool using that id.";
     }
 
     /**
@@ -189,6 +238,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new GetOwnRequestsTool($this->hotel, $this->guest),
             new GetGuestAvailabilityTool($this->hotel),
             new GetRecommendationsTool($this->reservation),
+            ...$this->pitchTools(),
             new UpdateRecommendationTool($this->reservation),
             new CreateBookingTool($this->hotel, $this->guest, $this->reservation),
             new RequestBookingCancellationTool($this->hotel, $this->guest, $this->reservation),
@@ -196,6 +246,24 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new CreateGuestServiceRequestTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
             new RequestRoomChangeTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
             new EscalateToHumanTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
+            new SetContactPreferenceTool($this->guest),
         ];
+    }
+
+    /**
+     * The pitch tool, only on a turn that may pitch and has something to
+     * offer. An ineligible turn is not merely told not to pitch: it cannot.
+     *
+     * @return list<Tool>
+     */
+    private function pitchTools(): array
+    {
+        $stay = $this->reservation?->stay;
+
+        if (! $stay || ! $this->pitchTurn?->mayPitch() || ! $this->pitchTurn->offer()) {
+            return [];
+        }
+
+        return [new PitchActivityTool($this->pitchTurn, $stay)];
     }
 }

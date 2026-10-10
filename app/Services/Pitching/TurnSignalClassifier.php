@@ -60,7 +60,7 @@ class TurnSignalClassifier
 
         $opening = $output['opening'] ?? null;
 
-        if ($opening !== null && ! PitchOpening::tryFrom($opening)) {
+        if ($opening !== null && ! in_array(PitchOpening::tryFrom($opening), PitchOpening::guestOpenings(), true)) {
             throw new UnexpectedValueException("The classifier returned an unknown opening [{$opening}].");
         }
 

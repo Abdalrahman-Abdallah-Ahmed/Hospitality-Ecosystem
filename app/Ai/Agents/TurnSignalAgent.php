@@ -30,7 +30,7 @@ class TurnSignalAgent implements Agent, HasStructuredOutput
 
     public function instructions(): Stringable|string
     {
-        $openings = implode(', ', array_map(fn (PitchOpening $opening) => $opening->value, PitchOpening::cases()));
+        $openings = implode(', ', array_map(fn (PitchOpening $opening) => $opening->value, PitchOpening::guestOpenings()));
         $categories = $this->categories === []
             ? '(none)'
             : collect($this->categories)->map(fn (string $name, string $id) => "- {$id}: {$name}")->implode("\n");
@@ -66,7 +66,7 @@ class TurnSignalAgent implements Agent, HasStructuredOutput
             // null is listed as an allowed value as well as a type, or a
             // strict provider rejects "no opening", the most common answer.
             'opening' => $schema->string()
-                ->enum([...array_map(fn (PitchOpening $opening) => $opening->value, PitchOpening::cases()), null])
+                ->enum([...array_map(fn (PitchOpening $opening) => $opening->value, PitchOpening::guestOpenings()), null])
                 ->nullable()
                 ->required(),
             'interest_category_id' => $schema->string()->nullable()->required(),

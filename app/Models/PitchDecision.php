@@ -26,7 +26,7 @@ class PitchDecision extends Model
      * The only columns an update may touch, and only while completed_at is
      * still null.
      */
-    public const COMPLETION_COLUMNS = ['result', 'recommendation_id', 'chosen_rank', 'mention_verified', 'completed_at'];
+    public const COMPLETION_COLUMNS = ['result', 'recommendation_id', 'chosen_rank', 'is_retry', 'mention_verified', 'completed_at'];
 
     protected $keyType = 'string';
 
@@ -37,6 +37,7 @@ class PitchDecision extends Model
         'guest_id',
         'stay_id',
         'conversation_id',
+        'proactive_message_id',
         'eligible',
         'gates',
         'classifier_ran',
@@ -52,6 +53,7 @@ class PitchDecision extends Model
         'result',
         'recommendation_id',
         'chosen_rank',
+        'is_retry',
         'mention_verified',
         'completed_at',
     ];
@@ -68,6 +70,7 @@ class PitchDecision extends Model
         'decided_at' => 'datetime',
         'result' => PitchResult::class,
         'chosen_rank' => 'integer',
+        'is_retry' => 'boolean',
         'mention_verified' => 'boolean',
         'completed_at' => 'datetime',
     ];
@@ -100,5 +103,13 @@ class PitchDecision extends Model
     public function recommendation(): BelongsTo
     {
         return $this->belongsTo(Recommendation::class);
+    }
+
+    /**
+     * Set when the decision was a proactive pitch rather than a guest turn.
+     */
+    public function proactiveMessage(): BelongsTo
+    {
+        return $this->belongsTo(ProactiveMessage::class);
     }
 }

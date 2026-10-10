@@ -9,8 +9,10 @@ use App\Http\Resources\HotelResource;
 use App\Models\Hotel;
 use App\Models\TaskCategory;
 use App\Models\Team;
+use App\Support\Proactive\ProactiveSettings;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Validator;
 
 class HotelController extends Controller
 {
@@ -82,6 +84,16 @@ class HotelController extends Controller
             return $error;
         }
 
+        if (array_key_exists('proactive_settings', $validated)) {
+            $settings = $this->mergedProactiveSettings($hotel, (array) $validated['proactive_settings']);
+
+            if (is_string($settings)) {
+                return apiResponse($settings, 422);
+            }
+
+            $validated['proactive_settings'] = $settings;
+        }
+
         // Turning inspection on starts the clock: rooms cleaned before then
         // still count as ready (FR-006).
         if (($validated['inspection_required'] ?? false) && ! $hotel->inspection_required) {
@@ -91,6 +103,26 @@ class HotelController extends Controller
         $hotel->update($validated);
 
         return apiResponse('Hotel updated successfully.', 200, HotelResource::make($hotel));
+    }
+
+    /**
+     * Proactive messaging settings sent in part are laid over what the hotel
+     * already has (SPEC-073). Returns the full settings to store, or the
+     * first validation error.
+     *
+     * @param  array<string, mixed>  $changes
+     * @return array<string, mixed>|string
+     */
+    private function mergedProactiveSettings(Hotel $hotel, array $changes): array|string
+    {
+        if ($unknown = ProactiveSettings::unknownKeys($changes)) {
+            return 'Unknown proactive setting ['.implode(', ', $unknown).'].';
+        }
+
+        $merged = ProactiveSettings::merge($hotel->proactiveSettings()->toArray(), $changes);
+        $validator = Validator::make($merged, ProactiveSettings::rules());
+
+        return $validator->fails() ? $validator->errors()->first() : $merged;
     }
 
     /**

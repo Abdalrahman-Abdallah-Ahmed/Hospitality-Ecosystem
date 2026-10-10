@@ -34,6 +34,11 @@ class GuestResource extends JsonResource
             // Read-only: stamped when the guest messages the hotel.
             'first_contacted_at' => $this->first_contacted_at,
             'last_contacted_at' => $this->last_contacted_at,
+            // Read-only here: the guest asked for no proactive messages and no
+            // unsolicited offers (changed through /contact-preference).
+            'proactive_opted_out' => $this->proactive_opted_out_at !== null,
+            'proactive_opted_out_at' => $this->proactive_opted_out_at,
+            'proactive_opt_out_source' => $this->proactive_opt_out_source,
             'hotel' => HotelResource::make($this->whenLoaded('hotel')),
             'reservations' => ReservationResource::collection($this->whenLoaded('reservations')),
             'stays' => StayResource::collection($this->whenLoaded('stays')),

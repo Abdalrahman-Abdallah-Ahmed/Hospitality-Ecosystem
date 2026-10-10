@@ -20,7 +20,8 @@ return [
     'enabled' => (bool) env('PITCHING_ENABLED', false),
 
     // Unsolicited pitches per stay. A guest who explicitly asks for a
-    // suggestion is not being pushed, so explicit requests do not count.
+    // suggestion is not being pushed, so explicit requests do not count, and
+    // neither does the one retry allowed after a decline (D10).
     'max_unsolicited_per_stay' => (int) env('PITCHING_MAX_PER_STAY', 1),
 
     'shortlist_size' => 3,
@@ -43,6 +44,6 @@ return [
 
     // Bumped whenever a gate or ranking rule changes. Written into every
     // decision row, so outcomes can be compared across rule versions.
-    'rules_version' => '1.0',
+    'rules_version' => '2.0',
 
 ];

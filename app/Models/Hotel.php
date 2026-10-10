@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
 use App\Support\Housekeeping\HotelOperationalDefaults;
+use App\Support\Proactive\ProactiveSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -46,6 +47,8 @@ class Hotel extends Model
         'maintenance_team_id',
         'maintenance_task_category_id',
         'inspection_required',
+        // Read through proactiveSettings(); validated by HotelController.
+        'proactive_settings',
     ];
 
     protected $casts = [
@@ -54,6 +57,7 @@ class Hotel extends Model
         'is_active' => 'boolean',
         'inspection_required' => 'boolean',
         'inspection_required_since' => 'datetime',
+        'proactive_settings' => 'array',
     ];
 
     protected static function booted(): void
@@ -126,6 +130,15 @@ class Hotel extends Model
                 $m->recountSeats($account);
             }
         });
+    }
+
+    /**
+     * The proactive messaging settings, with every unset value at its
+     * default (off).
+     */
+    public function proactiveSettings(): ProactiveSettings
+    {
+        return ProactiveSettings::fromArray($this->proactive_settings);
     }
 
     public function owner(): BelongsTo

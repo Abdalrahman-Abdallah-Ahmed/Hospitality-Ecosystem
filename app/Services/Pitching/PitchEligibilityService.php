@@ -11,6 +11,7 @@ use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
+use App\Models\PitchDecision;
 use App\Models\Recommendation;
 use App\Models\Stay;
 use App\Models\Task;
@@ -18,6 +19,7 @@ use App\Support\Pitching\Candidate;
 use App\Support\Pitching\CandidateList;
 use App\Support\Pitching\GateReport;
 use App\Support\Pitching\GateResult;
+use App\Support\Pitching\PitchFlow;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -41,6 +43,12 @@ class PitchEligibilityService
      * pitching still refuses to do on its own judgment (16.3).
      */
     private const OUTSIDE_INTEREST = 'outside_interest';
+
+    /**
+     * The guest declined this activity during the reservation; it is never
+     * pitched to them again, asked for or not (FR-019).
+     */
+    private const DECLINED_ACTIVITY = 'declined_activity';
 
     /**
      * The gates that cost nothing but a query. All of them are evaluated even
@@ -69,41 +77,86 @@ class PitchEligibilityService
     }
 
     /**
-     * The pitch cap and the one-refusal rule exist to stop the system
-     * pushing. A guest who asks for a suggestion is not being pushed, so
-     * neither applies to an explicit request.
+     * The opt-out, the pitch cap and the decline-retry rule exist to stop the
+     * system pushing. A guest who asks for a suggestion is not being pushed,
+     * so none of them applies to an explicit request.
      */
-    public function evaluateOpeningGates(Stay $stay, PitchOpening $opening, GateReport $report): GateReport
+    public function evaluateOpeningGates(Stay $stay, PitchOpening $opening, GateReport $report, ?CarbonInterface $now = null): GateReport
     {
         if ($opening->isExplicitRequest()) {
             return $report->with(
+                GateResult::pass(PitchGate::OPTED_OUT, 'Explicit request: opt-out does not stop answers.'),
                 GateResult::pass(PitchGate::PITCH_CAP, 'Explicit request: the cap does not apply.'),
-                GateResult::pass(PitchGate::DECLINED_THIS_STAY, 'Explicit request: an earlier refusal does not apply.'),
+                GateResult::pass(PitchGate::RETRY_USED, 'Explicit request: an earlier refusal does not apply.'),
+                GateResult::pass(PitchGate::RETRY_WINDOW_CLOSED, 'Explicit request: an earlier refusal does not apply.'),
             );
         }
 
+        $flow = $this->pitchFlow($stay, $now ?? now());
         $cap = (int) config('pitching.max_unsolicited_per_stay');
-        $pitched = $this->unsolicitedPitchesThisStay($stay);
-
-        // Read from the recommendation's status, not its outcome: the
-        // confidence floor records a hesitant "no thanks" as DELIVERED, while
-        // the status is REJECTED either way.
-        $declined = Recommendation::where('reservation_id', $stay->reservation_id)
-            ->where('status', RecommendationStatus::REJECTED)
-            ->exists();
+        $pitched = $flow->pitchesTowardCap;
+        $optedOut = (bool) $stay->guest?->isProactiveOptedOut();
 
         return $report->with(
-            $pitched >= $cap
-                ? GateResult::block(PitchGate::PITCH_CAP, "{$pitched} unsolicited pitch(es) this stay; the cap is {$cap}.")
-                : GateResult::pass(PitchGate::PITCH_CAP, "{$pitched} of {$cap} unsolicited pitch(es) used."),
-            $declined
-                ? GateResult::block(PitchGate::DECLINED_THIS_STAY, 'The guest refused a recommendation this stay.')
-                : GateResult::pass(PitchGate::DECLINED_THIS_STAY),
+            $optedOut
+                ? GateResult::block(PitchGate::OPTED_OUT, 'The guest asked for no unsolicited offers.')
+                : GateResult::pass(PitchGate::OPTED_OUT),
+            match (true) {
+                $flow->isRetryNext() => GateResult::pass(PitchGate::PITCH_CAP, 'Retry after a decline: the cap does not apply.'),
+                $pitched >= $cap => GateResult::block(PitchGate::PITCH_CAP, "{$pitched} unsolicited pitch(es) this stay; the cap is {$cap}."),
+                default => GateResult::pass(PitchGate::PITCH_CAP, "{$pitched} of {$cap} unsolicited pitch(es) used."),
+            },
+            $flow->declined && $flow->retryUsed
+                ? GateResult::block(PitchGate::RETRY_USED, 'The guest declined, and the one retry has been made.')
+                : GateResult::pass(PitchGate::RETRY_USED),
+            $flow->declined && ! $flow->retryUsed && $flow->windowClosed()
+                ? GateResult::block(PitchGate::RETRY_WINDOW_CLOSED, 'More than 24 hours since the declined flow began at '.$flow->firstPitchAt->toDateTimeString().'.')
+                : GateResult::pass(PitchGate::RETRY_WINDOW_CLOSED),
         );
     }
 
     /**
-     * The reservation's pending recommendations, in the order
+     * Where this reservation stands under the decline-retry rule (D10).
+     *
+     * Read across every stay of the reservation, so a guest with several
+     * rooms has one budget. Counted from decisions that staged a pitch, the
+     * same way the cap always was: a staged pitch whose turn has not finished
+     * counts, so two workers cannot both pitch; one whose reply failed never
+     * reached the guest and does not.
+     */
+    public function pitchFlow(Stay $stay, CarbonInterface $now): PitchFlow
+    {
+        $pitches = PitchDecision::withoutGlobalScope('hotel')
+            ->join('recommendations', 'recommendations.pitch_decision_id', '=', 'pitch_decisions.id')
+            ->join('stays', 'stays.id', '=', 'pitch_decisions.stay_id')
+            ->where('stays.reservation_id', $stay->reservation_id)
+            ->where('pitch_decisions.explicit_request', false)
+            ->where(fn ($query) => $query
+                ->whereNull('pitch_decisions.result')
+                ->orWhere('pitch_decisions.result', PitchResult::PITCHED->value))
+            ->orderBy('pitch_decisions.decided_at')
+            ->get(['pitch_decisions.decided_at', 'pitch_decisions.is_retry', 'recommendations.status as recommendation_status']);
+
+        $towardCap = $pitches->where('is_retry', false)->count();
+        $declined = $pitches->first(fn ($pitch) => $pitch->recommendation_status === RecommendationStatus::REJECTED->value && ! $pitch->is_retry);
+
+        if (! $declined) {
+            return PitchFlow::none($now, $towardCap);
+        }
+
+        $declinedAt = Carbon::parse($declined->getRawOriginal('decided_at'));
+
+        return new PitchFlow(
+            declined: true,
+            firstPitchAt: $declinedAt,
+            retryUsed: $pitches->contains(fn ($pitch) => $pitch->is_retry && Carbon::parse($pitch->getRawOriginal('decided_at'))->greaterThanOrEqualTo($declinedAt)),
+            pitchesTowardCap: $towardCap,
+            now: $now,
+        );
+    }
+
+    /**
+     * The reservation's approved, not yet offered recommendations, in the order
      * RecommendationAgent set. Pitching forms no opinion of its own about
      * which activity suits this guest, or whether it still fits their
      * remaining days: that judgment already happened when they were
@@ -113,12 +166,29 @@ class PitchEligibilityService
      */
     public function candidates(Hotel $hotel, Stay $stay, ?string $interestCategoryId, CarbonInterface $now): CandidateList
     {
-        $recommendations = $this->pendingRecommendations($stay);
+        $recommendations = $this->offerableRecommendations($stay);
+        $declined = Recommendation::query()
+            ->where('reservation_id', $stay->reservation_id)
+            ->where('status', RecommendationStatus::REJECTED->value)
+            ->pluck('activity_id')
+            ->all();
         $shortlist = [];
         $excluded = [];
 
-        foreach ($recommendations as $recommendation) {
+        foreach ($recommendations->values() as $position => $recommendation) {
             $activity = $recommendation->activity;
+
+            if (in_array($activity->id, $declined, true)) {
+                $excluded[] = [
+                    'recommendation_id' => $recommendation->id,
+                    'activity_id' => $activity->id,
+                    'name' => $activity->name,
+                    'reason' => self::DECLINED_ACTIVITY,
+                    'detail' => null,
+                ];
+
+                continue;
+            }
 
             if ($interestCategoryId && $activity->category_id !== $interestCategoryId) {
                 $excluded[] = [
@@ -139,6 +209,7 @@ class PitchEligibilityService
                 reason: $recommendation->reason,
                 priority: (int) $recommendation->priority,
                 predictedConfidence: $recommendation->predicted_confidence,
+                storedRank: $position + 1,
             );
         }
 
@@ -216,37 +287,16 @@ class PitchEligibilityService
     }
 
     /**
-     * Counted from the decisions that produced pitches, never from a stored
-     * counter that could drift. A staged pitch whose turn has not finished
-     * counts, so two workers cannot both pitch; one whose reply failed never
-     * reached the guest and does not.
-     */
-    private function unsolicitedPitchesThisStay(Stay $stay): int
-    {
-        return Recommendation::query()
-            ->join('pitch_decisions', 'pitch_decisions.id', '=', 'recommendations.pitch_decision_id')
-            ->where('pitch_decisions.stay_id', $stay->id)
-            ->where('pitch_decisions.explicit_request', false)
-            ->where(fn ($query) => $query
-                ->whereNull('pitch_decisions.result')
-                ->orWhere('pitch_decisions.result', PitchResult::PITCHED->value))
-            ->count();
-    }
-
-    /**
-     * Still offerable: generated, never delivered, never pitched, and its
-     * activity still on the menu.
+     * Still offerable: approved, never delivered, never pitched, and its
+     * activity still on the menu (Recommendation::offerable()).
      *
      * @return Collection<int, Recommendation>
      */
-    private function pendingRecommendations(Stay $stay): Collection
+    private function offerableRecommendations(Stay $stay): Collection
     {
         return Recommendation::query()
             ->where('reservation_id', $stay->reservation_id)
-            ->where('status', RecommendationStatus::PENDING->value)
-            ->whereNull('delivered_at')
-            ->whereNull('pitch_decision_id')
-            ->whereHas('activity', fn ($query) => $query->where('is_active', true))
+            ->offerable()
             ->with('activity')
             // The recommendation agent's own order: its top suggestion first.
             ->orderBy('priority')

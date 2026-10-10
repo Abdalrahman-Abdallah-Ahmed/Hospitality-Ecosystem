@@ -37,6 +37,9 @@ class HotelResource extends JsonResource
             'maintenance_team_id' => $this->maintenance_team_id,
             'maintenance_task_category_id' => $this->maintenance_task_category_id,
             'inspection_required' => (bool) $this->inspection_required,
+            // Every unset value at its default, so the client always sees the
+            // full settings (SPEC-073).
+            'proactive_settings' => $this->resource->proactiveSettings()->toArray(),
             'owner' => UserResource::make($this->whenLoaded('owner')),
             'hotel_group' => HotelGroupResource::make($this->whenLoaded('hotelGroup')),
             'created_at' => $this->created_at,

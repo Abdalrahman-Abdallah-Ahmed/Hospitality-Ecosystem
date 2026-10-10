@@ -3,7 +3,7 @@
 namespace App\Support\Pitching;
 
 /**
- * A pending recommendation this turn may offer, carrying the reason
+ * An approved recommendation this turn may offer, carrying the reason
  * RecommendationAgent gave for it.
  */
 final readonly class Candidate
@@ -15,6 +15,9 @@ final readonly class Candidate
         public ?string $reason,
         public int $priority,
         public ?string $predictedConfidence,
+        // Its position in RecommendationAgent's own order among everything
+        // offerable, before the guest's stated interest filtered the list.
+        public int $storedRank = 1,
     ) {}
 
     /**

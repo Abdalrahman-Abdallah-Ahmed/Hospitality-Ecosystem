@@ -67,7 +67,7 @@ it('stamps delivery once and meters it once', function () {
             ->count())->toBe(1);
 });
 
-it('moves a pending recommendation to sent on delivery', function () {
+it('moves an approved recommendation to sent on delivery', function () {
     [, $hotel] = wp5AdminWithHotel();
     [$pending] = wp5Recommendation($hotel);
     [$accepted] = wp5Recommendation($hotel, ['status' => RecommendationStatus::ACCEPTED]);
@@ -75,20 +75,22 @@ it('moves a pending recommendation to sent on delivery', function () {
     deliver($pending);
     deliver($accepted);
 
-    // Only PENDING moves; a guest's decision is never walked back to "sent".
+    // Only APPROVED moves; a guest's decision is never walked back to "sent".
     expect($pending->fresh()->status)->toBe(RecommendationStatus::SENT)
         ->and($accepted->fresh()->status)->toBe(RecommendationStatus::ACCEPTED);
 });
 
-it('does not stamp delivery when the agent only read the recommendations', function () {
+it('neither lists an unoffered recommendation nor stamps delivery when the agent only reads', function () {
     [, $hotel] = wp5AdminWithHotel();
     [$recommendation] = wp5Recommendation($hotel);
 
     $listed = json_decode((string) (new GetRecommendationsTool($recommendation->reservation))->handle(new Request([])), true);
 
-    expect($listed)->toHaveCount(1)
+    // Approved but never offered: the Concierge reaches it only through the
+    // pitch tool (SPEC-071).
+    expect($listed)->toBe([])
         ->and($recommendation->fresh()->delivered_at)->toBeNull()
-        ->and($recommendation->fresh()->status)->toBe(RecommendationStatus::PENDING)
+        ->and($recommendation->fresh()->status)->toBe(RecommendationStatus::APPROVED)
         ->and(deliveryMeterEvents($recommendation))->toBeEmpty();
 });
 

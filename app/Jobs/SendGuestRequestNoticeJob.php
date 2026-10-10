@@ -12,12 +12,12 @@ use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Task;
-use App\Models\WhatsAppInboundMessage;
 use App\Notifications\GuestRequestNoticeNotification;
 use App\Services\WhatsAppMessageService;
 use App\Support\Audit\EventLogger;
 use App\Support\PhoneNumber;
 use App\Support\Tenancy\TenantContext;
+use App\Support\WhatsApp\MessagingWindow;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -46,7 +46,7 @@ class SendGuestRequestNoticeJob implements ShouldQueue
      * WhatsApp's window is 24 hours; the margin covers queue delay and clock
      * skew so a message is never sent just after it closed.
      */
-    public const WINDOW_MINUTES = 24 * 60 - 10;
+    public const WINDOW_MINUTES = MessagingWindow::MINUTES;
 
     /** Pauses between a channel's three attempts, in milliseconds (retry() makes one attempt more than pauses). */
     public const RETRY_BACKOFF_MS = [1000, 3000];
@@ -247,10 +247,7 @@ class SendGuestRequestNoticeJob implements ShouldQueue
      */
     private function windowOpen(string $phoneDigits): bool
     {
-        return WhatsAppInboundMessage::query()
-            ->where('phone_number', $phoneDigits)
-            ->where('created_at', '>', now()->subMinutes(self::WINDOW_MINUTES))
-            ->exists();
+        return MessagingWindow::isOpen($phoneDigits);
     }
 
     private function finish(Task $task, GuestNoticeStatus $status, ?GuestNoticeChannel $channel = null, ?GuestNoticeReason $reason = null): void

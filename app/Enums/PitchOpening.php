@@ -20,12 +20,27 @@ enum PitchOpening: string
     case CHILDREN = 'children';
     case WEATHER = 'weather';
 
+    // Not from the guest: the Concierge messaged first (SPEC-073). The
+    // classifier never produces it.
+    case PROACTIVE = 'proactive';
+
     /**
      * A guest who asks for a suggestion is not being pushed, so the pitch cap
-     * and the one-refusal rule do not apply to them. Every other gate does.
+     * and the decline-retry rule do not apply to them. Every other gate does.
      */
     public function isExplicitRequest(): bool
     {
         return in_array($this, [self::ASKS_WHAT_TO_DO, self::ASKS_ABOUT_ACTIVITIES], true);
+    }
+
+    /**
+     * The openings a guest's message can contain — everything the turn
+     * classifier may answer with.
+     *
+     * @return list<self>
+     */
+    public static function guestOpenings(): array
+    {
+        return array_values(array_filter(self::cases(), fn (self $opening) => $opening !== self::PROACTIVE));
     }
 }

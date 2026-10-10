@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Enums\EvidenceLevel;
+use App\Enums\RecommendationSource;
 use App\Enums\RecommendationStatus;
 use App\Models\Activity;
 use App\Models\Hotel;
@@ -19,6 +20,7 @@ class CreateRecommendationTool implements Tool
     public function __construct(
         private readonly Hotel $hotel,
         private readonly Reservation $reservation,
+        private readonly RecommendationSource $source = RecommendationSource::STAFF_REQUEST,
     ) {}
 
     /**
@@ -49,7 +51,9 @@ class CreateRecommendationTool implements Tool
             'reason' => $request->string('reason')->toString(),
             'predicted_confidence' => $request->float('predicted_confidence'),
             'priority' => $request->integer('priority', 0),
-            'status' => RecommendationStatus::PENDING,
+            // Nothing reaches a guest until an approver approves it (SPEC-071).
+            'status' => RecommendationStatus::PENDING_APPROVAL,
+            'source' => $this->source,
             'recommended_at' => now(),
             // A recommendation is a prediction about a guest — a hypothesis
             // until they act on it. The reservation and activity it rests on

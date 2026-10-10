@@ -31,7 +31,7 @@ class RecommendationDeliveryService
      * Stamp delivery once. Returns true only when this call stamped it — a
      * second call is a no-op and does not meter again.
      *
-     * Also moves status PENDING → SENT, and records one
+     * Also moves status APPROVED → SENT, and records one
      * RECOMMENDATIONS_DELIVERED meter event through MeteringService::safely().
      */
     public function markDelivered(
@@ -54,7 +54,7 @@ class RecommendationDeliveryService
 
             $sent = $stamped && Recommendation::withoutGlobalScope('hotel')
                 ->whereKey($recommendation->getKey())
-                ->where('status', RecommendationStatus::PENDING->value)
+                ->where('status', RecommendationStatus::APPROVED->value)
                 ->update(['status' => RecommendationStatus::SENT->value]) === 1;
 
             return [$stamped, $sent];
@@ -70,7 +70,7 @@ class RecommendationDeliveryService
             'delivered_at' => ['from' => null, 'to' => EventLogger::normalize($recommendation->delivered_at)],
             'delivery_channel' => ['from' => null, 'to' => $channel->value],
             'status' => $sent
-                ? ['from' => RecommendationStatus::PENDING->value, 'to' => RecommendationStatus::SENT->value]
+                ? ['from' => RecommendationStatus::APPROVED->value, 'to' => RecommendationStatus::SENT->value]
                 : null,
         ]));
 

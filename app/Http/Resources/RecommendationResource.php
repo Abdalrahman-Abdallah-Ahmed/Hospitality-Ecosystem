@@ -24,6 +24,15 @@ class RecommendationResource extends JsonResource
             'guest_confidence' => $this->guest_confidence,
             'priority' => $this->priority,
             'status' => $this->status,
+            'source' => $this->source,
+            // Who approved or rejected it (SPEC-071); null until decided.
+            'reviewed_by' => $this->whenLoaded('reviewedBy', fn () => $this->reviewedBy
+                ? ['id' => $this->reviewedBy->id, 'name' => $this->reviewedBy->name]
+                : null),
+            'reviewed_at' => $this->reviewed_at,
+            'review_reason' => $this->review_reason,
+            // Approved and not yet offered: what the Concierge may pitch.
+            'offerable' => $this->whenLoaded('activity', fn () => $this->resource->isOfferable()),
             'recommended_at' => $this->recommended_at,
             // Read-only: when (and how) the guest was actually offered it.
             'delivered_at' => $this->delivered_at,

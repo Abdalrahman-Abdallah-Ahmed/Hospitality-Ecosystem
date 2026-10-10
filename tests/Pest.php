@@ -1,20 +1,25 @@
 <?php
 
 use App\Ai\Agents\DocumentVisionAgent;
+use App\Ai\Agents\TurnSignalAgent;
 use App\Ai\Tools\Admin\AdminToolset;
 use App\Ai\Tools\Admin\GuardedTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Ai\Tools\PitchActivityTool;
+use App\Ai\Tools\UpdateRecommendationTool;
 use App\Enums\BookingOrigin;
 use App\Enums\ChargeModel;
 use App\Enums\KnowledgeAudience;
 use App\Enums\Permission;
 use App\Enums\UserRole;
+use App\Jobs\EvaluateProactiveTriggersJob;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeDocument;
+use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
@@ -29,18 +34,24 @@ use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Models\WhatsAppInboundMessage;
 use App\Services\BookingService;
+use App\Services\Pitching\PitchCoordinator;
 use App\Services\StayLifecycleService;
 use App\Services\TransactionService;
 use App\Services\WhatsAppMessageService;
 use App\Support\Audit\EventLogger;
 use App\Support\Knowledge\ChunkSynchronizer;
 use App\Support\Knowledge\Extraction\Segment;
+use App\Support\PhoneNumber;
+use App\Support\Pitching\PitchTurn;
+use App\Support\Proactive\ProactiveSettings;
 use App\Support\Reservations\ReservationCreator;
 use App\Support\Tenancy\TenantContext;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Ai\Embeddings;
@@ -164,6 +175,8 @@ function wp5Recommendation(Hotel $hotel, array $overrides = []): array
         'hotel_id' => $hotel->id,
         'reservation_id' => $reservation->id,
         'activity_id' => $activity->id,
+        // Approved: these fixtures stand for recommendations a guest may be offered.
+        'status' => 'approved',
         'recommended_at' => now()->subHours(9),
     ], $overrides));
 
@@ -982,6 +995,13 @@ function aatSeed(string $marker = 'Alpha', string $timezone = 'UTC'): array
         'content' => "{$marker} knowledge.",
         'status' => 'draft',
     ]);
+    $recommendation = Recommendation::create([
+        'hotel_id' => $hotel->id,
+        'reservation_id' => $reservation->id,
+        'activity_id' => $activity->id,
+        'reason' => "{$marker} suggestion",
+        'recommended_at' => now(),
+    ]);
 
     return [
         'hotel' => $hotel->fresh(),
@@ -996,6 +1016,7 @@ function aatSeed(string $marker = 'Alpha', string $timezone = 'UTC'): array
         'activity' => $activity,
         'booking' => $booking,
         'article' => $article,
+        'recommendation' => $recommendation,
     ];
 }
 
@@ -1024,6 +1045,8 @@ function aatArgs(string $tool, array $s): array
         'GetStaysTool' => ['list' => 'arrivals'],
         'GetTasksTool' => ['room_number' => '101'],
         'GetBookingsTool' => ['guest' => $s['guest']->last_name],
+        'GetRecommendationsForReviewTool' => ['guest' => $s['guest']->last_name],
+        'DecideRecommendationTool' => ['recommendation_id' => $s['recommendation']->id, 'action' => 'approve'],
         'GetReportTool' => ['report' => 'dashboard'],
         'CreateGuestTool' => ['phone_number' => '+44 7700 '.random_int(100000, 999999), 'first_name' => 'New'],
         'UpdateGuestTool' => ['guest_id' => $s['guest']->id, 'nationality' => 'FR'],
@@ -1078,4 +1101,204 @@ function aatFingerprint(Hotel $hotel): array
 function aatChat($test, array $seed, array $payload)
 {
     return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($seed['admin'], 'sanctum')->postJson('/api/ai-advisor/chat', $payload);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Recommendation approval and proactive Concierge (SPEC 010)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A hotel in a UTC+3 timezone, so "today" and quiet hours differ from UTC.
+ */
+function rapHotel(string $timezone = 'Asia/Riyadh'): Hotel
+{
+    return avHotel($timezone)->fresh();
+}
+
+function rapAdmin(Hotel $hotel): User
+{
+    return $hotel->owner;
+}
+
+/**
+ * @param  list<Permission>  $permissions
+ */
+function rapEmployee(Hotel $hotel, array $permissions = []): User
+{
+    return fdEmployee($hotel, $permissions);
+}
+
+/**
+ * A guest reachable on WhatsApp, in-house since yesterday (hotel time) and
+ * leaving in four days, with one stay per room number.
+ *
+ * @param  array<string, mixed>  $guest
+ * @return array{0: Guest, 1: Reservation, 2: Stay}
+ */
+function rapInHouseStay(Hotel $hotel, array $guest = [], ?array $roomNumbers = null): array
+{
+    $guest = gsGuest($hotel, ['preferred_language' => 'en', ...$guest]);
+    $type = avType($hotel, 'Deluxe '.Str::random(4));
+    $roomNumbers ??= [(string) random_int(1000, 9999)];
+    $rooms = array_map(fn (string $number) => aatRoom($hotel, $type, $number), $roomNumbers);
+
+    $reservation = ReservationCreator::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-'.strtoupper(Str::random(8)),
+        'arrival_date' => now($hotel->timezone)->subDay()->toDateString(),
+        'departure_date' => now($hotel->timezone)->addDays(4)->toDateString(),
+        'status' => 'confirmed',
+        'adults' => 2,
+        'children' => 0,
+        'reservation_value' => 900,
+    ], array_map(fn (Room $room) => ['room_type_id' => $type->id, 'room_id' => $room->id], $rooms));
+
+    $stays = fdStays($reservation);
+
+    foreach ($stays as $stay) {
+        app(StayLifecycleService::class)->checkIn($stay);
+        $stay->forceFill(['checked_in_at' => now()->subDay()])->saveQuietly();
+    }
+
+    return [$guest->fresh(), $reservation->fresh(), $stays[0]->fresh()];
+}
+
+function rapActivity(Hotel $hotel, string $name = 'Snorkeling'): Activity
+{
+    return abActivity($hotel, ['name' => $name, 'description' => "{$name} with a guide."]);
+}
+
+/**
+ * A recommendation for this reservation, approved unless told otherwise.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function rapRecommendation(Reservation $reservation, Activity $activity, string $status = 'approved', array $overrides = []): Recommendation
+{
+    $recommendation = Recommendation::create([
+        'hotel_id' => $reservation->hotel_id,
+        'reservation_id' => $reservation->id,
+        'activity_id' => $activity->id,
+        'reason' => 'Suits this guest',
+        'predicted_confidence' => 0.8,
+        'priority' => 1,
+        'recommended_at' => now()->subHour(),
+        'source' => 'staff_request',
+    ]);
+    // Overrides may name columns no client can write (delivered_at,
+    // pitch_decision_id), so they are forced.
+    $recommendation->forceFill(['status' => $status, ...$overrides])->saveQuietly();
+
+    return $recommendation->fresh('activity');
+}
+
+/**
+ * A guest message at `$at`, which opens the 24-hour WhatsApp window.
+ */
+function rapInbound(Guest $guest, CarbonInterface $at): WhatsAppInboundMessage
+{
+    return gsInbound(PhoneNumber::digits($guest->phone_number), $at);
+}
+
+function rapRequest($test, User $user, string $method, string $uri, array $payload = []): TestResponse
+{
+    return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->json($method, $uri, $payload);
+}
+
+/**
+ * Pitching on, the WhatsApp API faked, and the turn classifier answering
+ * with `$opening`, quoting `$quote` from the guest's message.
+ */
+function rapPitchingOn(string $opening = 'evening_plans', string $quote = 'this evening'): void
+{
+    config([
+        'pitching.enabled' => true,
+        'services.whatsapp.phone_number_id' => 'test-phone-number-id',
+        'services.whatsapp.access_token' => 'test-access-token',
+    ]);
+    Http::fake(['graph.facebook.com/*/messages' => Http::response(['messages' => [['id' => 'wamid.test']]], 200)]);
+    rapClassifierSays($opening, $quote);
+}
+
+function rapClassifierSays(string $opening = 'evening_plans', string $quote = 'this evening'): void
+{
+    TurnSignalAgent::fake(fn () => [
+        'complaint' => false,
+        'opening' => $opening,
+        'interest_category_id' => null,
+        'evidence_quote' => $quote,
+    ]);
+}
+
+/**
+ * One guest turn's pitching decision, as the WhatsApp job makes it.
+ */
+function rapTurn(Guest $guest, Reservation $reservation, string $message = 'Any plans for this evening?'): PitchTurn
+{
+    return app(PitchCoordinator::class)->begin($guest, $guest->hotel, $reservation, $message, null);
+}
+
+/**
+ * Stage the turn's offer through the pitch tool and deliver it, as a sent
+ * reply would: the guest has now been pitched it.
+ */
+function rapPitch(Guest $guest, Reservation $reservation, string $message = 'Any plans for this evening?', string $words = 'this evening'): PitchTurn
+{
+    $turn = rapTurn($guest, $reservation, $message);
+    $result = (string) (new PitchActivityTool($turn, $reservation->stay))->handle(new Request(['guest_words' => $words]));
+
+    if (! str_starts_with($result, 'Staged')) {
+        throw new RuntimeException("Nothing was pitched: {$result}");
+    }
+
+    app(PitchCoordinator::class)->delivered($guest, $turn->decision->decided_at->copy()->subSecond(), 'How about '.$turn->staged()->name.'?');
+
+    return $turn;
+}
+
+/**
+ * The guest's answer to a pitch, recorded the way the Concierge does.
+ */
+function rapGuestSays(PitchTurn $turn, Reservation $reservation, string $action): void
+{
+    EventLogger::asAiAgent(fn () => (new UpdateRecommendationTool($reservation))->handle(new Request([
+        'recommendation_id' => $turn->staged()->recommendationId,
+        'action' => $action,
+        'evidence_quote' => 'no thanks',
+        'confidence' => 0.9,
+    ])));
+}
+
+/**
+ * Proactive messaging switched on for the hotel, with any settings changed.
+ *
+ * @param  array<string, mixed>  $settings
+ */
+function rapProactiveOn(Hotel $hotel, array $settings = []): Hotel
+{
+    $hotel->forceFill(['proactive_settings' => ProactiveSettings::merge(
+        ProactiveSettings::defaults(),
+        ['enabled' => true, ...$settings],
+    )])->save();
+
+    return $hotel->fresh();
+}
+
+/**
+ * Run the trigger sweep, which also sends what is due (the test queue is sync).
+ */
+function rapSweep(): void
+{
+    app()->call([new EvaluateProactiveTriggersJob, 'handle']);
+}
+
+/**
+ * @return Collection<int, ProactiveMessage>
+ */
+function rapProactiveRows(Guest $guest)
+{
+    return ProactiveMessage::withoutGlobalScope('hotel')->where('guest_id', $guest->id)->orderBy('created_at')->get();
 }

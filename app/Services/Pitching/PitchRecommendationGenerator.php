@@ -5,6 +5,7 @@ namespace App\Services\Pitching;
 use App\Ai\Agents\RecommendationAgent;
 use App\Enums\ActorKind;
 use App\Enums\MeterFeature;
+use App\Enums\RecommendationSource;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\Stay;
@@ -19,6 +20,9 @@ use App\Support\Audit\EventLogger;
  * when a turn reaches this — so the spend is filed as guest-driven, the same
  * as the turn classifier's, rather than as the staff_request-triggered batch
  * GenerateActivityRecommendationsJob records when an admin asks directly.
+ *
+ * What it generates is pending approval (SPEC-071): nothing it creates can be
+ * offered in this turn, or any later one, until an approver approves it.
  *
  * Once per reservation, ever: a reservation that has been generated for
  * before is never generated for again here, even once every recommendation
@@ -50,7 +54,7 @@ class PitchRecommendationGenerator
         $before = $this->countFor($reservation);
         $guestName = trim($reservation->guest->first_name.' '.$reservation->guest->last_name);
 
-        $agent = RecommendationAgent::make(hotel: $reservation->hotel, reservation: $reservation);
+        $agent = RecommendationAgent::make(hotel: $reservation->hotel, reservation: $reservation, source: RecommendationSource::CONVERSATION);
 
         EventLogger::asAiAgent(fn () => $agent->prompt("Generate activity recommendations for guest {$guestName}."));
 
