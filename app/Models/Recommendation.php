@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Concerns\BelongsToHotel;
 use App\Enums\DeliveryChannel;
 use App\Enums\EvidenceLevel;
+use App\Enums\RecommendationSource;
 use App\Enums\RecommendationStatus;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -37,6 +39,7 @@ class Recommendation extends Model
         'dismissed_at',
         'evidence_level',
         'evidence_sources',
+        'source',
     ];
 
     protected $casts = [
@@ -54,6 +57,10 @@ class Recommendation extends Model
         // fillable, so no client can claim a delivery that did not happen.
         'delivered_at' => 'datetime',
         'delivery_channel' => DeliveryChannel::class,
+        'source' => RecommendationSource::class,
+        // Written only by RecommendationApprovalService; deliberately not
+        // fillable, so no edit can approve a recommendation.
+        'reviewed_at' => 'datetime',
     ];
 
     /**
@@ -66,6 +73,7 @@ class Recommendation extends Model
             'guest_confidence', 'priority', 'status', 'recommended_at',
             'delivered_at', 'delivery_channel',
             'accepted_at', 'rejected_at', 'dismissed_at', 'evidence_level',
+            'source', 'reviewed_by_user_id', 'reviewed_at', 'review_reason',
         ];
     }
 
@@ -77,6 +85,35 @@ class Recommendation extends Model
     public function activity(): BelongsTo
     {
         return $this->belongsTo(Activity::class);
+    }
+
+    /**
+     * The approver who approved or rejected it.
+     */
+    public function reviewedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by_user_id');
+    }
+
+    /**
+     * What the Concierge may offer: approved, never offered, never staged by
+     * a pitch, and its activity still on the menu.
+     */
+    public function scopeOfferable(Builder $query): Builder
+    {
+        return $query
+            ->where('status', RecommendationStatus::APPROVED->value)
+            ->whereNull('delivered_at')
+            ->whereNull('pitch_decision_id')
+            ->whereHas('activity', fn (Builder $activity) => $activity->where('is_active', true));
+    }
+
+    public function isOfferable(): bool
+    {
+        return $this->status === RecommendationStatus::APPROVED
+            && $this->delivered_at === null
+            && $this->pitch_decision_id === null
+            && (bool) $this->activity?->is_active;
     }
 
     public function outcomes(): HasMany

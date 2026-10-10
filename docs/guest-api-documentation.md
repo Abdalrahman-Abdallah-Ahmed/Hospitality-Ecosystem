@@ -98,6 +98,9 @@ Every endpoint that returns a guest returns it with `hotel`, `reservations`, `co
   "identity_resolved_at": "2026-07-31T09:15:00.000000Z",
   "first_contacted_at": "2026-09-02T08:11:40.000000Z",
   "last_contacted_at": "2026-09-03T19:02:15.000000Z",
+  "proactive_opted_out": false,
+  "proactive_opted_out_at": null,
+  "proactive_opt_out_source": null,
   "created_at": "2026-07-31T09:15:00.000000Z",
   "updated_at": "2026-07-31T09:15:00.000000Z",
   "deleted_at": null,
@@ -348,6 +351,40 @@ HTTP `422`:
 ### Error: Not Found / Wrong Hotel
 
 Same as [show](#3-get-a-single-guest): `404` if the id does not exist, `403` if it belongs to a different hotel.
+
+## 4a. Contact Preference (opt-out)
+
+*Added 2026-10-10 (SPEC-073).* A guest can ask for **no proactive messages and no
+unsolicited offers** from the WhatsApp Concierge. Their own questions are always answered,
+and notices about requests they made still reach them.
+
+The guest opts out themselves by sending `STOP` (or `UNSUBSCRIBE`, `توقف`, `إيقاف` …) as the
+whole message, or by asking the Concierge in their own words; `START` opts back in. Staff
+record a change the guest asked for at the desk:
+
+### Endpoint
+
+`PUT /api/guest/{id}/contact-preference` — permission `guests.update`, same hotel.
+
+### Request Body
+
+```json
+{ "proactive_opted_out": true }
+```
+
+`proactive_opted_out` is required and boolean. `200` with the [guest object](#the-guest-object);
+sending the state the guest is already in changes nothing. Each change writes one audit
+event (`guest.opted_out` / `guest.opted_in`).
+
+Read-only fields on the guest object:
+
+| Field | Meaning |
+| --- | --- |
+| `proactive_opted_out` | `true` when the guest opted out |
+| `proactive_opted_out_at` | When |
+| `proactive_opt_out_source` | `guest_message` (the guest asked on WhatsApp) or `staff` |
+
+These fields cannot be set through `PUT /api/guest/{id}`.
 
 ## 5. Delete a Guest
 

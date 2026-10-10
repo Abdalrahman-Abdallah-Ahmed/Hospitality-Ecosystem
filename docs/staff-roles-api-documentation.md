@@ -65,7 +65,7 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `dashboard.view` | `GET /api/dashboard` |
 | `guests.view` | `GET /api/guest`, `GET /api/guest/{id}` |
 | `guests.create` | `POST /api/guest` |
-| `guests.update` | `PUT /api/guest/{id}` |
+| `guests.update` | `PUT /api/guest/{id}`, `PUT /api/guest/{id}/contact-preference` |
 | `guests.delete` | `DELETE /api/guest/{id}` |
 | `history.view` | `GET /api/history/{type}/{id}` |
 | `hotel_policies.view` | `GET /api/hotel-policy` |
@@ -86,6 +86,7 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `recommendations.delete` | `DELETE /api/recommendation/{id}` |
 | `recommendations.generate` | `POST /api/reservation/{id}/recommendations` |
 | `recommendations.record_outcome` | `POST /api/recommendation/{id}/outcome` |
+| `recommendations.approve` | `POST /api/recommendation/{id}/approve`, `POST /api/recommendation/{id}/reject`, `POST /api/recommendations/decide` (*added 2026-10-10*; never an employee default — it decides what the hotel tells guests) |
 | `reservations.view` | `GET /api/reservation`, `GET /api/reservation/{id}` |
 | `reservations.create` | `POST /api/reservation` |
 | `reservations.update` | `PUT /api/reservation/{id}` |
@@ -123,7 +124,7 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 
 ### Admin AI tools (SPEC-055)
 
-The AI advisor itself stays admin-only, but each of its tools checks, every time it runs, the same permission as the staff endpoint it mirrors. No new permission was added for it. The full list of tools and the permission each checks is in the [AI Advisor Chat API Documentation](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md#tool-catalog). In short:
+The AI advisor itself stays admin-only, but each of its tools checks, every time it runs, the same permission as the staff endpoint it mirrors. No permission was added for the advisor itself. The full list of tools and the permission each checks is in the [AI Advisor Chat API Documentation](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md#tool-catalog). In short:
 
 | Permission | Advisor tools that check it |
 | --- | --- |
@@ -138,6 +139,7 @@ The AI advisor itself stays admin-only, but each of its tools checks, every time
 | `bookings.view` / `.create` / `.update_status` | bookings / book an activity / change status, answer cancellation requests |
 | `knowledge_base_articles.view` / `.create` / `.update` | knowledge search / save an article / correct an article |
 | `dashboard.view`, `recommendations.view`, `ai_insights.view` | dashboard and occupancy / conversion / insights reports |
+| `recommendations.view` / `.approve` | recommendations awaiting review / approve or reject one named recommendation, after the admin confirms (*2026-10-10*) |
 
 Users, staff roles, hotel settings and AI usage stay admin-only for the advisor too: it can read them, never change them. No advisor tool ever overrides overbooking or capacity, whatever permissions the user holds.
 

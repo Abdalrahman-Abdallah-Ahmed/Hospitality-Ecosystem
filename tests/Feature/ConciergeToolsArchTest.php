@@ -16,6 +16,7 @@ use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\RequestRoomChangeTool;
+use App\Ai\Tools\SetContactPreferenceTool;
 use App\Ai\Tools\UpdateRecommendationTool;
 use App\Http\Controllers\StayCheckInController;
 use App\Http\Controllers\StayCheckOutController;
@@ -51,6 +52,7 @@ const GUEST_TOOLS = [
     CreateGuestServiceRequestTool::class,
     RequestRoomChangeTool::class,
     EscalateToHumanTool::class,
+    SetContactPreferenceTool::class,
 ];
 
 it('gives the Concierge exactly the guest tool set', function () {

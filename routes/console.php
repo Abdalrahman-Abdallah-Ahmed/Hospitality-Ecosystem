@@ -1,6 +1,8 @@
 <?php
 
 use App\Jobs\AiCost\FlagAiCostOverrunsJob;
+use App\Jobs\EvaluateProactiveTriggersJob;
+use App\Jobs\ExpireRecommendationsJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
 use App\Jobs\PurgeDeletedKnowledgeDocumentsJob;
@@ -36,3 +38,12 @@ Schedule::job(new StartHousekeepingDayJob)->hourly();
 // conversation, not a decision for a cron job. Runs after the counter
 // rebuild so the day's activity has settled.
 Schedule::job(new FlagAiCostOverrunsJob)->dailyAt('04:30');
+
+// Expires recommendations awaiting approval or an offer once their stay is
+// over. Hourly, so each hotel's own date decides when that is.
+Schedule::job(new ExpireRecommendationsJob)->hourly();
+
+// Finds the proactive Concierge messages each hotel's triggers call for and
+// sends the ones due. Hotels with proactive messaging off are skipped; a
+// message is created at most once per guest and event however often this runs.
+Schedule::job(new EvaluateProactiveTriggersJob)->everyFifteenMinutes()->withoutOverlapping();

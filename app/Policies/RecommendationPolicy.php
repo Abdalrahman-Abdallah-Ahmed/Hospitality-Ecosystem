@@ -63,6 +63,16 @@ class RecommendationPolicy
     }
 
     /**
+     * Determine whether the user can approve or reject recommendations — one,
+     * or (with no model) a bulk decision whose ids are each scoped to the
+     * user's hotel by the query.
+     */
+    public function approve(User $user, ?Recommendation $recommendation = null): bool
+    {
+        return $this->allows($user, Permission::RECOMMENDATIONS_APPROVE, $recommendation);
+    }
+
+    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Recommendation $recommendation): bool

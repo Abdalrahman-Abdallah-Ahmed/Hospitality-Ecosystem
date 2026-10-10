@@ -103,7 +103,7 @@ it('asks for confirmation exactly for the hard-to-reverse actions', function () 
 
     $gated = $byName->filter(fn (GuardedTool $tool) => $tool->inner() instanceof ConfirmsBeforeRunning)->keys()->sort()->values()->all();
 
-    expect($gated)->toBe(['CancelReservationTool', 'CheckOutTool', 'DecideBookingCancellationTool', 'SetRoomOutOfOrderTool', 'UpdateBookingStatusTool', 'UpdateReservationTool']);
+    expect($gated)->toBe(['CancelReservationTool', 'CheckOutTool', 'DecideBookingCancellationTool', 'DecideRecommendationTool', 'SetRoomOutOfOrderTool', 'UpdateBookingStatusTool', 'UpdateReservationTool']);
 
     foreach ($byName->except($gated) as $name => $tool) {
         expect($tool->shouldRequestApproval(new Request(aatArgs($name, $s))))->toBeNull($name);

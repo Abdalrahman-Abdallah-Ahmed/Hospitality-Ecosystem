@@ -7,6 +7,7 @@ use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Enums\RecommendationSource;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use Laravel\Ai\Contracts\Agent;
@@ -23,6 +24,9 @@ class RecommendationAgent implements Agent, Conversational, HasTools
     public function __construct(
         public Hotel $hotel,
         public Reservation $reservation,
+        // Where the generation came from, recorded on every recommendation
+        // so the approval queue can show it.
+        public RecommendationSource $source = RecommendationSource::STAFF_REQUEST,
     ) {}
 
     /**
@@ -75,7 +79,7 @@ class RecommendationAgent implements Agent, Conversational, HasTools
             new KnowledgeSearchTool($this->hotel),
             new GetOwnReservationTool($this->reservation),
             new GetGuestMessagesTool($this->hotel),
-            new CreateRecommendationTool($this->hotel, $this->reservation),
+            new CreateRecommendationTool($this->hotel, $this->reservation, $this->source),
         ];
     }
 }

@@ -278,6 +278,8 @@ when:
 
 | What happened | Channel |
 | --- | --- |
+| The Concierge pitched it in a reply and WhatsApp accepted the reply (*2026-10-10*) | `whatsapp` |
+| A proactive message offering it was accepted by WhatsApp (*2026-10-10*) | `whatsapp` |
 | The guest reacted to it in the WhatsApp chat (the concierge recorded their reaction) | `whatsapp` |
 | Staff recorded `delivered`, `declined`, `accepted` or `booked` through [endpoint 1](#1-record-an-outcome-staff-capture) | the request's `channel`, default `face_to_face` |
 | A booking was created carrying the `recommendation_id` | the booking's `channel` if it is one of the four, otherwise `face_to_face` |
@@ -285,8 +287,17 @@ when:
 The nightly matcher never stamps delivery. An inferred booking says nothing
 about whether our offer reached the guest.
 
-Stamping delivery also moves `status` from `pending` to `sent`, and counts one
-`recommendations_delivered` in usage metering.
+Stamping delivery also moves `status` from `approved` to `sent`, and counts one
+`recommendations_delivered` in usage metering. Only approved recommendations
+are ever offered (*2026-10-10*, SPEC-071).
+
+**Pitches** (*2026-10-10*). A Concierge pitch and a proactive offer both write
+a `delivered` outcome (attribution `conversational`, channel `whatsapp`) when
+the message is accepted, exactly like the paths above. The pitch decision behind
+it records how it came about: `opening` is the guest's opening in a
+conversation, or `proactive` for a message the Concierge sent first, and
+`explicit_request` says whether the guest asked for a suggestion. Conversion
+attribution is unchanged.
 
 `delivered_at` means that WhatsApp **accepted** the reply. It does not mean the
 message reached the phone. Meta's delivery and read receipts are not tracked.

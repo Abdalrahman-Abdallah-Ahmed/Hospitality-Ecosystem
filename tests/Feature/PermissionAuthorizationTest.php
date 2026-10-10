@@ -408,3 +408,31 @@ it('lets an employee run booking and activity actions only when their role grant
     'decline cancellation' => ['decline cancellation', Permission::BOOKINGS_UPDATE_STATUS],
     'override capacity' => ['override capacity', Permission::BOOKINGS_OVERRIDE_CAPACITY],
 ]);
+
+it('never gives employees without a role the approve-recommendations permission', function () {
+    expect(Permission::employeeDefaults())->not->toContain(Permission::RECOMMENDATIONS_APPROVE);
+});
+
+it('lets an employee approve and reject recommendations only when their role grants it', function (string $action) {
+    $hotel = rapHotel();
+    [, $reservation] = rapInHouseStay($hotel);
+    $recommendation = rapRecommendation($reservation, rapActivity($hotel), 'pending_approval');
+
+    [$method, $uri, $payload] = match ($action) {
+        'approve' => ['POST', "/api/recommendation/{$recommendation->id}/approve", []],
+        'reject' => ['POST', "/api/recommendation/{$recommendation->id}/reject", ['reason' => 'Closed']],
+        'decide' => ['POST', '/api/recommendations/decide', ['action' => 'approve', 'ids' => [$recommendation->id]]],
+    };
+
+    rapRequest($this, fdEmployee($hotel, Permission::employeeDefaults()), $method, $uri, $payload)->assertForbidden();
+    rapRequest($this, fdEmployee($hotel, [Permission::RECOMMENDATIONS_APPROVE]), $method, $uri, $payload)->assertOk();
+})->with(['approve', 'reject', 'decide']);
+
+it('lets an employee record a guest contact preference only with guests.update', function () {
+    $hotel = rapHotel();
+    [$guest] = rapInHouseStay($hotel);
+    $uri = "/api/guest/{$guest->id}/contact-preference";
+
+    rapRequest($this, fdEmployee($hotel, Permission::employeeDefaults()), 'PUT', $uri, ['proactive_opted_out' => true])->assertForbidden();
+    rapRequest($this, fdEmployee($hotel, [Permission::GUESTS_UPDATE]), 'PUT', $uri, ['proactive_opted_out' => true])->assertOk();
+});

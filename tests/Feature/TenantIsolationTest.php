@@ -22,6 +22,7 @@ use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeDocument;
 use App\Models\PitchDecision;
+use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
@@ -240,6 +241,19 @@ function tenantOwnedModelFactories(): array
             'size' => 10,
             'content_hash' => hash('sha256', uniqid()),
         ]),
+        ProactiveMessage::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return tap((new ProactiveMessage)->forceFill([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'trigger' => 'first_morning',
+                'event_key' => 'first_morning:'.uniqid(),
+                'status' => 'scheduled',
+                'due_at' => now(),
+                'valid_until' => now()->addHours(3),
+            ]))->save();
+        },
         WhatsAppDevice::class => function (Hotel $hotel) {
             $user = User::factory()->role(UserRole::EMPLOYEE)->create();
 
@@ -599,4 +613,32 @@ it('keeps one hotel out of another hotel knowledge documents (SPEC-008 FR-040)',
         ->and($call('GET', '/api/knowledge-documents/deleted')->assertOk()->json('body.data'))->toBe([])
         ->and($documentB->fresh())->title->toBe('B house rules')->deleted_at->toBeNull()
         ->and(KnowledgeDocument::withoutGlobalScope('hotel')->withTrashed()->find($deletedB->id)->trashed())->toBeTrue();
+});
+
+it('keeps one hotel out of another hotel recommendation approvals (SPEC-071 FR-039)', function () {
+    $hotelA = rapHotel();
+    $hotelB = rapHotel();
+    [, $reservationB] = rapInHouseStay($hotelB);
+    $recommendationB = rapRecommendation($reservationB, rapActivity($hotelB), 'pending_approval');
+    $adminA = rapAdmin($hotelA);
+
+    rapRequest($this, $adminA, 'POST', "/api/recommendation/{$recommendationB->id}/approve")->assertForbidden();
+    rapRequest($this, $adminA, 'POST', "/api/recommendation/{$recommendationB->id}/reject")->assertForbidden();
+
+    $bulk = rapRequest($this, $adminA, 'POST', '/api/recommendations/decide', ['action' => 'approve', 'ids' => [$recommendationB->id]])->assertOk();
+
+    expect($bulk->json('body.decided'))->toBe([])
+        ->and($bulk->json('body.skipped'))->toBe([['id' => $recommendationB->id, 'reason' => 'not_found']])
+        ->and(rapRequest($this, $adminA, 'GET', '/api/recommendation?status=pending_approval')->json('body.data'))->toBe([])
+        ->and($recommendationB->fresh()->status->value)->toBe('pending_approval');
+});
+
+it('keeps one hotel out of another hotel guest contact preferences (SPEC-073 FR-039)', function () {
+    $hotelA = rapHotel();
+    $hotelB = rapHotel();
+    [$guestB] = rapInHouseStay($hotelB);
+
+    rapRequest($this, rapAdmin($hotelA), 'PUT', "/api/guest/{$guestB->id}/contact-preference", ['proactive_opted_out' => true])->assertForbidden();
+
+    expect($guestB->fresh()->proactive_opted_out_at)->toBeNull();
 });

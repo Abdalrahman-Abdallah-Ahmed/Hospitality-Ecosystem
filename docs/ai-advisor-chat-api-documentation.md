@@ -94,7 +94,8 @@ These actions pause before they run until the admin confirms (FR-017):
 - checking out (`CheckOutTool`);
 - putting a room out of order (`SetRoomOutOfOrderTool`);
 - cancelling an activity booking (`UpdateBookingStatusTool` with `status: cancelled`);
-- approving a guest's request to cancel a booking (`DecideBookingCancellationTool` with `decision: approve`).
+- approving a guest's request to cancel a booking (`DecideBookingCancellationTool` with `decision: approve`);
+- approving or rejecting an activity recommendation (`DecideRecommendationTool`, *2026-10-10*). One named recommendation per call: bulk approval happens only in the approval queue, and the advisor declines it.
 
 The pause uses `laravel/ai` tool approvals: the model cannot approve its own call. Only the admin's **very next message** can confirm, and only **within 10 minutes**.
 
@@ -138,6 +139,7 @@ Each tool checks, every time it runs, the permission the matching staff endpoint
 | `GetMaintenanceTool` | `tasks.view` | Maintenance tasks and out-of-order rooms |
 | `GetActivitiesTool` | `activities.view` | Activities and their availability |
 | `GetBookingsTool` | `bookings.view` | Activity bookings, incl. pending cancellation requests |
+| `GetRecommendationsForReviewTool` | `recommendations.view` | Recommendations awaiting approval (or another status) by guest, room, reservation, activity or arrival dates (*2026-10-10*) |
 | `GetReportTool` | per report: `dashboard`/`occupancy` → `dashboard.view`; `conversion` → `recommendations.view`; `insights` → `ai_insights.view`; `usage` → admins only | Dashboard figures, occupancy per night (≤ 31 nights), recommendation conversion (no ledger values), AI insights, AI usage (no cost) |
 | `GetStaffTool` | admins only | Users (name, email, role, staff role, team, effective permissions) and staff roles. No passwords or tokens. |
 | `GetHotelSettingsTool` | admins only | Allow-listed settings; AI preferences that look like secrets are dropped |
@@ -166,6 +168,7 @@ Each tool checks, every time it runs, the permission the matching staff endpoint
 | `CreateActivityBookingTool` | `bookings.create` | – | Book an activity; never past capacity; the same guest/activity/day is reported, not duplicated |
 | `UpdateBookingStatusTool` | `bookings.update_status` | **when cancelling** | Confirm, realised, no-show, cancel |
 | `DecideBookingCancellationTool` | `bookings.update_status` | **when approving** | Approve or decline a guest's cancellation request |
+| `DecideRecommendationTool` | `recommendations.approve` | **yes** | Approve or reject one recommendation, with an optional reason (*2026-10-10*) |
 | `CreateKnowledgeArticleTool` | `knowledge_base_articles.create` | – | Save the admin's own text as a hotel article (published unless a draft is asked for) |
 | `UpdateKnowledgeArticleTool` | `knowledge_base_articles.update` | – | Correct a hotel article |
 

@@ -6,9 +6,11 @@ use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
 use App\Enums\DeliveryChannel;
 use App\Enums\OutcomeType;
-use App\Http\Requests\Generic\GenericIndexRequest;
+use App\Http\Requests\DecideRecommendationsRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Requests\RecommendationIndexRequest;
 use App\Http\Requests\RecordRecommendationOutcomeRequest;
+use App\Http\Requests\RejectRecommendationRequest;
 use App\Http\Resources\RecommendationOutcomeResource;
 use App\Http\Resources\RecommendationResource;
 use App\Jobs\GenerateActivityRecommendationsJob;
@@ -17,6 +19,7 @@ use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Services\RecommendationDeliveryService;
 use App\Services\RecommendationOutcomeService;
+use App\Services\Recommendations\RecommendationApprovalService;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
@@ -25,13 +28,33 @@ use RuntimeException;
 class RecommendationController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Display a listing of the resource — also the approval queue
+     * (`status=pending_approval`).
      */
-    public function index(GenericIndexRequest $request)
+    public function index(RecommendationIndexRequest $request)
     {
         $this->authorize('viewAny', Recommendation::class);
 
-        $query = Recommendation::with(['hotel', 'reservation.guest', 'activity']);
+        $query = Recommendation::with(['hotel', 'reservation.guest', 'activity', 'reviewedBy'])
+            ->when($request->statuses(), fn ($query, array $statuses) => $query->whereIn('status', $statuses))
+            ->when($request->input('source'), fn ($query, string $source) => $query->where('source', $source))
+            ->when($request->input('reservation_id'), fn ($query, string $id) => $query->where('reservation_id', $id))
+            ->when($request->input('activity_id'), fn ($query, string $id) => $query->where('activity_id', $id))
+            ->when($request->input('guest_id'), fn ($query, string $id) => $query->whereHas('reservation', fn ($reservation) => $reservation->where('guest_id', $id)))
+            ->when($request->input('arrival_from'), fn ($query, string $date) => $query->whereHas('reservation', fn ($reservation) => $reservation->whereDate('arrival_date', '>=', $date)))
+            ->when($request->input('arrival_to'), fn ($query, string $date) => $query->whereHas('reservation', fn ($reservation) => $reservation->whereDate('arrival_date', '<=', $date)));
+
+        // The reservation's arrival is not a column of recommendations, so it
+        // is ordered here and kept out of the generic sort.
+        $sort = $request->string('sort')->toString();
+
+        if (ltrim($sort, '-') === RecommendationIndexRequest::ARRIVAL_SORT) {
+            $query->orderBy(
+                Reservation::select('arrival_date')->whereColumn('reservations.id', 'recommendations.reservation_id'),
+                str_starts_with($sort, '-') ? 'desc' : 'asc',
+            );
+            $request->merge(['sort' => null]);
+        }
 
         $recommendations = GenericQuery::apply($query, $request);
 
@@ -45,7 +68,7 @@ class RecommendationController extends Controller
     {
         $this->authorize('view', $recommendation);
 
-        $recommendation->load(['hotel', 'reservation.guest', 'activity']);
+        $recommendation->load(['hotel', 'reservation.guest', 'activity', 'reviewedBy']);
 
         return apiResponse('Recommendation fetched successfully.', 200, RecommendationResource::make($recommendation));
     }
@@ -53,7 +76,7 @@ class RecommendationController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(GenericUpdateRequest $request, Recommendation $recommendation): JsonResponse
+    public function update(GenericUpdateRequest $request, Recommendation $recommendation, RecommendationApprovalService $approvals): JsonResponse
     {
         $this->authorize('update', $recommendation);
 
@@ -79,9 +102,66 @@ class RecommendationController extends Controller
             return apiResponse("The selected {$invalidRelation} does not belong to you.", 403);
         }
 
-        $recommendation->update($validated);
+        // Changing what the guest would be offered sends an approved
+        // recommendation back for review (SPEC-071 FR-006a). Approval itself
+        // only changes through approve() and reject().
+        try {
+            $approvals->applyEdit($recommendation, unsetAttributes($validated, ['source', 'reviewed_by_user_id', 'reviewed_at', 'review_reason']));
+        } catch (RuntimeException $e) {
+            return apiResponse($e->getMessage(), 422);
+        }
 
-        return apiResponse('Recommendation updated successfully.', 200, RecommendationResource::make($recommendation->load(['hotel', 'reservation.guest', 'activity'])));
+        return apiResponse('Recommendation updated successfully.', 200, RecommendationResource::make($recommendation->load(['hotel', 'reservation.guest', 'activity', 'reviewedBy'])));
+    }
+
+    /**
+     * Approve a recommendation, so the Concierge may offer it to the guest.
+     */
+    public function approve(Recommendation $recommendation, RecommendationApprovalService $approvals): JsonResponse
+    {
+        $this->authorize('approve', $recommendation);
+
+        try {
+            $approvals->approve($recommendation, request()->user());
+        } catch (RuntimeException $e) {
+            return apiResponse($e->getMessage(), 422);
+        }
+
+        return apiResponse('Recommendation approved successfully.', 200, RecommendationResource::make($recommendation->load(['reservation.guest', 'activity', 'reviewedBy'])));
+    }
+
+    /**
+     * Reject a recommendation before any guest hears it.
+     */
+    public function reject(RejectRecommendationRequest $request, Recommendation $recommendation, RecommendationApprovalService $approvals): JsonResponse
+    {
+        $this->authorize('approve', $recommendation);
+
+        try {
+            $approvals->reject($recommendation, $request->user(), $request->validated('reason'));
+        } catch (RuntimeException $e) {
+            return apiResponse($e->getMessage(), 422);
+        }
+
+        return apiResponse('Recommendation rejected successfully.', 200, RecommendationResource::make($recommendation->load(['reservation.guest', 'activity', 'reviewedBy'])));
+    }
+
+    /**
+     * Approve or reject several recommendations at once. Each is decided and
+     * audited on its own; ones that cannot be decided are reported, not fatal.
+     */
+    public function decide(DecideRecommendationsRequest $request, RecommendationApprovalService $approvals): JsonResponse
+    {
+        $this->authorize('approve', Recommendation::class);
+
+        $result = $approvals->decideMany(
+            $request->validated('ids'),
+            $request->validated('action'),
+            $request->user(),
+            $request->validated('reason'),
+        );
+
+        return apiResponse('Recommendations decided successfully.', 200, $result);
     }
 
     /**

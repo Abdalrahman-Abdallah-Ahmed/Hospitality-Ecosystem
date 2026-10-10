@@ -20,7 +20,7 @@ class GetRecommendationsTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return "Retrieve previously generated activity recommendations for the guest's own reservation, including the recommended activity, the reason it was suggested, predicted confidence, and current status. Never returns another guest's recommendations.";
+        return "Retrieve the activity recommendations already offered to this guest, for their own reservation, including the recommended activity, the reason it was suggested, predicted confidence, and current status. Never returns another guest's recommendations.";
     }
 
     /**
@@ -32,7 +32,11 @@ class GetRecommendationsTool implements Tool
             return 'No reservation found for this guest.';
         }
 
+        // Only what the guest was actually offered (SPEC-071): nothing awaiting
+        // approval, refused by an approver, or approved but not yet offered,
+        // which the Concierge may only reach through the pitch tool.
         $recommendations = Recommendation::where('reservation_id', $this->reservation->id)
+            ->where(fn ($query) => $query->whereNotNull('delivered_at')->orWhereNotNull('pitch_decision_id'))
             ->with('activity')
             ->orderByDesc('recommended_at')
             ->get()

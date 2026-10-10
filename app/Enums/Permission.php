@@ -62,6 +62,7 @@ enum Permission: string
     case RECOMMENDATIONS_DELETE = 'recommendations.delete';
     case RECOMMENDATIONS_GENERATE = 'recommendations.generate';
     case RECOMMENDATIONS_RECORD_OUTCOME = 'recommendations.record_outcome';
+    case RECOMMENDATIONS_APPROVE = 'recommendations.approve';
 
     case RESERVATIONS_VIEW = 'reservations.view';
     case RESERVATIONS_CREATE = 'reservations.create';
@@ -131,6 +132,8 @@ enum Permission: string
      *   are never defaults: both change which rooms can be sold.
      * - Knowledge documents are never a default, not even viewing: whatever is
      *   uploaded, corrected or switched on is what the guest AI tells guests.
+     * - Approving recommendations is never a default: it decides what the hotel
+     *   tells guests, so employees only get it through a staff role.
      *
      * @return list<self>
      */

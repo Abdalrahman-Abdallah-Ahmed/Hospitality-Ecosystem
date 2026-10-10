@@ -6,6 +6,7 @@ use App\Ai\Agents\RecommendationAgent;
 use App\Enums\ActorKind;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
+use App\Enums\RecommendationSource;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Services\Metering\MeteringService;
@@ -44,6 +45,7 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
         $agent = RecommendationAgent::make(
             hotel: $this->reservation->hotel,
             reservation: $this->reservation,
+            source: RecommendationSource::STAFF_REQUEST,
         );
 
         $guestName = trim($this->reservation->guest->first_name.' '.$this->reservation->guest->last_name);

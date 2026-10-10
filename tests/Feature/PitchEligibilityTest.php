@@ -105,8 +105,8 @@ function pitchActivity(Hotel $hotel, array $attributes = []): Activity
 }
 
 /**
- * What RecommendationAgent leaves behind: a pending recommendation for an
- * activity of this hotel. Pitching offers these and nothing else.
+ * A recommendation an approver has approved, for an activity of this hotel.
+ * Pitching offers these and nothing else.
  */
 function pitchRecommendation(Hotel $hotel, Reservation $reservation, string $name, array $recommendation = [], array $activity = []): Recommendation
 {
@@ -115,6 +115,7 @@ function pitchRecommendation(Hotel $hotel, Reservation $reservation, string $nam
         'reservation_id' => $reservation->id,
         'activity_id' => pitchActivity($hotel, ['name' => $name, ...$activity])->id,
         'reason' => 'Generated for this guest',
+        'status' => RecommendationStatus::APPROVED,
         'priority' => 0,
         'recommended_at' => now()->subHours(2),
         ...$recommendation,
@@ -443,7 +444,7 @@ it('allows a suggestion on explicit request after the cap is reached', function 
         ->and(gateOf($turn, PitchGate::PITCH_CAP)['passed'])->toBeTrue();
 });
 
-it('blocks after any refusal this stay, including a low-confidence one', function () {
+it('does not close the stay on a refusal that was never an unsolicited pitch, but never offers that activity again', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
     $activity = pitchActivity($hotel);
@@ -456,11 +457,24 @@ it('blocks after any refusal this stay, including a low-confidence one', functio
         'status' => RecommendationStatus::REJECTED,
         'recommended_at' => now()->subDay(),
     ]);
+    $offered = pitchRecommendation($hotel, $reservation, 'Cooking class');
+    $again = Recommendation::create([
+        'hotel_id' => $hotel->id,
+        'reservation_id' => $reservation->id,
+        'activity_id' => $activity->id,
+        'status' => RecommendationStatus::APPROVED,
+        'recommended_at' => now(),
+    ]);
     classifierSays(['opening' => 'evening_plans', 'evidence_quote' => 'this evening']);
 
     $turn = decideTurn($guest, $hotel, $reservation);
 
-    expect(gateOf($turn, PitchGate::DECLINED_THIS_STAY)['passed'])->toBeFalse();
+    // The decline-retry rule counts unsolicited pitches (DeclineRetryTest);
+    // the refused activity itself is never offered again (FR-019).
+    expect(gateOf($turn, PitchGate::RETRY_USED)['passed'])->toBeTrue()
+        ->and(gateOf($turn, PitchGate::RETRY_WINDOW_CLOSED)['passed'])->toBeTrue()
+        ->and(collect($turn->shortlist)->pluck('recommendationId')->all())->toBe([$offered->id])
+        ->and(exclusionOf($turn, $activity))->toMatchArray(['recommendation_id' => $again->id, 'reason' => 'declined_activity']);
 });
 
 // --- the shortlist ----------------------------------------------------------
@@ -581,7 +595,7 @@ it('keeps the shortlist to the configured size', function () {
 
 // --- generating inline, when nobody has yet ---------------------------------
 
-it('generates recommendations inline for a reservation that has never had any', function () {
+it('generates recommendations inline for review, and does not offer them in the same turn', function () {
     $hotel = pitchHotel();
     [$guest, $reservation] = pitchGuest($hotel);
     $activity = pitchActivity($hotel, ['name' => 'Sunset Catamaran']);
@@ -606,8 +620,11 @@ it('generates recommendations inline for a reservation that has never had any', 
 
     $turn = decideTurn($guest, $hotel, $reservation);
 
-    expect($turn->eligible)->toBeTrue()
-        ->and(collect($turn->shortlist)->pluck('activityId')->all())->toBe([$activity->id])
+    // What generation makes waits for an approver (SPEC-071 FR-014).
+    expect($turn->eligible)->toBeFalse()
+        ->and($turn->shortlist)->toBe([])
+        ->and(gateOf($turn, PitchGate::NO_CANDIDATES))->toMatchArray(['passed' => false, 'detail' => 'Nothing approved; 1 pending approval.'])
+        ->and(Recommendation::where('reservation_id', $reservation->id)->sole()->status)->toBe(RecommendationStatus::PENDING_APPROVAL)
         ->and(MeterEvent::where('feature_code', MeterFeature::RECOMMENDATIONS_GENERATED->value)
             ->where('source_id', $reservation->id)->value('quantity'))->toBe(1);
 });
@@ -671,7 +688,7 @@ it('writes a decision row for an ineligible turn', function () {
         ->and($decision->eligible)->toBeFalse()
         ->and($decision->result)->toBe(PitchResult::INELIGIBLE)
         ->and($decision->completed_at)->not->toBeNull()
-        ->and($decision->rules_version)->toBe('1.0')
+        ->and($decision->rules_version)->toBe('2.0')
         ->and($decision->signals['party'])->toBe(['adults' => 2, 'children' => 1]);
 });
 

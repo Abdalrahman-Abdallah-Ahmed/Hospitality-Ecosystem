@@ -52,7 +52,18 @@ class Guest extends Model
         // Written only by GuestContactService; deliberately not fillable.
         'first_contacted_at' => 'datetime',
         'last_contacted_at' => 'datetime',
+        // Written only by GuestContactPreferenceService; deliberately not fillable.
+        'proactive_opted_out_at' => 'datetime',
     ];
+
+    /**
+     * The guest asked for no proactive messages and no unsolicited offers.
+     * Answers to their own questions continue.
+     */
+    public function isProactiveOptedOut(): bool
+    {
+        return $this->proactive_opted_out_at !== null;
+    }
 
     protected static function booted(): void
     {
