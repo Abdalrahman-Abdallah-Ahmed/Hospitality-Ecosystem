@@ -102,6 +102,14 @@ Successful custom API responses use this structure:
   "maintenance_team_id": "uuid",
   "maintenance_task_category_id": "uuid",
   "inspection_required": false,
+  "proactive_settings": {
+    "enabled": false,
+    "triggers": { "first_morning": true, "mid_stay": true, "upcoming_activity": true, "recommendation_approved": true },
+    "quiet_hours": { "start": "21:00", "end": "09:00" },
+    "daily_cap": 1,
+    "milestone_time": "10:00",
+    "reminder": { "morning_cutoff": "12:00", "evening_before_at": "18:00", "hours_before": 4 }
+  },
   "created_at": "2026-07-25T21:39:10.000000Z",
   "updated_at": "2026-07-25T21:39:10.000000Z",
   "deleted_at": null
@@ -130,6 +138,20 @@ Field notes for the UI:
 - `inspection_required` (*added 2026-10-04*, default `false`): when `true`, a completed
   clean creates an inspection task and a room counts as ready only once inspected. Rooms
   cleaned before it was turned on still count as ready.
+- `proactive_settings` (*added 2026-10-10*, SPEC-073): whether the WhatsApp Concierge may
+  message guests first, and when. Always returned in full, with every unset value at its
+  default; **off by default**. All times are hotel-local `H:i`.
+  - `triggers`: `first_morning` (the morning after check-in), `mid_stay` (the middle day of
+    a stay of 4+ nights), `upcoming_activity` (a reminder of a confirmed booking),
+    `recommendation_approved` (an offer as soon as a recommendation is approved for an
+    in-house guest who has not been pitched yet).
+  - `quiet_hours`: nothing is sent in this window; a message due then waits until it ends.
+  - `daily_cap` (1–3): proactive messages per guest per hotel-local day.
+  - `milestone_time`: when milestone messages are due.
+  - `reminder`: activities starting before `morning_cutoff` are reminded the evening
+    before at `evening_before_at`; later ones `hours_before` hours ahead.
+  - Messages only go inside WhatsApp's 24-hour window — never as templates or email. See
+    [proactive-messages-api-documentation.md](proactive-messages-api-documentation.md).
 - Hotels use `SoftDeletes`, so `DELETE` does **not** permanently erase the row — see the restore behavior under [Create a Hotel](#2-create-a-hotel).
 - No relations are eager-loaded on this object.
 
@@ -317,6 +339,12 @@ category must be sent with a new housekeeping team. On create these five fields 
 ignored — the defaults are created with the hotel.
 
 **`inspection_required`** (boolean) is admin-only like every hotel setting.
+
+**`proactive_settings`** (object, admin-only, *2026-10-10*). Send only what changes; it is
+merged over the stored settings, e.g. `{"proactive_settings": {"enabled": true}}` or
+`{"proactive_settings": {"quiet_hours": {"start": "22:30"}}}`. `422` with the first error
+for a bad time (`H:i`), `daily_cap` outside 1–3, `reminder.hours_before` outside 1–24, or an
+unknown key (`Unknown proactive setting [send_at_midnight].`).
 
 **Note:** there is currently **no server-side guard preventing `owner_id` from being changed** on update. If an owning admin includes `owner_id` in their payload, it will be validated (must exist in `users.id`) and saved as-is — which would transfer the hotel away from themselves. The frontend should not include `owner_id` in a regular admin's edit form; reserve that field for a super-admin "reassign owner" feature, if one is built.
 

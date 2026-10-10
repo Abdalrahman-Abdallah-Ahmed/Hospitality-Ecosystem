@@ -63,6 +63,7 @@ records nothing.
 | `bookings_created` | `BookingService::create()` |
 | `bookings_realised` | `BookingService::realise()` |
 | `transaction_rows_imported` | `TransactionsImport` |
+| `proactive_messages_sent` | `SendProactiveMessageJob`, once per message WhatsApp accepted (*2026-10-10*). Sending makes no AI call, so it has no AI cost; the guest's reply is metered as an ordinary `ai_messages` turn. |
 
 Nothing bills or gates on these. They accumulate so the eventual "volume or
 bookings?" pricing question has evidence behind it.

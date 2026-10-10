@@ -626,7 +626,10 @@ These are recorded here so they aren't lost:
   in, or when all rooms do?
 - **SPEC-030:** is inspection mandatory per hotel? What is the stay-over cleaning rule?
 - **SPEC-041:** are hourly time slots MVP, or only daily capacity?
-- **SPEC-044 / SPEC-073:** WhatsApp template messages outside the 24 h window.
+- **SPEC-044 / SPEC-073:** WhatsApp template messages outside the 24 h window. *Answered:*
+  no templates. SPEC-044 notices fall back to email (constitution v2.1.0); SPEC-073
+  proactive messages go only inside the window and are skipped outside it, never by email
+  (specs/010, 2026-10-09).
 - **SPEC-060:** image extraction method (OCR vs Gemini vision).
 
 ---
