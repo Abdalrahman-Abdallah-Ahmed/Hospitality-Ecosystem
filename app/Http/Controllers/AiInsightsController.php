@@ -6,6 +6,7 @@ use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Resources\AiInsightsResource;
 use App\Jobs\CreateAiInsightsJob;
 use App\Models\AiInsights;
+use App\Support\Knowledge\KnowledgeSources;
 use App\Support\RequestRules\GenericQuery;
 
 class AiInsightsController extends Controller
@@ -18,7 +19,14 @@ class AiInsightsController extends Controller
 
         $insights = GenericQuery::apply($query, $request);
 
-        return apiResponse('AI insights fetched successfully.', 200, AiInsightsResource::collection($insights));
+        // Whether each cited source can still be opened, for the whole page
+        // in one query per source type (SPEC-090).
+        $availability = KnowledgeSources::availability(collect($insights->items())->flatMap(fn (AiInsights $insight) => $insight->citations ?? []));
+
+        $resources = AiInsightsResource::collection($insights);
+        $resources->collection->each(fn (AiInsightsResource $resource) => $resource->withCitationAvailability($availability));
+
+        return apiResponse('AI insights fetched successfully.', 200, $resources);
     }
 
     public function store(GenericIndexRequest $request)

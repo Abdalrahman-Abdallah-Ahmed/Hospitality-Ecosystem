@@ -543,7 +543,7 @@ it('says a seat was never counted rather than reporting it as zero', function ()
         'hotel_group_id' => $group->id,
     ]));
 
-    $described = app(UsageReport::class)->describe($group, collect(), collect());
+    $described = app(UsageReport::class)->describe($group, collect(), collect(), collect(), now()->startOfMonth());
 
     // The account owns a hotel. Reporting 0 would be a worse answer than
     // admitting nothing has counted yet.

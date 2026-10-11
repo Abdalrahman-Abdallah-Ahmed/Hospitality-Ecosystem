@@ -22,12 +22,28 @@ use Illuminate\Support\Collection;
  * filter, because who is allowed to see what is the one decision that must be
  * made explicitly at each endpoint rather than inherited from a helper.
  *
- * Nothing here touches ai_usage_logs. Provider cost is our cost of goods and
- * belongs only to the super-admin cost report — a hotel that could see it
- * could compute our margin on their own contract.
+ * ai_usage_logs is read only through AiUsageSummary, which selects request
+ * counts and token sums and never cost, model or provider. Provider cost is
+ * our cost of goods and belongs only to the super-admin cost report — a
+ * hotel that could see it could compute our margin on their own contract.
  */
 class UsageReport
 {
+    public function __construct(
+        private readonly AiUsageSummary $ai,
+    ) {}
+
+    /**
+     * AI requests and tokens over a date range, grouped by account — counts
+     * only, never cost (SPEC-091).
+     *
+     * @return Collection<string, Collection<int, object>>
+     */
+    public function aiTotals(Carbon $from, Carbon $to, ?string $accountId = null): Collection
+    {
+        return $this->ai->totals($from, $to, $accountId);
+    }
+
     /**
      * Event-derived usage summed over a date range, grouped by account.
      *
@@ -70,14 +86,15 @@ class UsageReport
      *
      * @param  Collection<int, MeterEvent>  $totals
      * @param  Collection<int, UsageCounter>  $seats
+     * @param  Collection<int, object>  $ai  this account's rows from aiTotals()
      */
-    public function describe(HotelGroup $account, Collection $totals, Collection $seats): array
+    public function describe(HotelGroup $account, Collection $totals, Collection $seats, Collection $ai, Carbon $from): array
     {
         $recorded = $totals->mapWithKeys(fn ($row) => [
             $row->feature_code->value => (int) $row->total,
         ])->all();
 
-        $features = $this->everyFeature($recorded);
+        $features = $this->everyFeature($recorded, $from);
 
         return [
             'hotel_group_id' => $account->id,
@@ -85,6 +102,7 @@ class UsageReport
             'seats' => $this->everySeat($seats),
             'features' => $features,
             'recommendations' => $this->recommendationPair($features),
+            'ai' => $this->ai->describe($account, $ai),
         ];
     }
 
@@ -145,10 +163,14 @@ class UsageReport
      * are excluded here — they are not event-derived and are reported
      * separately.
      *
+     * A feature added after metering began carries the date it was first
+     * measured. A range starting earlier gets a note, so the months before
+     * are not read as no activity: nothing was counting then.
+     *
      * @param  array<string, int>  $recorded
      * @return array<string, array<string, mixed>>
      */
-    private function everyFeature(array $recorded): array
+    private function everyFeature(array $recorded, Carbon $from): array
     {
         $features = [];
 
@@ -166,7 +188,15 @@ class UsageReport
                 'used' => $measured ? ($recorded[$feature->value] ?? 0) : null,
                 'unit' => $feature->unit(),
                 'measured' => $measured,
+                'measured_since' => $feature->measuredSince()?->toDateString(),
             ];
+
+            if ($feature->measuredSince() && $from->lt($feature->measuredSince())) {
+                $features[$feature->publicCode()]['note'] = sprintf(
+                    'Measured from %s; earlier activity was not counted.',
+                    $feature->measuredSince()->toDateString(),
+                );
+            }
         }
 
         return $features;

@@ -2,6 +2,7 @@
 
 use App\Ai\Agents\GuestMemoryAgent;
 use App\Enums\AiTriggerKind;
+use App\Enums\MeterFeature;
 use App\Exceptions\AiSpendCeilingExceededException;
 use App\Jobs\ExtractGuestMemoriesJob;
 use App\Jobs\RetryGuestMemoryExtractionsJob;
@@ -11,6 +12,7 @@ use App\Models\Guest;
 use App\Models\GuestMemory;
 use App\Models\GuestMemoryExtraction;
 use App\Models\Hotel;
+use App\Models\MeterEvent;
 use App\Models\Reservation;
 use App\Models\Stay;
 use App\Services\AiCost\AiSpendCeiling;
@@ -303,4 +305,73 @@ it('audits the extraction as an AI run and an AI change, without the memory\'s w
         ->and(memExtraction($guest)->ai_run_id)->toBe($run->id)
         ->and(json_encode($event->toArray()))->not->toContain('shellfish')
         ->and(json_encode($change->getAttributes()))->not->toContain('shellfish');
+});
+
+function memMetered(): int
+{
+    return (int) MeterEvent::query()->where('feature_code', MeterFeature::GUEST_MEMORY_EXTRACTIONS->value)->sum('quantity');
+}
+
+it('meters a completed extraction once, memories found or not', function () {
+    $hotel = cmaHotel();
+    [$guest, $reservation, $stay] = memStay($hotel);
+    memAgentSays([]);
+
+    memCheckOut($stay);
+    memRun($guest, $reservation);
+
+    $event = MeterEvent::query()->where('feature_code', MeterFeature::GUEST_MEMORY_EXTRACTIONS->value)->sole();
+
+    expect(memExtraction($guest)->status->value)->toBe('extracted')
+        ->and($event->quantity)->toBe(1)
+        ->and($event->idempotency_key)->toBe('guest-memory-extraction:'.memExtraction($guest)->id)
+        ->and($event->hotel_id)->toBe($hotel->id);
+
+    // A retry that reaches the AI again after the event was written still
+    // counts once: the key is the extraction, not the attempt.
+    memExtraction($guest)->forceFill(['status' => 'pending_retry', 'retry_at' => now()])->save();
+    memAgentSays([memCreate('Vegetarian.')]);
+    memRun($guest, $reservation);
+
+    expect(memMetered())->toBe(1);
+});
+
+it('does not meter an extraction that never reached the AI or did not finish', function (string $case) {
+    $hotel = cmaHotel();
+
+    if ($case === 'disabled') {
+        $hotel->forceFill(['guest_memories_enabled' => false])->save();
+    }
+
+    [, , $stay] = memStay($hotel, talked: $case !== 'no_messages');
+
+    match ($case) {
+        'spend_ceiling' => $this->mock(AiSpendCeiling::class, fn ($mock) => $mock->shouldReceive('assertNotExceeded')
+            ->andThrow(new AiSpendCeilingExceededException($hotel->hotelGroup, 50.0, 50.0))),
+        'failed' => GuestMemoryAgent::fake(fn () => throw new RuntimeException('provider down')),
+        default => memAgentSays([memCreate('Vegetarian.')]),
+    };
+
+    memCheckOut($stay);
+
+    expect(memMetered())->toBe(0);
+})->with(['no_messages', 'disabled', 'spend_ceiling', 'failed']);
+
+it('reports when guest memory extractions started being measured', function () {
+    $hotel = cmaHotel();
+    $since = MeterFeature::GUEST_MEMORY_EXTRACTIONS->measuredSince();
+
+    $features = fn (string $from) => $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(cmaAdmin($hotel), 'sanctum')
+        ->getJson('/api/usage?from='.$from.'&to='.$since->addMonth()->toDateString())
+        ->assertOk()
+        ->json('body.features');
+
+    $before = $features($since->subMonth()->toDateString());
+
+    expect($before['guest_memory_extractions']['measured_since'])->toBe($since->toDateString())
+        ->and($before['guest_memory_extractions']['note'])->toBe("Measured from {$since->toDateString()}; earlier activity was not counted.")
+        ->and($before['ai_messages']['measured_since'])->toBeNull()
+        ->and($before['ai_messages'])->not->toHaveKey('note');
+
+    expect($features($since->toDateString())['guest_memory_extractions'])->not->toHaveKey('note');
 });

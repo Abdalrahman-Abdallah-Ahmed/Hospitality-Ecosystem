@@ -27,4 +27,19 @@ enum KnowledgeSourceType: string
             default => throw new InvalidArgumentException('Not a knowledge source: '.$model::class),
         };
     }
+
+    /**
+     * The model a source of this type is stored in — the inverse of
+     * fromModel().
+     *
+     * @return class-string<Model>
+     */
+    public function modelClass(): string
+    {
+        return match ($this) {
+            self::DOCUMENT => KnowledgeDocument::class,
+            self::ARTICLE => KnowledgeBaseArticle::class,
+            self::POLICY => HotelPolicy::class,
+        };
+    }
 }

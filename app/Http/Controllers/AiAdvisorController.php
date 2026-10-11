@@ -6,6 +6,7 @@ use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
+use App\Exceptions\AiSpendCeilingExceededException;
 use App\Exceptions\PendingConfirmationChangedException;
 use App\Http\Requests\AiAdvisorChatRequest;
 use App\Services\Ai\AdvisorTurn;
@@ -77,6 +78,11 @@ class AiAdvisorController extends Controller
             return apiResponse('The actions waiting for confirmation have changed. Review them again.', 409, [
                 'pending_confirmation' => null,
             ]);
+        } catch (AiSpendCeilingExceededException) {
+            // The exception's own message names the account's spend and
+            // ceiling — cost of goods. The admin is told only that the
+            // assistant is unavailable, as a guest is on WhatsApp.
+            return apiResponse('The AI assistant is temporarily unavailable. Try again later.', 503);
         }
 
         $metering->safely(fn (MeteringService $m) => $m->recordForHotel(

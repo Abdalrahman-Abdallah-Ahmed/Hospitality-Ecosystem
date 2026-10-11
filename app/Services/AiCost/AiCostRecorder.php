@@ -2,6 +2,7 @@
 
 namespace App\Services\AiCost;
 
+use App\Enums\AiAgentName;
 use App\Enums\AiOperation;
 use App\Models\AiModelPrice;
 use App\Models\AiUsageLog;
@@ -95,6 +96,10 @@ class AiCostRecorder
             // The run this call belongs to, so the run's usage is summed from
             // what was measured (SPEC-083).
             'ai_run_id' => AiRun::id(),
+            // The capability it is reported under: the run's agent, so work
+            // nested in a turn (the classifier, a search embedding) counts
+            // toward the turn. Outside any run it is unattributed, visibly.
+            'capability' => (AiRun::agent() ?? AiAgentName::UNATTRIBUTED)->value,
             'occurred_at' => $occurredAt,
         ]);
     }

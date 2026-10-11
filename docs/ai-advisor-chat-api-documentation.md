@@ -139,7 +139,7 @@ Each tool checks, every time it runs, the permission the matching staff endpoint
 | `GetActivitiesTool` | `activities.view` | Activities and their availability |
 | `GetBookingsTool` | `bookings.view` | Activity bookings, incl. pending cancellation requests |
 | `GetRecommendationsForReviewTool` | `recommendations.view` | Recommendations awaiting approval (or another status) by guest, room, reservation, activity or arrival dates (*2026-10-10*) |
-| `GetReportTool` | per report: `dashboard`/`occupancy` → `dashboard.view`; `conversion` → `recommendations.view`; `insights` → `ai_insights.view`; `usage` → admins only | Dashboard figures, occupancy per night (≤ 31 nights), recommendation conversion (no ledger values), AI insights, AI usage (no cost) |
+| `GetReportTool` | per report: `dashboard`/`occupancy` → `dashboard.view`; `conversion` → `recommendations.view`; `insights` → `ai_insights.view`; `usage` → admins only | Dashboard figures, occupancy per night (≤ 31 nights), recommendation conversion (no ledger values), AI insights, AI usage: requests and tokens per AI capability and per hotel (no cost, model or provider) |
 | `GetStaffTool` | admins only | Users (name, email, role, staff role, team, effective permissions) and staff roles. No passwords or tokens. |
 | `GetHotelSettingsTool` | admins only | Allow-listed settings; AI preferences that look like secrets are dropped |
 
@@ -181,7 +181,7 @@ Writes go through the same services as the staff endpoints, with the same rules 
   the [conversation viewer](conversations-api-documentation.md) in the dashboard.
 - No change to users, staff roles, permissions or hotel settings.
 - No hotel policy, knowledge document or shared global knowledge writes.
-- No transaction ledger, no AI provider cost or margin.
+- No transaction ledger, no AI provider cost or margin. Asked what AI costs, the advisor says cost is not available in this workspace and offers the usage report. It never estimates a cost from token counts.
 - No override of overbooking or activity capacity.
 - No reservation no-show yet: it arrives with SPEC-012.
 
@@ -205,6 +205,7 @@ Every AI write is in the audit trail as `actor_kind: ai_agent` with the admin as
 | `409` | `pending_ids` do not match what waits | `"The actions waiting for confirmation have changed. Review them again."`, `body.pending_confirmation` |
 | `422` | `decision` with nothing waiting | `"There is nothing waiting for confirmation."` |
 | `422` | Validation (missing `message` and `decision`, etc.) | Laravel's default shape: `{"message": "...", "errors": {...}}` |
+| `503` | **New.** The account has reached its daily AI usage limit, so the assistant was not called | `{"message": "The AI assistant is temporarily unavailable. Try again later.", "code": 503, "body": null}`. The amounts never appear. Show `message` inline, keep the conversation open and allow a retry; nothing was metered |
 
 ## Example cURL Requests
 

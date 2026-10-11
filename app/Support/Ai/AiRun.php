@@ -49,6 +49,15 @@ class AiRun
         return self::$current['id'] ?? null;
     }
 
+    /**
+     * The capability the run belongs to — what every provider call inside it
+     * is reported under (SPEC-091).
+     */
+    public static function agent(): ?AiAgentName
+    {
+        return self::$current['agent'] ?? null;
+    }
+
     public static function hotelId(): ?string
     {
         return self::$current['hotel_id'] ?? null;

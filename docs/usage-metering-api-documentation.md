@@ -45,6 +45,7 @@ renamed, or the history stops adding up. They live in `App\Enums\MeterFeature`.
 | `recommendations_generated` | `GenerateActivityRecommendationsJob` |
 | `embeddings_generated` | `SyncKnowledgeChunksJob`, `IndexKnowledgeDocumentJob` |
 | `knowledge_pages_read` | `IndexKnowledgeDocumentJob`, once per image or scanned PDF page read by AI vision (unit `pages`, label "Knowledge pages read by AI") |
+| `guest_memory_extractions` | `ExtractGuestMemoriesJob`, once per completed extraction (one per guest per reservation), whether or not any memory was found. Keyed `guest-memory-extraction:{extraction id}`, so retries never count twice. Extractions skipped before any AI call (no messages, feature switched off), stopped by the spend ceiling, or failed are not counted. Measured from 2026-10-11, with no backfill (unit `extractions`, label "Guest memory extractions") |
 
 `embeddings_generated` is the one people forget: no visible output, real
 money, and re-run in full every time an article is edited.
@@ -138,6 +139,10 @@ Totals are summed from `meter_events`, not read from the counters: counters
 are keyed by whole periods and this endpoint answers about an arbitrary range.
 Seats come from the counter, since they are not event-derived.
 
+Each entry in `accounts[]` also carries the same `ai` block as the tenant
+report below: AI requests and tokens, with no cost. Cost is only in
+`/api/admin/ai-cost`.
+
 #### Response
 
 ```json
@@ -202,11 +207,20 @@ Two properties of this route matter more than its shape, and both are tested:
 can be supplied is a filter that can be changed, and the first person to try a
 different UUID would be reading another hotel's numbers.
 
-**It never returns cost.** `ai_usage_logs` is not read here at all. Provider
+**It never returns cost, and never names the model or provider.** Provider
 cost is our cost of goods, and an account that can see what it costs to serve
 can compute our margin on its own contract — that belongs in a commercial
-conversation, not a dashboard field. A test asserts the response body contains
-no mention of cost, margin, or contract.
+conversation, not a dashboard field. The model is withheld too: model plus
+token counts is enough to look the price up.
+
+AI requests and tokens come from `App\Services\Metering\AiUsageSummary`, the
+only hotel-facing reader of `ai_usage_logs`. Its query selects counts and token
+sums only, never `cost_usd`, the estimate flag, `model` or `provider`. Three
+automated checks back this up:
+
+- `tests/Feature/CostVisibilityTest.php` scans `app/` so that only allowlisted classes can reference cost data at all.
+- The same test calls every hotel-facing `GET` route, and every Admin AI read tool, against seeded sentinel cost, model and provider values.
+- `UsageMeteringTest` asserts this body mentions no cost, margin or contract.
 
 It also returns **no plan and no limit**. There are no plans yet (WP-6 is
 deferred), and showing a limit that nothing enforces teaches people to trust a
@@ -240,10 +254,50 @@ WP-9 conversation.
       "delivered_basis": "measured",
       "delivered_reason": "…"
     },
+    "ai": {
+      "requests": 312,
+      "input_tokens": 401230,
+      "output_tokens": 48770,
+      "total_tokens": 450000,
+      "by_capability": {
+        "concierge":       { "label": "Concierge",          "requests": 190, "input_tokens": 280000, "output_tokens": 31000, "total_tokens": 311000 },
+        "admin_advisor":   { "label": "Admin AI",           "requests": 40,  "input_tokens": 60000,  "output_tokens": 9000,  "total_tokens": 69000 },
+        "recommendation":  { "label": "Recommendations",    "requests": 12,  "input_tokens": 20000,  "output_tokens": 4000,  "total_tokens": 24000 },
+        "insights":        { "label": "Insights",           "requests": 6,   "input_tokens": 15000,  "output_tokens": 2000,  "total_tokens": 17000 },
+        "document_vision": { "label": "Document reading",   "requests": 4,   "input_tokens": 9000,   "output_tokens": 1500,  "total_tokens": 10500 },
+        "guest_memory":    { "label": "Guest memories",     "requests": 14,  "input_tokens": 14000,  "output_tokens": 1270,  "total_tokens": 15270 },
+        "knowledge":       { "label": "Knowledge indexing", "requests": 46,  "input_tokens": 3230,   "output_tokens": 0,     "total_tokens": 3230 }
+      },
+      "by_hotel": {
+        "019f…": { "hotel": "Grand Harbor Hotel", "requests": 312, "input_tokens": 401230, "output_tokens": 48770, "total_tokens": 450000 }
+      },
+      "basis": "Counted from every AI provider call made for this account. Calls made inside a Concierge turn (classification, knowledge search) are counted under Concierge."
+    },
     "not_measured": { "conversations_handled": "…" }
   }
 }
 ```
+
+### The `ai` block
+
+| Field | Meaning |
+|---|---|
+| `requests` | AI provider calls made for the account in the range, including failed attempts the provider billed |
+| `input_tokens` | Input tokens, cached input included (it only differs in price) |
+| `output_tokens`, `total_tokens` | Output tokens, and input plus output |
+| `by_capability` | The same figures per AI capability: the agent of the AI run each call belonged to |
+| `by_hotel` | The same figures per hotel of the account |
+| `basis` | How the figures are counted. Show it as a tooltip |
+
+How the breakdowns behave:
+
+- `by_capability` and `by_hotel` each add up exactly to the totals.
+- Every capability and every hotel of the account is listed, at zero when idle.
+- A hotel deleted or moved to another account since keeps its own row for the calls it made in the range. Its `hotel` name can be `null` if the hotel record can no longer be found; show it as a removed hotel.
+- Calls logged with no hotel appear under the key `unassigned` (with `hotel: null`), only when there are any.
+- There is no `turn_signal` row. The classifier always runs inside a Concierge turn, and is counted there.
+- An `unattributed` key appears only when some calls could not be attributed. It should never appear; if it does, it is a bug to report, not a feature of the account.
+- The keys and labels are the same as `by_capability` in the super-admin cost report.
 
 ## Reading the response
 
@@ -283,6 +337,16 @@ A feature with no activity returns `"used": 0` rather than being left out.
 Omitting it would force every consumer to carry its own copy of the catalogue
 to render a complete list, and would make *used nothing* indistinguishable
 from *we do not track that* — different answers to give a customer.
+
+### `measured_since`: a feature added later
+
+Every feature entry carries `measured_since`: `null` for features measured
+from the start, or the day a feature added later started being counted
+(`guest_memory_extractions`: `2026-10-11`). Events before that date were
+never recorded and are not backfilled. When the requested `from` is earlier,
+the entry also carries a `note`, such as "Measured from 2026-10-11; earlier
+activity was not counted.". Show it under the figure, so a short month is
+not read as low usage.
 
 ### `used: null` with `measured: false` is not zero
 

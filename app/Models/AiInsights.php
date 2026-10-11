@@ -27,11 +27,13 @@ class AiInsights extends Model
         'insight_type',
         'evidence_level',
         'evidence_sources',
+        'citations',
     ];
 
     protected $casts = [
         'evidence_level' => EvidenceLevel::class,
         'evidence_sources' => 'array',
+        'citations' => 'array',
     ];
 
     /**

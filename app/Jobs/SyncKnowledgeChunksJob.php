@@ -12,6 +12,7 @@ use App\Models\KnowledgeIndexRebuild;
 use App\Services\Metering\MeteringService;
 use App\Support\Ai\AiCostContext;
 use App\Support\Knowledge\ChunkSynchronizer;
+use App\Support\Knowledge\KnowledgeSources;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -50,7 +51,7 @@ class SyncKnowledgeChunksJob implements ShouldQueue
         // Gone, unpublished or switched off since it was queued: its observer
         // already removed its chunks, and re-creating them would put it back
         // into search.
-        if ($chunkable === null || ! $this->isLive($chunkable)) {
+        if ($chunkable === null || ! KnowledgeSources::isLive($chunkable)) {
             $this->reportRebuild(true, $chunkable);
 
             return;
@@ -103,13 +104,6 @@ class SyncKnowledgeChunksJob implements ShouldQueue
         $chunkable = $this->chunkableType::withoutGlobalScope('hotel')->withTrashed()->find($this->chunkableId);
 
         $this->reportRebuild(false, $chunkable, $exception?->getMessage());
-    }
-
-    private function isLive(KnowledgeBaseArticle|HotelPolicy $chunkable): bool
-    {
-        return $chunkable instanceof KnowledgeBaseArticle
-            ? $chunkable->status === 'published'
-            : (bool) $chunkable->is_active;
     }
 
     private function reportRebuild(bool $succeeded, KnowledgeBaseArticle|HotelPolicy|null $chunkable, ?string $reason = null): void

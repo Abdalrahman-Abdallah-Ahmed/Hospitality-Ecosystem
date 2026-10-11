@@ -26,4 +26,14 @@ class AiSpendCeilingExceededException extends RuntimeException
             number_format($ceilingUsd, 2),
         ));
     }
+
+    /**
+     * What a hotel user may be told. The message above names what the
+     * account spent and its ceiling — our cost of goods — so it belongs in
+     * the log only, never in a response, a stored error or a reply.
+     */
+    public function publicMessage(): string
+    {
+        return 'The daily AI usage limit was reached; try again tomorrow.';
+    }
 }

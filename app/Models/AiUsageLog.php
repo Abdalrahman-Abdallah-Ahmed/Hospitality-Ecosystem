@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AiAgentName;
 use App\Enums\AiOperation;
 use App\Enums\AiTriggerKind;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -46,12 +47,14 @@ class AiUsageLog extends Model
         'trigger_id',
         'trigger_kind',
         'ai_run_id',
+        'capability',
         'occurred_at',
     ];
 
     protected $casts = [
         'operation' => AiOperation::class,
         'trigger_kind' => AiTriggerKind::class,
+        'capability' => AiAgentName::class,
         'input_tokens' => 'integer',
         'output_tokens' => 'integer',
         'cached_tokens' => 'integer',
