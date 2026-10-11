@@ -22,18 +22,30 @@ use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Laravel\Ai\Models\ConversationMessage;
 
 class CreateAiInsightsJob implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
+    private const MAX_CITATIONS = 10;
+
+    /**
+     * The meter's idempotency key, fixed when the job is created so every
+     * retry of it carries the same one: insights are counted once per job.
+     */
+    public string $meterKey;
+
     /**
      * Create a new job instance.
      */
     public function __construct(
         public array $data,
-    ) {}
+    ) {
+        $this->meterKey = 'ai-insights:'.Str::uuid7();
+    }
 
     /**
      * Execute the job.
@@ -72,7 +84,7 @@ class CreateAiInsightsJob implements ShouldQueue
                         default => $agent->prompt('You are a helpful insights agent.'),
                     };
 
-                    AiActionRecorder::forJob(AiAgentName::INSIGHTS, self::class, $user, fn () => $this->saveInsights($response, $insightType, $hotel));
+                    AiActionRecorder::forJob(AiAgentName::INSIGHTS, self::class, $user, fn () => $this->saveInsights($response, $insightType, $hotel, $agent));
 
                     return $response;
                 },
@@ -83,15 +95,26 @@ class CreateAiInsightsJob implements ShouldQueue
                 feature: MeterFeature::AI_INSIGHTS_GENERATED,
                 quantity: count($response->structured['insights'] ?? []),
                 source: $hotel,
+                idempotencyKey: $this->meterKey,
                 metadata: ['insight_type' => $insightType],
                 actorKind: ActorKind::AI_AGENT,
             ));
         });
     }
 
-    private function saveInsights(mixed $response, string $insightType, Hotel $hotel): void
+    private function saveInsights(mixed $response, string $insightType, Hotel $hotel, InsightsAgent $agent): void
     {
-        collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
+        collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel, $agent) {
+            $citations = $this->citationsFor($insight, $agent, $hotel);
+
+            // A knowledge insight rests on its citations alone. With none
+            // left to trace, it would be a claim with nothing behind it.
+            if ($insight['category'] === AiInsightCategories::KNOWLEDGE->value && $citations === []) {
+                Log::warning('Dropped a knowledge insight with no citation that traces to a source.', ['hotel_id' => $hotel->id]);
+
+                return;
+            }
+
             $modelClass = $this->insightableModelFor($insight['category']);
             $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
 
@@ -107,6 +130,9 @@ class CreateAiInsightsJob implements ShouldQueue
                 // inference (L2); anything else stays a hypothesis (L3).
                 'evidence_level' => $sourceBelongsToHotel ? EvidenceLevel::L2->value : EvidenceLevel::L3->value,
                 'evidence_sources' => $sourceBelongsToHotel ? [$insight['source_id']] : null,
+                // Kept apart from the evidence: knowledge says how the hotel
+                // says things work, so it never raises the level above.
+                'citations' => $citations,
             ]);
         });
     }
@@ -128,8 +154,46 @@ class CreateAiInsightsJob implements ShouldQueue
             AiInsightCategories::TASK->value => Task::class,
             AiInsightCategories::GUEST_MESSAGE->value => ConversationMessage::class,
             AiInsightCategories::GENERAL->value => Hotel::class,
+            // Rests on knowledge alone: no record to be about, so it stays a
+            // hypothesis (L3) whatever it cites.
+            AiInsightCategories::KNOWLEDGE->value => null,
             default => null,
         };
+    }
+
+    /**
+     * The insight's citations, traced back to sources (SPEC-090).
+     *
+     * A reference counts only if the knowledge tool returned it during this
+     * run and its source still exists — the tool checks that once for the
+     * whole run. Anything else is dropped, never shown as a citation nobody
+     * can follow.
+     *
+     * @param  array<string, mixed>  $insight
+     * @return list<array{source_type: string, source_id: string, title: ?string, location: ?string, scope: string, last_updated: ?string}>
+     */
+    private function citationsFor(array $insight, InsightsAgent $agent, Hotel $hotel): array
+    {
+        $references = collect($insight['citations'] ?? [])
+            ->filter(fn ($reference) => is_string($reference))
+            ->map(fn (string $reference) => strtoupper(trim($reference)))
+            ->unique()
+            ->values();
+
+        $kept = $references
+            ->map(fn (string $reference) => $agent->knowledgeTool->citation($reference))
+            ->filter()
+            ->take(self::MAX_CITATIONS)
+            ->values();
+
+        if ($kept->count() < $references->count()) {
+            Log::warning('Dropped insight citations that did not trace to a live source returned in this run.', [
+                'hotel_id' => $hotel->id,
+                'dropped' => $references->count() - $kept->count(),
+            ]);
+        }
+
+        return $kept->all();
     }
 
     /**

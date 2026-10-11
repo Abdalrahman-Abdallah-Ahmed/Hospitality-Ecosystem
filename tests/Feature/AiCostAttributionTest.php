@@ -2,6 +2,7 @@
 
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Ai\Agents\GuestConciergeAgent;
+use App\Enums\AiAgentName;
 use App\Enums\AiOperation;
 use App\Enums\AiTriggerKind;
 use App\Enums\InboundMessageStatus;
@@ -25,8 +26,10 @@ use App\Services\WhatsAppMessageService;
 use App\Support\Ai\AiCostContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Laravel\Ai\Embeddings;
 
 uses(RefreshDatabase::class);
@@ -622,4 +625,106 @@ it('stops applying a promotional rate once it expires, rather than assuming it c
     // number; a flagged gap is a visible one demanding an action.
     expect((float) $afterPromo->cost_usd)->toBe(0.0)
         ->and($afterPromo->cost_is_estimated)->toBeTrue();
+});
+
+it('reports a call under the capability of the run it belongs to', function () {
+    $hotel = costHotel();
+
+    $log = AiCostContext::for(
+        kind: AiTriggerKind::SCHEDULED_JOB,
+        hotel: $hotel,
+        agent: AiAgentName::INSIGHTS,
+        callback: fn () => recorder()->record('InsightsAgent', 'openai', 'gpt-5.4', AiOperation::CHAT, 100, 10),
+    );
+
+    expect($log->capability)->toBe(AiAgentName::INSIGHTS);
+});
+
+it('reports a call nested inside a concierge turn under the concierge', function () {
+    $hotel = costHotel();
+
+    Embeddings::fake();
+
+    // The turn opens the run; the embedding inside it is part of that work.
+    AiCostContext::for(
+        kind: AiTriggerKind::GUEST_MESSAGE,
+        hotel: $hotel,
+        agent: AiAgentName::CONCIERGE,
+        callback: fn () => AiCostContext::for(
+            kind: AiTriggerKind::GUEST_MESSAGE,
+            hotel: $hotel,
+            agent: AiAgentName::KNOWLEDGE,
+            callback: fn () => Embeddings::for(['what time is breakfast'])->dimensions(1536)->generate(),
+        ),
+    );
+
+    expect(AiUsageLog::sole()->capability)->toBe(AiAgentName::CONCIERGE);
+});
+
+it('reports a call made outside any run as unattributed', function () {
+    Embeddings::fake();
+
+    Embeddings::for(['an orphaned call'])->dimensions(1536)->generate();
+
+    expect(AiUsageLog::sole()->capability)->toBe(AiAgentName::UNATTRIBUTED);
+});
+
+it('backfills the capability of existing calls from their run, then from their agent class', function () {
+    $hotel = costHotel();
+    $runId = (string) Str::uuid7();
+
+    $row = function (string $agent, ?string $aiRunId = null) use ($hotel): string {
+        $id = (string) Str::uuid7();
+
+        DB::table('ai_usage_logs')->insert([
+            'id' => $id,
+            'hotel_group_id' => $hotel->hotel_group_id,
+            'hotel_id' => $hotel->id,
+            'agent' => $agent,
+            'provider' => 'openai',
+            'model' => 'gpt-5.4',
+            'operation' => 'chat',
+            'input_tokens' => 1,
+            'output_tokens' => 1,
+            'cached_tokens' => 0,
+            'tool_calls' => 0,
+            'cost_usd' => 0,
+            'cost_is_estimated' => false,
+            'succeeded' => true,
+            'attempt' => 1,
+            'trigger_kind' => 'guest_message',
+            'ai_run_id' => $aiRunId,
+            'capability' => 'unattributed',
+            'occurred_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $id;
+    };
+
+    DB::table('ai_activities')->insert([
+        'id' => $runId,
+        'ai_run_id' => $runId,
+        'hotel_id' => $hotel->id,
+        'category' => 'ai_run',
+        'agent' => 'guest_memory',
+        'action' => 'run.completed',
+        'result' => 'succeeded',
+        'trigger_kind' => 'scheduled_job',
+        'occurred_at' => now(),
+        'created_at' => now(),
+    ]);
+
+    $fromRun = $row('Embeddings', $runId);
+    $fromClass = $row('TurnSignalAgent');
+    $orphan = $row('Reranking');
+
+    (require database_path('migrations/2026_10_11_000002_add_capability_to_ai_usage_logs_table.php'))->backfill();
+
+    $capability = fn (string $id) => DB::table('ai_usage_logs')->where('id', $id)->value('capability');
+
+    expect($capability($fromRun))->toBe('guest_memory')
+        ->and($capability($fromClass))->toBe('concierge')
+        ->and($capability($orphan))->toBe('unattributed');
 });

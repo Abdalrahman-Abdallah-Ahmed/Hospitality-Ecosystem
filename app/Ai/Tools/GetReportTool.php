@@ -42,7 +42,7 @@ class GetReportTool implements ReadsData, Tool
         return 'Hotel reports. "dashboard": today\'s arrivals, departures, VIPs in house, open tasks, occupancy and '
             .'booking value. "occupancy": occupied rooms per night from "from" to "to" (YYYY-MM-DD, at most 31 nights). '
             .'"conversion": how recommendations turned into bookings for a period. "insights": the latest AI insights. '
-            .'"usage": AI usage counts for the account (no costs). Figures come only from here; never estimate them.';
+            .'"usage": AI usage counts for the account: requests and tokens per AI capability and per hotel (no costs). Figures come only from here; never estimate them.';
     }
 
     public function handle(Request $request): Stringable|string
@@ -200,6 +200,8 @@ class GetReportTool implements ReadsData, Tool
             $account,
             $report->totals($from, $to, $account->getKey())->get($account->getKey()) ?? collect(),
             $report->seats($to, $account->getKey())->get($account->getKey()) ?? collect(),
+            $report->aiTotals($from, $to, $account->getKey())->get($account->getKey()) ?? collect(),
+            $from,
         );
 
         return [
@@ -208,6 +210,7 @@ class GetReportTool implements ReadsData, Tool
             'seats' => $described['seats'],
             'features' => $described['features'],
             'recommendations' => $described['recommendations'],
+            'ai' => $described['ai'],
         ];
     }
 }

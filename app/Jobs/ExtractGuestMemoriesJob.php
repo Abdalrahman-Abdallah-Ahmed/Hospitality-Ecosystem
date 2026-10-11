@@ -3,9 +3,11 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\GuestMemoryAgent;
+use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\GuestMemoryExtractionStatus;
+use App\Enums\MeterFeature;
 use App\Enums\StayStatus;
 use App\Exceptions\AiSpendCeilingExceededException;
 use App\Models\Guest;
@@ -14,6 +16,7 @@ use App\Models\GuestMemoryExtraction;
 use App\Models\Hotel;
 use App\Models\Stay;
 use App\Services\Guests\GuestMemoryService;
+use App\Services\Metering\MeteringService;
 use App\Support\Ai\AiActionRecorder;
 use App\Support\Ai\AiCostContext;
 use App\Support\Ai\AiRun;
@@ -127,6 +130,19 @@ class ExtractGuestMemoriesJob implements ShouldQueue
 
             return;
         }
+
+        // Counted once per completed extraction, memories found or not: the
+        // AI read the conversation either way (SPEC-091). Keyed on the
+        // extraction, which is unique per guest and reservation, so a retry
+        // round or a re-run never counts it twice.
+        app(MeteringService::class)->safely(fn (MeteringService $m) => $m->recordForHotel(
+            hotel: $hotel,
+            feature: MeterFeature::GUEST_MEMORY_EXTRACTIONS,
+            source: $guest,
+            idempotencyKey: 'guest-memory-extraction:'.$extraction->id,
+            metadata: ['memories_written' => $written],
+            actorKind: ActorKind::AI_AGENT,
+        ));
 
         $this->finish($extraction, GuestMemoryExtractionStatus::EXTRACTED, ['memories_written' => $written, 'ai_run_id' => $runId]);
     }

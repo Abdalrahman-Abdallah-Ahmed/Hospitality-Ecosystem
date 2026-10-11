@@ -12,6 +12,7 @@ use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeDocument;
 use App\Support\Knowledge\ChunkSynchronizer;
+use App\Support\Knowledge\KnowledgeSources;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -111,6 +112,22 @@ class KnowledgeSearchTool implements ReadsData, Tool
      */
     public function search(string $query): array
     {
+        return array_map(
+            fn (array $result) => array_diff_key($result, ['source_class' => true, 'source_id' => true]),
+            $this->searchWithSources($query),
+        );
+    }
+
+    /**
+     * The same results, each also naming the record it came from, for code
+     * that must trace what the model saw back to a source (insight
+     * citations, SPEC-090). Never handed to a model as it is: the ids stay
+     * on the server.
+     *
+     * @return list<array{rank: int, scope: string, source_type: string, title: ?string, location: ?string, last_updated: ?string, content: string, source_class: class-string<Model>, source_id: string}>
+     */
+    public function searchWithSources(string $query): array
+    {
         $embedding = Embeddings::for([$query])
             ->dimensions(ChunkSynchronizer::DIMENSIONS)
             ->generate()
@@ -146,7 +163,7 @@ class KnowledgeSearchTool implements ReadsData, Tool
 
             // Safety net behind is_active: a source that is gone, deleted,
             // unpublished or switched off never answers a question.
-            if ($source === null || ! $this->isLive($source)) {
+            if ($source === null || ! KnowledgeSources::isLive($source)) {
                 continue;
             }
 
@@ -185,20 +202,8 @@ class KnowledgeSearchTool implements ReadsData, Tool
         return $sources;
     }
 
-    private function isLive(Model $source): bool
-    {
-        if (method_exists($source, 'trashed') && $source->trashed()) {
-            return false;
-        }
-
-        return match (true) {
-            $source instanceof KnowledgeBaseArticle => $source->status === 'published',
-            default => (bool) ($source->getAttribute('is_active') ?? true),
-        };
-    }
-
     /**
-     * @return array{rank: int, scope: string, source_type: string, title: ?string, location: ?string, last_updated: ?string, content: string}
+     * @return array{rank: int, scope: string, source_type: string, title: ?string, location: ?string, last_updated: ?string, content: string, source_class: class-string<Model>, source_id: string}
      */
     private function cite(KnowledgeChunk $chunk, Model $source, int $rank): array
     {
@@ -213,6 +218,8 @@ class KnowledgeSearchTool implements ReadsData, Tool
             'location' => $hideSource ? null : ($chunk->metadata['location'] ?? null),
             'last_updated' => $source->getAttribute('updated_at')?->toDateString(),
             'content' => $chunk->content,
+            'source_class' => $source::class,
+            'source_id' => (string) $source->getKey(),
         ];
     }
 

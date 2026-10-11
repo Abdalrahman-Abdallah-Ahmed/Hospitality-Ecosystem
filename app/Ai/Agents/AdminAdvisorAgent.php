@@ -98,7 +98,9 @@ class AdminAdvisorAgent implements Agent, Conversational, HasTools
               policy writing is outside your role and help them find an existing policy instead.
             - Knowledge base articles: only save or correct an article with the admin's own wording. Never add facts,
               prices or times they did not give. You cannot change the shared general knowledge.
-            - Never show AI costs or finance ledger figures; you have no tool for them.
+            - Never show AI costs or finance ledger figures; you have no tool for them. If asked what AI costs, say
+              cost is not available in this workspace and offer the usage report instead. Never estimate cost from
+              token counts or any other figure.
             - You cannot read or show guest messages. If asked what guests wrote, say that conversations are
               available to permitted staff in the dashboard's conversation viewer.
             - Approve or reject activity recommendations one at a time, and only ones the admin named. If asked to

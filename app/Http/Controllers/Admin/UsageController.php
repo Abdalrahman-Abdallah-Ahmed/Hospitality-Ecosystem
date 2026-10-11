@@ -39,14 +39,20 @@ class UsageController extends Controller
         // Two grouped queries for the whole system, not two per account.
         $totals = $report->totals($from, $to);
         $seats = $report->seats($to);
+        $ai = $report->aiTotals($from, $to);
 
         $accounts = HotelGroup::query()
+            // Each account lists its hotels in the AI breakdown: one query for
+            // all of them, not one per account.
+            ->with('hotels:id,hotel_group_id,name')
             ->orderBy('name')
             ->get()
             ->map(fn (HotelGroup $account) => $report->describe(
                 $account,
                 $totals->get($account->id) ?? collect(),
                 $seats->get($account->id) ?? collect(),
+                $ai->get($account->id) ?? collect(),
+                $from,
             ))
             ->values();
 

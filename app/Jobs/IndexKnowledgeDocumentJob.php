@@ -182,7 +182,9 @@ class IndexKnowledgeDocumentJob implements ShouldQueue
 
             return;
         } catch (AiSpendCeilingExceededException $e) {
-            $this->failPermanently($document, KnowledgeDocumentFailure::USAGE_LIMIT_REACHED, $e->getMessage(), false);
+            // The stored error is shown to admins: the amounts stay in the log.
+            report($e);
+            $this->failPermanently($document, KnowledgeDocumentFailure::USAGE_LIMIT_REACHED, $e->publicMessage(), false);
 
             return;
         } catch (UniqueConstraintViolationException $e) {

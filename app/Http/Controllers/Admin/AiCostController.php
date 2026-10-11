@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Http\Controllers\Controller;
 use App\Models\AiUsageLog;
@@ -95,6 +96,7 @@ class AiCostController extends Controller
             'by_trigger' => $this->byTrigger($rows),
             'by_model' => $this->by($rows, 'model'),
             'by_hotel' => $this->by($rows, 'hotel_id'),
+            'by_capability' => $this->byCapability($rows),
             // What retries cost. A call that retried three times cost four
             // calls, and this is the part of the bill that bought nothing.
             'retry_cost_eur' => $this->toEur($this->sum($rows->where('attempt', '>', 1))),
@@ -121,6 +123,38 @@ class AiCostController extends Controller
         }
 
         return $split;
+    }
+
+    /**
+     * Cost per AI capability — the agent of the run each call belonged to —
+     * keyed and labelled exactly as the usage reports are, so what an
+     * account used and what it cost us can be read side by side (SPEC-091).
+     * Only capabilities that made calls are listed, like the other splits.
+     *
+     * A group with any estimated row is flagged: its total includes a guess,
+     * typically a model with no price on file that day.
+     *
+     * @param  Collection<int, AiUsageLog>  $rows
+     * @return array<string, array<string, mixed>>
+     */
+    private function byCapability(Collection $rows): array
+    {
+        return $rows->groupBy(fn (AiUsageLog $row) => ($row->capability ?? AiAgentName::UNATTRIBUTED)->value)
+            ->map(function (Collection $group, string $capability) {
+                $costUsd = $this->sum($group);
+
+                return [
+                    'label' => AiAgentName::from($capability)->label(),
+                    'calls' => $group->count(),
+                    'input_tokens' => (int) $group->sum(fn (AiUsageLog $row) => $row->input_tokens + $row->cached_tokens),
+                    'output_tokens' => (int) $group->sum('output_tokens'),
+                    'ai_cost_usd' => $this->money($costUsd),
+                    'ai_cost_eur' => $this->toEur($costUsd),
+                    'cost_is_estimated' => $group->contains('cost_is_estimated', true),
+                ];
+            })
+            ->sortByDesc('ai_cost_usd')
+            ->all();
     }
 
     /**

@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use Carbon\CarbonImmutable;
+
 /**
  * Everything the system counts. WP-6's features catalogue is deferred, so
  * this enum is the catalogue for now — a fixed list in code rather than a
@@ -25,6 +27,7 @@ enum MeterFeature: string
     case RECOMMENDATIONS_GENERATED = 'recommendations_generated';
     case EMBEDDINGS_GENERATED = 'embeddings_generated';
     case KNOWLEDGE_PAGES_READ = 'knowledge_pages_read';
+    case GUEST_MEMORY_EXTRACTIONS = 'guest_memory_extractions';
 
     // Value signals.
     case RECOMMENDATIONS_DELIVERED = 'recommendations_delivered';
@@ -53,6 +56,7 @@ enum MeterFeature: string
             self::RECOMMENDATIONS_GENERATED, self::RECOMMENDATIONS_DELIVERED => 'recommendations',
             self::EMBEDDINGS_GENERATED => 'chunks',
             self::KNOWLEDGE_PAGES_READ => 'pages',
+            self::GUEST_MEMORY_EXTRACTIONS => 'extractions',
             self::BOOKINGS_CREATED, self::BOOKINGS_REALISED => 'bookings',
             self::CONVERSATIONS_HANDLED => 'conversations',
             self::TRANSACTION_ROWS_IMPORTED => 'rows',
@@ -80,7 +84,8 @@ enum MeterFeature: string
             self::AI_INSIGHTS_GENERATED,
             self::RECOMMENDATIONS_GENERATED,
             self::EMBEDDINGS_GENERATED,
-            self::KNOWLEDGE_PAGES_READ => 'cost_driver',
+            self::KNOWLEDGE_PAGES_READ,
+            self::GUEST_MEMORY_EXTRACTIONS => 'cost_driver',
 
             self::RECOMMENDATIONS_DELIVERED,
             self::BOOKINGS_CREATED,
@@ -130,6 +135,7 @@ enum MeterFeature: string
             self::RECOMMENDATIONS_DELIVERED => 'Recommendations delivered',
             self::EMBEDDINGS_GENERATED => 'Knowledge base indexing',
             self::KNOWLEDGE_PAGES_READ => 'Knowledge pages read by AI',
+            self::GUEST_MEMORY_EXTRACTIONS => 'Guest memory extractions',
             self::BOOKINGS_CREATED => 'Bookings created',
             self::BOOKINGS_REALISED => 'Bookings realised',
             self::CONVERSATIONS_HANDLED => 'Conversations handled',
@@ -139,6 +145,26 @@ enum MeterFeature: string
             self::USERS => 'Users',
             self::GUESTS => 'Guests',
             self::STAYS => 'Stays',
+        };
+    }
+
+    /**
+     * The day a feature added after metering began started being measured;
+     * null for every feature measured from the start.
+     *
+     * Events before this date were never recorded and are not backfilled, so
+     * a report covering earlier days must say so rather than show a zero
+     * that reads as no activity. The date is fixed here, next to the feature,
+     * not derived from the first event — which would move if nobody used the
+     * feature in its first weeks.
+     */
+    public function measuredSince(): ?CarbonImmutable
+    {
+        return match ($this) {
+            // The day this feature started being measured; events before it
+            // were never recorded.
+            self::GUEST_MEMORY_EXTRACTIONS => CarbonImmutable::parse('2026-10-11'),
+            default => null,
         };
     }
 

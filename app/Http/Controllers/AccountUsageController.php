@@ -21,10 +21,11 @@ use Illuminate\Support\Carbon;
  *     about another account — a filter that can be supplied is a filter that
  *     can be changed, and the first person to try a different UUID would be
  *     reading another hotel's numbers.
- *  2. No cost, ever. `ai_usage_logs.cost_usd` is our cost of goods; an
- *     account that can see what serving it costs can compute our margin on
- *     its own contract. That is a commercial conversation, not a dashboard
- *     field. This controller does not touch that table.
+ *  2. No cost, ever. Provider cost is our cost of goods; an account that
+ *     can see what serving it costs can compute our margin on its own
+ *     contract. That is a commercial conversation, not a dashboard field.
+ *     AI requests and tokens come from AiUsageSummary, the one reader of the
+ *     AI usage log that never selects cost, model or provider.
  *
  * Like everything else in Phase 2, it observes. It does not gate, block, or
  * limit anything, and it returns no plan and no limit — there are no plans
@@ -67,6 +68,7 @@ class AccountUsageController extends Controller
 
         $totals = $report->totals($from, $to, $account->getKey());
         $seats = $report->seats($to, $account->getKey());
+        $ai = $report->aiTotals($from, $to, $account->getKey());
 
         return apiResponse('Usage fetched successfully.', 200, [
             'from' => $from->toDateString(),
@@ -75,6 +77,8 @@ class AccountUsageController extends Controller
                 $account,
                 $totals->get($account->getKey()) ?? collect(),
                 $seats->get($account->getKey()) ?? collect(),
+                $ai->get($account->getKey()) ?? collect(),
+                $from,
             ),
             'not_measured' => $report->notMeasured(),
         ]);
