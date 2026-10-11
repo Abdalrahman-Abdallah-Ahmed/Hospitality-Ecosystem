@@ -127,7 +127,7 @@ function conciergeThatPitches(): void
     });
 
     GuestConciergeAgent::fake(function () use (&$agent) {
-        $tool = collect($agent->tools())->first(fn ($tool) => $tool instanceof PitchActivityTool);
+        $tool = toolOfClass($agent->tools(), PitchActivityTool::class);
         $tool?->handle(new Request(['guest_words' => 'this evening']));
 
         return 'Have a lovely evening! You might enjoy Snorkeling tomorrow.';

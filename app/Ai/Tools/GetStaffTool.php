@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\Permission;
 use App\Models\Hotel;
 use App\Models\StaffRole;
@@ -20,7 +21,7 @@ use Stringable;
  * There is no write counterpart: users, roles and permissions are changed
  * only on the settings screens (FR-018).
  */
-class GetStaffTool implements Tool
+class GetStaffTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

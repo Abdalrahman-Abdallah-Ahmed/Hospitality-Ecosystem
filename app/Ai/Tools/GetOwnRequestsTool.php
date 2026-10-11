@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\TaskStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -16,7 +17,7 @@ use Stringable;
  * them where things stand and add to a request instead of filing it twice.
  * Guest-facing only: no team, assignee, description, priority or notes.
  */
-class GetOwnRequestsTool implements Tool
+class GetOwnRequestsTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

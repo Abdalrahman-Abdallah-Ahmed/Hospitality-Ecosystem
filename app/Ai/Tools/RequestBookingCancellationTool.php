@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -21,7 +22,7 @@ use Stringable;
  * and Bookings); this only creates the request staff answer from their queue.
  * The booking's status is untouched, whatever the guest says.
  */
-class RequestBookingCancellationTool implements Tool
+class RequestBookingCancellationTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,

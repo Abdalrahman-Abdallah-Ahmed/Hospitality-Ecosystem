@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AiCostController;
+use App\Http\Controllers\Admin\GuestMemoryExtractionController;
 use App\Http\Controllers\Admin\KnowledgeBaseArticleController;
 use App\Http\Controllers\Admin\KnowledgeDocumentController;
 use App\Http\Controllers\Admin\KnowledgeRebuildController;
@@ -62,3 +63,8 @@ Route::delete('/knowledge-base-articles/{id}', [KnowledgeBaseArticleController::
 Route::post('/knowledge/rebuilds', [KnowledgeRebuildController::class, 'store']);
 Route::get('/knowledge/rebuilds', [KnowledgeRebuildController::class, 'index']);
 Route::get('/knowledge/rebuilds/{id}', [KnowledgeRebuildController::class, 'show']);
+
+// Guest memory extractions across every hotel (SPEC-084 FR-036): find the
+// ones that ended for good, and re-run a failed or ceiling-stopped one once.
+Route::get('/guest-memory-extractions', [GuestMemoryExtractionController::class, 'index']);
+Route::post('/guest-memory-extractions/{extraction}/rerun', [GuestMemoryExtractionController::class, 'rerun']);

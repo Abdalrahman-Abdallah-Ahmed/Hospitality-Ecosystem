@@ -3,44 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\EventLogResource;
-use App\Models\Activity;
-use App\Models\AiInsights;
 use App\Models\EventLog;
-use App\Models\Guest;
-use App\Models\KnowledgeBaseArticle;
-use App\Models\Recommendation;
-use App\Models\Reservation;
-use App\Models\Stay;
-use App\Models\Task;
-use App\Models\Transaction;
+use App\Support\Audit\HistorySubjects;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Http\Request;
 
 class HistoryController extends Controller
 {
     /**
-     * The record types whose audit trail can be read, keyed by the URL slug.
-     */
-    private const SUBJECTS = [
-        'reservation' => Reservation::class,
-        'transaction' => Transaction::class,
-        'stay' => Stay::class,
-        'guest' => Guest::class,
-        'recommendation' => Recommendation::class,
-        'task' => Task::class,
-        'ai-insights' => AiInsights::class,
-        'activity' => Activity::class,
-        'knowledge-base-article' => KnowledgeBaseArticle::class,
-    ];
-
-    /**
      * Read the change history of one record: GET /api/history/{type}/{id}.
+     * The record types are listed in HistorySubjects.
      */
     public function show(Request $request, string $type, string $id)
     {
         $this->authorize('viewAny', EventLog::class);
 
-        $modelClass = self::SUBJECTS[$type] ?? abort(404, 'Unknown record type.');
+        abort_unless(HistorySubjects::hasHistory($type), 404, 'Unknown record type.');
+
+        $modelClass = HistorySubjects::classFor($type);
+        $morphType = (new $modelClass)->getMorphClass();
 
         // Resolve the subject through its own tenant scope (so another hotel's
         // id 404s) but include soft-deleted rows — the history must outlive
@@ -51,13 +32,22 @@ class HistoryController extends Controller
             $query->withTrashed();
         }
 
-        abort_if($query->find($id) === null, 404, 'Record not found.');
+        // A record deleted for good (a guest memory) has no row left to
+        // resolve; its history is still the hotel's if the tenant-scoped log
+        // holds entries for it (SPEC-083 FR-034).
+        $exists = $query->find($id) !== null
+            || EventLog::query()->where('subject_type', $morphType)->where('subject_id', $id)->exists();
+
+        abort_unless($exists, 404, 'Record not found.');
 
         $events = EventLog::query()
-            ->where('subject_type', (new $modelClass)->getMorphClass())
+            ->where('subject_type', $morphType)
             ->where('subject_id', $id)
             ->with('actor')
             ->orderByDesc('occurred_at')
+            // Two events in the same instant keep the order they were written
+            // in: ids are UUIDv7, ordered by creation time.
+            ->orderByDesc('id')
             ->paginate($request->integer('per_page', 15));
 
         return apiResponse('Record history fetched successfully.', 200, EventLogResource::collection($events));

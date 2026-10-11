@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\ActorKind;
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Models\HotelPolicy;
@@ -62,6 +63,7 @@ class SyncKnowledgeChunksJob implements ShouldQueue
             kind: AiTriggerKind::SCHEDULED_JOB,
             hotel: $chunkable->hotel,
             trigger: $chunkable,
+            agent: AiAgentName::KNOWLEDGE,
             callback: fn () => ChunkSynchronizer::sync(
                 chunkable: $chunkable,
                 content: $chunkable->content,

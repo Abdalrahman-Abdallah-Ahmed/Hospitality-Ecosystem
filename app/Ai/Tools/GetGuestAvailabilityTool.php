@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Models\RoomType;
 use App\Services\AvailabilityService;
@@ -19,7 +20,7 @@ use Stringable;
  * the one the guest asked about first, so the Concierge can offer
  * alternatives in one call.
  */
-class GetGuestAvailabilityTool implements Tool
+class GetGuestAvailabilityTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

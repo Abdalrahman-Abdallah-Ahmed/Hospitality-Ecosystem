@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Models\ReservationRoom;
 use App\Models\RoomType;
@@ -25,7 +26,7 @@ use Stringable;
  * is as hard to undo as cancelling the reservation: that call waits for the
  * admin's confirmation (FR-017). Adding rooms or changing dates does not.
  */
-class UpdateReservationTool implements ConfirmsBeforeRunning, Tool
+class UpdateReservationTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use AdminToolSupport;
 

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Models\RoomType;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -15,7 +16,7 @@ use Stringable;
  * physical rooms it has. How many can still be sold comes from availability,
  * never from these counts.
  */
-class GetRoomTypesTool implements Tool
+class GetRoomTypesTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

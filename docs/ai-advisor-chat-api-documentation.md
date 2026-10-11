@@ -126,7 +126,6 @@ Each tool checks, every time it runs, the permission the matching staff endpoint
 | `KnowledgeSearchTool` | `knowledge_base_articles.view` | Hotel and general knowledge, with citations |
 | `GetGuestsTool` | `guests.view` | Guests by name, phone or email |
 | `GetGuestTool` | `guests.view` | One guest: profile, stays, reservations, bookings |
-| `GetGuestMessagesTool` | `guests.view` | Recent guest messages |
 | `GetReservationsTool` | `reservations.view` | By arrival/departure/stay date, status, guest, code |
 | `GetReservationTool` | `reservations.view` | One reservation: party, room lines, assigned rooms, stays |
 | `GetRoomTypesTool` | `room_types.view` | Room types and room counts |
@@ -177,6 +176,9 @@ Writes go through the same services as the staff endpoints, with the same rules 
 ### Never
 
 - No delete of any kind — the advisor offers to cancel instead.
+- No guest message text (*removed 2026-10-10*, SPEC-082 FR-033). The advisor no longer has
+  the guest-messages tool, for anyone, admins included; asked what guests wrote, it points to
+  the [conversation viewer](conversations-api-documentation.md) in the dashboard.
 - No change to users, staff roles, permissions or hotel settings.
 - No hotel policy, knowledge document or shared global knowledge writes.
 - No transaction ledger, no AI provider cost or margin.
@@ -185,7 +187,9 @@ Writes go through the same services as the staff endpoints, with the same rules 
 
 ### Audit trail
 
-Every AI write is in the audit trail as `actor_kind: ai_agent` with the admin as the actor — also on WhatsApp, where no one is signed in — and `context.ai = {agent, tool, tool_call_id, conversation_id}`. Reads are not audited. Confirmations, declines and expiries are not audited either: nothing changed.
+Every AI write is in the audit trail as `actor_kind: ai_agent` with the admin as the actor — also on WhatsApp, where no one is signed in — and `context.ai = {agent, tool, tool_call_id, conversation_id, run_id}`. Reads are not audited. Confirmations, declines and expiries are not audited either: nothing changed.
+
+*Since 2026-10-10 (SPEC-083):* every advisor turn and every write call — including one refused for lack of permission (`reason: permission`) or rolled back after an error — is also an entry in the [AI activity list](ai-activity-api-documentation.md).
 
 ### Emails
 

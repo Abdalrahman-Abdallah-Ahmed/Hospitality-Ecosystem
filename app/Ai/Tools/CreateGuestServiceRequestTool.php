@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Concerns\ResolvesGuestStay;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\CreatedBy;
 use App\Enums\GuestSignal;
 use App\Enums\HousekeepingKind;
@@ -22,7 +23,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class CreateGuestServiceRequestTool implements Tool
+class CreateGuestServiceRequestTool implements Tool, WritesData
 {
     use ResolvesGuestStay;
 

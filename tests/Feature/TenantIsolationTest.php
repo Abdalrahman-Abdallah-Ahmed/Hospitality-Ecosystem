@@ -11,10 +11,13 @@ use App\Enums\OutcomeType;
 use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
+use App\Models\AiActivity;
 use App\Models\AiInsights;
 use App\Models\Booking;
 use App\Models\EventLog;
 use App\Models\Guest;
+use App\Models\GuestMemory;
+use App\Models\GuestMemoryExtraction;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\HotelPolicy;
@@ -253,6 +256,36 @@ function tenantOwnedModelFactories(): array
                 'due_at' => now(),
                 'valid_until' => now()->addHours(3),
             ]))->save();
+        },
+        AiActivity::class => fn (Hotel $hotel) => AiActivity::create([
+            'hotel_id' => $hotel->id,
+            'category' => 'ai_run',
+            'agent' => 'concierge',
+            'action' => 'run.completed',
+            'result' => 'succeeded',
+            'occurred_at' => now(),
+        ]),
+        GuestMemory::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return cmaMemory($guest);
+        },
+        GuestMemoryExtraction::class => function (Hotel $hotel) {
+            $reservation = Reservation::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com'])->id,
+                'reservation_id' => 'RES-'.uniqid(),
+                'arrival_date' => now()->toDateString(),
+                'departure_date' => now()->addDay()->toDateString(),
+                'status' => 'confirmed',
+            ]);
+
+            return GuestMemoryExtraction::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $reservation->guest_id,
+                'reservation_id' => $reservation->id,
+                'status' => 'extracted',
+            ]);
         },
         WhatsAppDevice::class => function (Hotel $hotel) {
             $user = User::factory()->role(UserRole::EMPLOYEE)->create();
@@ -641,4 +674,38 @@ it('keeps one hotel out of another hotel guest contact preferences (SPEC-073 FR-
     rapRequest($this, rapAdmin($hotelA), 'PUT', "/api/guest/{$guestB->id}/contact-preference", ['proactive_opted_out' => true])->assertForbidden();
 
     expect($guestB->fresh()->proactive_opted_out_at)->toBeNull();
+});
+
+it('keeps one hotel out of another hotel guest conversations (SPEC-082 FR-005)', function () {
+    $hotelA = cmaHotel();
+    $hotelB = cmaHotel();
+    $guestB = gsGuest($hotelB);
+    $conversationB = cmaGuestConversation($guestB, [['role' => 'user', 'content' => 'Hi from B']]);
+    $adminA = cmaAdmin($hotelA);
+
+    expect(cmaRequest($this, $adminA, 'GET', '/api/conversations')->assertOk()->json('body.data'))->toBe([])
+        ->and(cmaRequest($this, $adminA, 'GET', "/api/conversations?guest_id={$guestB->id}")->assertOk()->json('body.data'))->toBe([]);
+
+    cmaRequest($this, $adminA, 'GET', "/api/conversations/{$conversationB}")->assertNotFound();
+});
+
+it('keeps one hotel out of another hotel AI activity (SPEC-083)', function () {
+    $hotelA = cmaHotel();
+    $hotelB = cmaHotel();
+    AiActivity::create(['hotel_id' => $hotelB->id, 'category' => 'ai_run', 'agent' => 'concierge', 'action' => 'run.completed', 'result' => 'succeeded', 'occurred_at' => now()]);
+
+    expect(cmaRequest($this, cmaAdmin($hotelA), 'GET', '/api/ai-activity')->assertOk()->json('body.data'))->toBe([]);
+});
+
+it('keeps one hotel out of another hotel guest memories (SPEC-084)', function () {
+    $hotelA = cmaHotel();
+    $hotelB = cmaHotel();
+    $guestB = gsGuest($hotelB);
+    $memoryB = cmaMemory($guestB);
+    $adminA = cmaAdmin($hotelA);
+
+    cmaRequest($this, $adminA, 'GET', "/api/guest/{$guestB->id}/memories")->assertNotFound();
+    cmaRequest($this, $adminA, 'DELETE', "/api/guest/{$guestB->id}/memories/{$memoryB->id}")->assertNotFound();
+
+    expect($memoryB->fresh())->not->toBeNull();
 });

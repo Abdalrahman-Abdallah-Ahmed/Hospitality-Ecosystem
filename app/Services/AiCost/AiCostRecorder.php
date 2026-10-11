@@ -6,6 +6,7 @@ use App\Enums\AiOperation;
 use App\Models\AiModelPrice;
 use App\Models\AiUsageLog;
 use App\Support\Ai\AiCostContext;
+use App\Support\Ai\AiRun;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -91,6 +92,9 @@ class AiCostRecorder
             'trigger_type' => $context['trigger']?->getMorphClass(),
             'trigger_id' => $context['trigger']?->getKey(),
             'trigger_kind' => $context['kind']->value,
+            // The run this call belongs to, so the run's usage is summed from
+            // what was measured (SPEC-083).
+            'ai_run_id' => AiRun::id(),
             'occurred_at' => $occurredAt,
         ]);
     }

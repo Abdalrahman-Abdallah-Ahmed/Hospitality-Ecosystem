@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Models\ReservationRoom;
 use App\Models\Stay;
@@ -16,7 +17,7 @@ use Stringable;
  * with its type, assigned room and stay. Use it to find the line ids room
  * assignment needs, and before changing a reservation.
  */
-class GetReservationTool implements Tool
+class GetReservationTool implements ReadsData, Tool
 {
     use AdminToolSupport;
 

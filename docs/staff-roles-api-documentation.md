@@ -62,12 +62,15 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `bookings.update` | `PATCH /api/booking/{id}` (an employee default) |
 | `bookings.update_status` | `POST /api/booking/{id}/status`, `POST /api/booking/{id}/cancellation-request/approve`, `POST /api/booking/{id}/cancellation-request/decline` |
 | `bookings.override_capacity` | `capacity_override: true` on `POST /api/booking` and `PATCH /api/booking/{id}` (never a default) |
+| `conversations.view` | `GET /api/conversations`, `GET /api/conversations/{id}` (*added 2026-10-10*; never an employee default — guest conversations are protected guest data) |
 | `dashboard.view` | `GET /api/dashboard` |
 | `guests.view` | `GET /api/guest`, `GET /api/guest/{id}` |
 | `guests.create` | `POST /api/guest` |
 | `guests.update` | `PUT /api/guest/{id}`, `PUT /api/guest/{id}/contact-preference` |
 | `guests.delete` | `DELETE /api/guest/{id}` |
-| `history.view` | `GET /api/history/{type}/{id}` |
+| `guest_memories.view` | `GET /api/guest/{id}/memories` (*added 2026-10-10*; never an employee default) |
+| `guest_memories.delete` | `DELETE /api/guest/{id}/memories/{memory}` (*added 2026-10-10*; never an employee default) |
+| `history.view` | `GET /api/history/{type}/{id}`, `GET /api/ai-activity` (*AI activity added 2026-10-10*) |
 | `hotel_policies.view` | `GET /api/hotel-policy` |
 | `hotel_policies.create` | `POST /api/hotel-policy` |
 | `hotel_policies.update` | `PUT /api/hotel-policy/{id}` |

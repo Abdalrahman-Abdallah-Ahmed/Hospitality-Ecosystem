@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\KnowledgeBaseCategory;
 use App\Models\Hotel;
 use App\Services\Knowledge\ArticleCommands;
@@ -20,7 +21,7 @@ use Stringable;
  * knowledge. It cannot write hotel policies, documents or the shared global
  * knowledge. Published articles are indexed for search by the usual sync.
  */
-class CreateKnowledgeArticleTool implements Tool
+class CreateKnowledgeArticleTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

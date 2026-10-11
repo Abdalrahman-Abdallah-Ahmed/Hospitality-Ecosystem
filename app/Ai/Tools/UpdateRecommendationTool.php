@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\ActorKind;
 use App\Enums\AttributionMethod;
 use App\Enums\DeliveryChannel;
@@ -27,7 +28,7 @@ use Stringable;
  * the most actionable signal the system can collect, and nothing but the
  * conversation contains it.
  */
-class UpdateRecommendationTool implements Tool
+class UpdateRecommendationTool implements Tool, WritesData
 {
     public function __construct(
         private readonly ?Reservation $reservation,

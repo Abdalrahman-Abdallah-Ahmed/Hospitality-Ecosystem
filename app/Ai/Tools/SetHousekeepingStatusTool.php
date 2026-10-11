@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\HousekeepingStatusesEnum;
 use App\Models\Hotel;
 use App\Services\HousekeepingService;
@@ -20,7 +21,7 @@ use Stringable;
  * separate field and is left alone. Open cleaning tasks are listed, not
  * closed.
  */
-class SetHousekeepingStatusTool implements Tool
+class SetHousekeepingStatusTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

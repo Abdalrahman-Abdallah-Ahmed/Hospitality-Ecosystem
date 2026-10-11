@@ -40,6 +40,8 @@ class HotelResource extends JsonResource
             // Every unset value at its default, so the client always sees the
             // full settings (SPEC-073).
             'proactive_settings' => $this->resource->proactiveSettings()->toArray(),
+            // Guest memories on or off for this hotel (SPEC-084 FR-032).
+            'guest_memories_enabled' => (bool) ($this->guest_memories_enabled ?? true),
             'owner' => UserResource::make($this->whenLoaded('owner')),
             'hotel_group' => HotelGroupResource::make($this->whenLoaded('hotelGroup')),
             'created_at' => $this->created_at,

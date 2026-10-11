@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\ReservationStatus;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -14,7 +15,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class GetGuestsTool implements Tool
+class GetGuestsTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

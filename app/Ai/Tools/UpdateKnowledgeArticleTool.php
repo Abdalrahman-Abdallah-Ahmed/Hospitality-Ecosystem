@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Models\KnowledgeBaseArticle;
 use App\Services\Knowledge\ArticleCommands;
@@ -17,7 +18,7 @@ use Stringable;
  * gives (FR-022). Global articles are not this hotel's to change, so they are
  * "not found" here; policies and documents have no AI write path at all.
  */
-class UpdateKnowledgeArticleTool implements Tool
+class UpdateKnowledgeArticleTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
 use App\Models\Hotel;
@@ -22,7 +23,7 @@ use Stringable;
  * instead of a pick (FR-025). A guest's cancellation request cannot be
  * closed here; it is answered on its booking, as on the task screen.
  */
-class UpdateTaskTool implements Tool
+class UpdateTaskTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

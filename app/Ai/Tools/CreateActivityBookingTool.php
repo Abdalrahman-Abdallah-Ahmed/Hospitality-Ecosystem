@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\BookingStatus;
 use App\Enums\ChargeModel;
 use App\Models\Activity;
@@ -28,7 +29,7 @@ use Stringable;
  * Separate from the Concierge's CreateBookingTool, which books for the guest
  * talking to it and is unchanged.
  */
-class CreateActivityBookingTool implements Tool
+class CreateActivityBookingTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

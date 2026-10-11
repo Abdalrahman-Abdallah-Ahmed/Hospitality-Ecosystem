@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Concerns\ResolvesGuestStay;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -18,7 +19,7 @@ use Stringable;
  * Concierge can never move a guest: staff decide, and carry out any move with
  * room assignment. This tool changes no room, stay or reservation line.
  */
-class RequestRoomChangeTool implements Tool
+class RequestRoomChangeTool implements Tool, WritesData
 {
     use ResolvesGuestStay;
 

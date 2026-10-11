@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ActorKind;
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Exceptions\PendingConfirmationChangedException;
@@ -10,6 +11,7 @@ use App\Http\Requests\AiAdvisorChatRequest;
 use App\Services\Ai\AdvisorTurn;
 use App\Services\Metering\MeteringService;
 use App\Support\Ai\AiCostContext;
+use App\Support\Ai\AiRun;
 use Laravel\Ai\Exceptions\ApprovalMismatchException;
 use Laravel\Ai\Models\Conversation;
 
@@ -52,13 +54,22 @@ class AiAdvisorController extends Controller
                 kind: AiTriggerKind::STAFF_REQUEST,
                 hotel: $user->hotel,
                 trigger: $user,
-                callback: fn () => $turn->handle(
-                    $user,
-                    $conversationId,
-                    $request->validated('message'),
-                    $request->validated('decision'),
-                    $request->validated('pending_ids'),
-                ),
+                agent: AiAgentName::ADMIN_ADVISOR,
+                conversationId: $conversationId,
+                callback: function () use ($turn, $user, $conversationId, $request) {
+                    $result = $turn->handle(
+                        $user,
+                        $conversationId,
+                        $request->validated('message'),
+                        $request->validated('decision'),
+                        $request->validated('pending_ids'),
+                    );
+
+                    // A new chat has its conversation only now (SPEC-083).
+                    AiRun::setConversation($result->conversationId);
+
+                    return $result;
+                },
             );
         } catch (PendingConfirmationChangedException $e) {
             return apiResponse($e->getMessage(), 409, ['pending_confirmation' => $e->pendingConfirmation]);

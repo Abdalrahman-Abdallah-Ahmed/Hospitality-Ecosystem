@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\ActorKind;
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\KnowledgeContentSource;
 use App\Enums\KnowledgeDocumentFailure;
@@ -13,6 +14,7 @@ use App\Models\KnowledgeDocument;
 use App\Models\KnowledgeIndexRebuild;
 use App\Services\Knowledge\KnowledgeDocumentService;
 use App\Services\Metering\MeteringService;
+use App\Support\Ai\AiActionRecorder;
 use App\Support\Ai\AiCostContext;
 use App\Support\Audit\EventLogger;
 use App\Support\Knowledge\ChunkSynchronizer;
@@ -155,11 +157,21 @@ class IndexKnowledgeDocumentJob implements ShouldQueue
         try {
             // Opened before extraction, so AI vision is attributed to the
             // hotel and checked against its spend ceiling like the embedding.
+            //
+            // The extraction writes the document's new text, an AI change
+            // to hotel data recorded once per run (SPEC-083). The job keeps
+            // its own transaction around the swap.
             $outcome = AiCostContext::for(
                 kind: AiTriggerKind::SCHEDULED_JOB,
                 hotel: $document->hotel,
                 trigger: $document,
-                callback: fn () => $this->extractAndSwap($document, $registry, $vision, $fromPending, $fromStored, $fingerprint),
+                agent: AiAgentName::DOCUMENT_VISION,
+                callback: fn () => AiActionRecorder::forJob(
+                    AiAgentName::DOCUMENT_VISION,
+                    self::class,
+                    null,
+                    fn () => $this->extractAndSwap($document, $registry, $vision, $fromPending, $fromStored, $fingerprint),
+                ),
             );
         } catch (ExtractionFailed $e) {
             if (! $e->failure->isPermanent()) {

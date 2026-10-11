@@ -141,8 +141,7 @@ it('creates generated recommendations as pending approval with their source', fu
     });
 
     RecommendationAgent::fake(function () use (&$agent, $activity) {
-        collect($agent->tools())
-            ->first(fn ($tool) => $tool instanceof CreateRecommendationTool)
+        toolOfClass($agent->tools(), CreateRecommendationTool::class)
             ->handle(new Request([
                 'activity_id' => $activity->id,
                 'reason' => 'Loves the sea',

@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Services\BookingCancellationService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -18,7 +19,7 @@ use Stringable;
  * cancels the booking, so the admin confirms it first (FR-017); declining
  * needs a note for the guest and runs straight away.
  */
-class DecideBookingCancellationTool implements ConfirmsBeforeRunning, Tool
+class DecideBookingCancellationTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use AdminToolSupport;
 

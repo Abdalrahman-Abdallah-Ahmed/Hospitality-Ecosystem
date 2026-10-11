@@ -138,6 +138,11 @@ Field notes for the UI:
 - `inspection_required` (*added 2026-10-04*, default `false`): when `true`, a completed
   clean creates an inspection task and a room counts as ready only once inspected. Rooms
   cleaned before it was turned on still count as ready.
+- `guest_memories_enabled` (*added 2026-10-10*, SPEC-084, default `true`): whether the
+  hotel keeps [guest memories](guest-memories-api-documentation.md) — short notes about
+  returning guests extracted after check-out — and whether the Concierge uses them. Turning it
+  off stops new extraction and the Concierge's use; existing memories stay until deleted.
+  Admin-only, like every hotel setting; a change is recorded as `hotel.guest_memories_toggled`.
 - `proactive_settings` (*added 2026-10-10*, SPEC-073): whether the WhatsApp Concierge may
   message guests first, and when. Always returned in full, with every unset value at its
   default; **off by default**. All times are hotel-local `H:i`.

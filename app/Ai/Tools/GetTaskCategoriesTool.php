@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Models\TaskCategory;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -9,7 +10,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class GetTaskCategoriesTool implements Tool
+class GetTaskCategoriesTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

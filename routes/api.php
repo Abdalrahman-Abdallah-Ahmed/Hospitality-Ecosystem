@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountUsageController;
 use App\Http\Controllers\ActivityAvailabilityController;
 use App\Http\Controllers\ActivityCategoryController;
 use App\Http\Controllers\ActivityController;
+use App\Http\Controllers\AiActivityController;
 use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\AnalyticsController;
@@ -12,9 +13,11 @@ use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\BookingCancellationRequestController;
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestContactPreferenceController;
 use App\Http\Controllers\GuestController;
+use App\Http\Controllers\GuestMemoryController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
@@ -111,6 +114,15 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/room-types', RoomTypeController::class)->except(['edit', 'create']);
         Route::put('/guest/{guest}/contact-preference', [GuestContactPreferenceController::class, 'update']);
+
+        // What the AI remembers about a guest (SPEC-084). Written only by
+        // extraction: no create or update routes.
+        Route::get('/guest/{guest}/memories', [GuestMemoryController::class, 'index']);
+        Route::delete('/guest/{guest}/memories/{memory}', [GuestMemoryController::class, 'destroy']);
+
+        // Guest conversations, read-only (SPEC-082).
+        Route::get('/conversations', [ConversationController::class, 'index']);
+        Route::get('/conversations/{conversation}', [ConversationController::class, 'show']);
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
         Route::resource('/hotel-policy', HotelPolicyController::class)->except(['edit', 'create', 'show']);
         Route::resource('/team', TeamController::class)->except(['edit', 'create']);
@@ -140,6 +152,7 @@ Route::middleware('api.key')->group(function () {
         Route::post('/knowledge-documents/{id}/restore', [KnowledgeDocumentController::class, 'restore']);
         Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
         Route::get('/history/{type}/{id}', [HistoryController::class, 'show']);
+        Route::get('/ai-activity', [AiActivityController::class, 'index']);
 
         // This account's own consumption. The account is resolved from the
         // token, so there is deliberately no id in the path — see

@@ -89,3 +89,60 @@ Usage metering gains `proactive_messages_sent`.
 - [Proactive messages](proactive-messages-api-documentation.md)
 - [Hotel](hotel-api-documentation.md) · [Guest](guest-api-documentation.md#4a-contact-preference-opt-out)
 - [Staff roles](staff-roles-api-documentation.md) · [AI advisor](ai-advisor-chat-api-documentation.md) · [Usage metering](usage-metering-api-documentation.md)
+
+---
+
+## Conversation Visibility, Guest Memories and AI Audit (Phase 11: SPEC-082, SPEC-083, SPEC-084)
+
+### Summary
+
+- **Conversation viewer.** `GET /api/conversations` and `GET /api/conversations/{id}` show what
+  guests and the WhatsApp Concierge said, read-only, for the hotel's own guests. Gated by the
+  new `conversations.view` permission. Opening a conversation is recorded in the guest's
+  history. See [Conversations API](conversations-api-documentation.md).
+- **Guest memories.** After a guest's last check-out on a reservation, a few lasting facts
+  (preferences, contact preferences, interests) are extracted once from what they said during
+  the stay, and the Concierge uses them as hints next time. Admins (or employees granted
+  `guest_memories.view` / `guest_memories.delete`) list and delete them; deleting a guest
+  deletes their memories. A hotel switch, `guest_memories_enabled`, is **on by default**.
+  Only check-outs from today on are processed. See
+  [Guest Memories API](guest-memories-api-documentation.md).
+- **AI activity.** `GET /api/ai-activity` lists everything the AI did for the hotel: each run
+  (with token usage), each change it made or attempted (succeeded, refused or failed), and
+  each pitch and proactive message. Under `history.view`. Provider cost is shown to super
+  admins only. See [AI Activity API](ai-activity-api-documentation.md).
+- **Record history** now covers `booking`, `room`, `room-type` and `guest-memory`.
+
+### Breaking changes
+
+1. **The Admin AI can no longer read guest messages.** Its guest-messages tool is removed for
+   everyone, admins included; guest message text is shown only in the conversation viewer.
+   Asking the advisor "what did guests write?" now gets a pointer to the dashboard.
+2. **Audit actor for Concierge writes.** Records the WhatsApp Concierge changes (bookings,
+   requests, contact preferences) now show the **guest** as `actor` (`actor_kind` stays
+   `ai_agent`). Before, `actor` was null.
+3. **`context.ai` gains `run_id`** on every AI audit entry, and Concierge writes now carry the
+   full `context.ai` (`agent`, `tool`, `tool_call_id`, `conversation_id`), which they lacked.
+
+### New permissions
+
+| Permission | Endpoints | Employee default? |
+| --- | --- | --- |
+| `conversations.view` | `GET /api/conversations`, `GET /api/conversations/{id}` | No |
+| `guest_memories.view` | `GET /api/guest/{id}/memories` | No |
+| `guest_memories.delete` | `DELETE /api/guest/{id}/memories/{memory}` | No |
+
+`GET /api/permissions` lists them, so the role editor picks them up automatically.
+
+### New fields
+
+- Hotel: `guest_memories_enabled` (boolean, default `true`).
+- Escalation tasks from the Concierge can now be titled **"Memory request — see memories"** or
+  **"Memory request — forget: …"** when a guest asks about what is remembered.
+
+### Super admin
+
+- `GET /api/admin/guest-memory-extractions` and
+  `POST /api/admin/guest-memory-extractions/{id}/rerun` to find and re-run extractions that
+  failed or hit the AI spend ceiling.
+- AI activity entries for runs include `cost_usd` for super admins.

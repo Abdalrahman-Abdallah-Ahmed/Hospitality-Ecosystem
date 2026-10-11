@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ai\Agents\GuestConciergeAgent;
 use App\Enums\ActorKind;
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\InboundMessageStatus;
 use App\Enums\MeterFeature;
@@ -21,6 +22,7 @@ use App\Services\Metering\MeteringService;
 use App\Services\Pitching\PitchCoordinator;
 use App\Services\WhatsAppMessageService;
 use App\Support\Ai\AiCostContext;
+use App\Support\Ai\AiRun;
 use App\Support\Audit\EventLogger;
 use App\Support\Pitching\PitchTurn;
 use App\Support\Tenancy\TenantContext;
@@ -317,6 +319,11 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
                 : AiTriggerKind::STAFF_REQUEST,
             hotel: $this->hotel,
             trigger: $this->sender,
+            agent: AiAgentName::CONCIERGE,
+            conversationId: $agent->currentConversation(),
+            // Tool writes are recorded by AuditedTool. This wrapper attributes
+            // the rest of the turn — the pitch bookkeeping written outside any
+            // tool — to the Concierge acting for this sender (SPEC-083).
             callback: fn () => EventLogger::asAiAgent(function () use ($agent, $messageText, $attachments) {
                 if ($agent instanceof GuestConciergeAgent) {
                     $agent->pitchTurn = app(PitchCoordinator::class)->begin(
@@ -328,8 +335,16 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
                     );
                 }
 
-                return $agent->prompt($messageText, attachments: $attachments);
-            }),
+                $response = $agent->prompt($messageText, attachments: $attachments);
+
+                // A first message starts its conversation only now.
+                AiRun::setConversation($agent->currentConversation());
+
+                return $response;
+            }, onBehalfOf: $this->sender, ai: array_filter([
+                'agent' => AiAgentName::CONCIERGE->value,
+                'conversation_id' => $agent->currentConversation(),
+            ])),
         ));
 
         return [$response->text, $agent instanceof GuestConciergeAgent ? $agent->pitchTurn : null];
@@ -353,6 +368,8 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
             kind: AiTriggerKind::STAFF_REQUEST,
             hotel: $this->hotel,
             trigger: $this->sender,
+            agent: AiAgentName::ADMIN_ADVISOR,
+            conversationId: $conversationId,
             callback: fn () => EventLogger::asAiAgent(
                 fn () => $turn->handle($this->sender, $conversationId, $messageText, attachments: $attachments),
                 onBehalfOf: $this->sender,

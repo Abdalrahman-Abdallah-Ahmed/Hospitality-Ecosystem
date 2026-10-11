@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\Permission;
 use App\Http\Resources\AvailabilityResource;
 use App\Models\Hotel;
@@ -20,7 +21,7 @@ use Stringable;
  * nights per call. Checks availability.view for the admin it acts for, like
  * the endpoint does.
  */
-class GetAvailabilityTool implements Tool
+class GetAvailabilityTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

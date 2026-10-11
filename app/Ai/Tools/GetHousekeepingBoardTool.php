@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Services\HousekeepingService;
 use App\Services\Reports\HousekeepingBoard;
@@ -15,7 +16,7 @@ use Stringable;
  * The housekeeping board for the Admin AI: the same rooms, counts and open
  * cleaning or inspection tasks the board screen shows (SPEC-030).
  */
-class GetHousekeepingBoardTool implements Tool
+class GetHousekeepingBoardTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

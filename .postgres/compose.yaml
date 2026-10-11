@@ -4,6 +4,9 @@ services:
     container_name: hospitality-postgres
 
     restart: unless-stopped
+    # `php artisan test --parallel` drops every table in up to one database per
+    # CPU at once; the default (64) runs out of shared lock memory.
+    command: postgres -c max_locks_per_transaction=256
 
     environment:
       POSTGRES_DB: Hospitality_Ecosystem

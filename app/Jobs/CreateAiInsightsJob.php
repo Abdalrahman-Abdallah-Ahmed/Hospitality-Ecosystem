@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ai\Agents\InsightsAgent;
 use App\Enums\ActorKind;
+use App\Enums\AiAgentName;
 use App\Enums\AiInsightCategories;
 use App\Enums\AiTriggerKind;
 use App\Enums\EvidenceLevel;
@@ -15,8 +16,8 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Task;
 use App\Services\Metering\MeteringService;
+use App\Support\Ai\AiActionRecorder;
 use App\Support\Ai\AiCostContext;
-use App\Support\Audit\EventLogger;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -55,38 +56,27 @@ class CreateAiInsightsJob implements ShouldQueue
             // scheduled_job — the half of the bill we control. Note that
             // generalInsights() makes several prompts; each one is logged,
             // and all of them are attributed to this same trigger.
+            //
+            // The insights are written inside the same context, so they are
+            // part of the AI run that produced them (SPEC-083).
             $response = AiCostContext::for(
                 kind: AiTriggerKind::SCHEDULED_JOB,
                 hotel: $hotel,
                 trigger: $hotel,
-                callback: fn () => match ($insightType) {
-                    InsightTypes::GENERAL->value => $this->generalInsights($agent),
-                    InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
-                    InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
-                    default => $agent->prompt('You are a helpful insights agent.'),
+                agent: AiAgentName::INSIGHTS,
+                callback: function () use ($agent, $insightType, $hotel, $user) {
+                    $response = match ($insightType) {
+                        InsightTypes::GENERAL->value => $this->generalInsights($agent),
+                        InsightTypes::RESERVATION->value => $this->reservationInsights($agent),
+                        InsightTypes::TASK->value => $agent->prompt('You are a helpful insights agent that provides insights about tasks.'),
+                        default => $agent->prompt('You are a helpful insights agent.'),
+                    };
+
+                    AiActionRecorder::forJob(AiAgentName::INSIGHTS, self::class, $user, fn () => $this->saveInsights($response, $insightType, $hotel));
+
+                    return $response;
                 },
             );
-
-            EventLogger::asAiAgent(function () use ($response, $insightType, $hotel) {
-                collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
-                    $modelClass = $this->insightableModelFor($insight['category']);
-                    $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
-
-                    AiInsights::create([
-                        'title' => $insight['title'],
-                        'hotel_id' => $hotel->id,
-                        'description' => $insight['description'],
-                        'category' => $insight['category'],
-                        'insight_type' => $insightType,
-                        'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
-                        'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
-                        // A claim tied to a verified hotel record is a strong
-                        // inference (L2); anything else stays a hypothesis (L3).
-                        'evidence_level' => $sourceBelongsToHotel ? EvidenceLevel::L2->value : EvidenceLevel::L3->value,
-                        'evidence_sources' => $sourceBelongsToHotel ? [$insight['source_id']] : null,
-                    ]);
-                });
-            });
 
             $metering->safely(fn (MeteringService $m) => $m->recordForHotel(
                 hotel: $hotel,
@@ -96,6 +86,28 @@ class CreateAiInsightsJob implements ShouldQueue
                 metadata: ['insight_type' => $insightType],
                 actorKind: ActorKind::AI_AGENT,
             ));
+        });
+    }
+
+    private function saveInsights(mixed $response, string $insightType, Hotel $hotel): void
+    {
+        collect($response->structured['insights'])->each(function (array $insight) use ($insightType, $hotel) {
+            $modelClass = $this->insightableModelFor($insight['category']);
+            $sourceBelongsToHotel = $modelClass && $this->sourceBelongsToHotel($insight['category'], $insight['source_id'], $hotel);
+
+            AiInsights::create([
+                'title' => $insight['title'],
+                'hotel_id' => $hotel->id,
+                'description' => $insight['description'],
+                'category' => $insight['category'],
+                'insight_type' => $insightType,
+                'insightable_type' => $sourceBelongsToHotel ? $modelClass : null,
+                'insightable_id' => $sourceBelongsToHotel ? $insight['source_id'] : null,
+                // A claim tied to a verified hotel record is a strong
+                // inference (L2); anything else stays a hypothesis (L3).
+                'evidence_level' => $sourceBelongsToHotel ? EvidenceLevel::L2->value : EvidenceLevel::L3->value,
+                'evidence_sources' => $sourceBelongsToHotel ? [$insight['source_id']] : null,
+            ]);
         });
     }
 

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Services\MaintenanceService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -16,7 +17,7 @@ use Stringable;
  * does (MaintenanceService::returnToService): it becomes sellable again and
  * gets a cleaning task before the next guest.
  */
-class ReturnRoomToServiceTool implements Tool
+class ReturnRoomToServiceTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

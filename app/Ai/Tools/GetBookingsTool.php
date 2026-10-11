@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\BookingStatus;
 use App\Models\Booking;
 use App\Models\Hotel;
@@ -17,7 +18,7 @@ use Stringable;
  * Activity bookings for the Admin AI, with the same filters as the booking
  * list, including the ones a guest has asked to cancel.
  */
-class GetBookingsTool implements Tool
+class GetBookingsTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

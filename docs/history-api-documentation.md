@@ -9,9 +9,14 @@ changed it, when, and from what.
 `GET /api/history/{type}/{id}`
 
 `{type}` is one of: `reservation`, `transaction`, `stay`, `guest`,
-`recommendation`, `task`, `ai-insights`, `activity`, `knowledge-base-article`.
+`recommendation`, `task`, `ai-insights`, `activity`, `knowledge-base-article`,
+`booking`, `room`, `room-type`, `guest-memory`.
 Any other value returns `404`. (`activity` and `knowledge-base-article` were
-added on 2026-10-09, when both became audited records — SPEC-055.) A global
+added on 2026-10-09, when both became audited records — SPEC-055. `booking`,
+`room`, `room-type` and `guest-memory` were added on 2026-10-10 so every record
+an AI can change has a readable history — SPEC-083. A guest memory is deleted
+for good, but its history stays readable; it never contains the memory's
+text.) A global
 knowledge base article belongs to no hotel, so it is not reachable here by a
 hotel user (`404`).
 
@@ -76,13 +81,22 @@ Field notes:
   one.
 - `actor_kind` is one of `user` (a human, `actor` is populated), `system` (a
   scheduled/internal process), `ai_agent` (written by an LLM agent or its
-  tools — `actor` is null), `import`.
+  tools), `import`. For `ai_agent`, `actor` is the person the AI acted for: the
+  staff user for the Admin AI, the **guest** for the WhatsApp Concierge
+  (*since 2026-10-10*), or null for a scheduled job.
 - `changes` is `{ field: { from, to } }` for updates, `{ field: { to } }` for
   creates, and absent for deletes. Only an allow-listed set of business columns
   per record type appears here — derived fields (hashes) and secrets never do.
   Enum and date values are normalised to strings.
 - `context` carries the request ip and route when the change came from an HTTP
-  request; `{ "queue": true }` when it came from a queued job.
+  request; `{ "queue": true }` when it came from a queued job. An AI write adds
+  `context.ai = { agent, tool, tool_call_id, conversation_id, run_id }`
+  (`run_id` *since 2026-10-10*): the same run id as the
+  [AI activity](ai-activity-api-documentation.md) entries of that turn.
+- Access events (*since 2026-10-10*): `guest.conversation_viewed` (with
+  `context.conversation_id`) and `guest.memories_viewed` record who read a
+  guest's conversation or memories. `hotel.guest_memories_toggled` records the
+  hotel switch.
 - `evidence_level` on the event itself is `L1` — a record change is a directly
   observed fact. (This is separate from the `evidence_level` on the AI
   insight/recommendation *content*.)

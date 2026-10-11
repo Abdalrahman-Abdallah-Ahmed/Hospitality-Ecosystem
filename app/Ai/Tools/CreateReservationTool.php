@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\ReservationStatus;
 use App\Models\Hotel;
 use App\Models\Room;
@@ -27,7 +28,7 @@ use Stringable;
  * admin-only. Any future agent that is not admin-only must check
  * reservations.create before offering it.
  */
-class CreateReservationTool implements Tool
+class CreateReservationTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,

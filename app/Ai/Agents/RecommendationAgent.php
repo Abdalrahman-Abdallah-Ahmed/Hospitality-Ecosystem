@@ -2,11 +2,13 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\AuditedTool;
 use App\Ai\Tools\CreateRecommendationTool;
 use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Enums\AiAgentName;
 use App\Enums\RecommendationSource;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -64,6 +66,7 @@ class RecommendationAgent implements Agent, Conversational, HasTools
             with the activity, a short reason grounded in the guest's actual data, and your predicted
             confidence. Only recommend activities the activities tool actually returned — never invent one. If
             nothing fits well, it's fine to recommend fewer than 3, including none.
+            Summarize themes; never quote a guest's message word for word, in a reason or anywhere else.
             PROMPT;
     }
 
@@ -79,7 +82,9 @@ class RecommendationAgent implements Agent, Conversational, HasTools
             new KnowledgeSearchTool($this->hotel),
             new GetOwnReservationTool($this->reservation),
             new GetGuestMessagesTool($this->hotel),
-            new CreateRecommendationTool($this->hotel, $this->reservation, $this->source),
+            // Audited once per recommendation (SPEC-083). The agent holds no
+            // user, so nobody is named as the one it acted for.
+            new AuditedTool(new CreateRecommendationTool($this->hotel, $this->reservation, $this->source), AiAgentName::RECOMMENDATION),
         ];
     }
 }

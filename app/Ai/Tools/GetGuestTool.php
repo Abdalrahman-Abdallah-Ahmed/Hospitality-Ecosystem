@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -20,7 +21,7 @@ use Stringable;
  * guest is the case those are needed for. The identity fingerprint is never
  * returned.
  */
-class GetGuestTool implements Tool
+class GetGuestTool implements ReadsData, Tool
 {
     use AdminToolSupport;
 

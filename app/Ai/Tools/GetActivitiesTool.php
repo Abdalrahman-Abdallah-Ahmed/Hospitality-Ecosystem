@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Activity;
 use App\Models\Hotel;
 use App\Services\ActivityAvailabilityService;
@@ -13,7 +14,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class GetActivitiesTool implements Tool
+class GetActivitiesTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel

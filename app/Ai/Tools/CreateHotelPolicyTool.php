@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\KnowledgeBaseCategory;
 use App\Models\Hotel;
 use App\Models\HotelPolicy;
@@ -27,7 +28,7 @@ use Stringable;
  * Hence the instruction to write only what the admin actually stated. This is
  * the one create tool where a plausible-sounding guess does lasting damage.
  */
-class CreateHotelPolicyTool implements Tool
+class CreateHotelPolicyTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,

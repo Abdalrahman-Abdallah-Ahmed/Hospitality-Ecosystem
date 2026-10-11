@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
 use App\Models\Hotel;
@@ -10,7 +11,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class CreateActivityTool implements Tool
+class CreateActivityTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,

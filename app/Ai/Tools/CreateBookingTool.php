@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\ActivityUnavailableReason;
 use App\Enums\BookingOrigin;
 use App\Enums\BookingStatus;
@@ -35,7 +36,7 @@ use Throwable;
  * for the guest's own reservation and only on its dates, and never past an
  * activity's capacity: overriding is a staff decision.
  */
-class CreateBookingTool implements Tool
+class CreateBookingTool implements Tool, WritesData
 {
     /**
      * How far ahead alternatives are looked for when a date is unavailable.

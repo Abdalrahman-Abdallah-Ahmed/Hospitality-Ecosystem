@@ -5,12 +5,21 @@ namespace App\Providers;
 use App\Listeners\RecordAiUsage;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
+use App\Models\PitchDecision;
+use App\Models\ProactiveMessage;
+use App\Models\RecommendationOutcome;
 use App\Models\WhatsAppDevice;
 use App\Observers\HotelPolicyObserver;
 use App\Observers\KnowledgeBaseArticleObserver;
+use App\Observers\PitchDecisionObserver;
+use App\Observers\ProactiveMessageObserver;
+use App\Observers\RecommendationOutcomeObserver;
+use App\Policies\ConversationPolicy;
+use App\Support\Audit\EventLogger;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -20,6 +29,7 @@ use Laravel\Ai\Events\EmbeddingsGenerated;
 use Laravel\Ai\Events\GeneratingEmbeddings;
 use Laravel\Ai\Events\PromptingAgent;
 use Laravel\Ai\Events\Reranked;
+use Laravel\Ai\Models\Conversation;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
 
@@ -43,6 +53,25 @@ class AppServiceProvider extends ServiceProvider
     {
         KnowledgeBaseArticle::observe(KnowledgeBaseArticleObserver::class);
         HotelPolicy::observe(HotelPolicyObserver::class);
+
+        // What the Concierge offered and sent guests, in the AI activity list
+        // (SPEC-083).
+        PitchDecision::observe(PitchDecisionObserver::class);
+        RecommendationOutcome::observe(RecommendationOutcomeObserver::class);
+        ProactiveMessage::observe(ProactiveMessageObserver::class);
+
+        // The conversation model is the laravel/ai package's, so policy
+        // discovery cannot find ours by name (SPEC-082).
+        Gate::policy(Conversation::class, ConversationPolicy::class);
+
+        // Lets the AI action recorder tell a write that changed something
+        // from one that changed nothing (SPEC-083). A no-op unless a capture
+        // is open.
+        foreach (['created', 'updated', 'deleted'] as $verb) {
+            Event::listen("eloquent.{$verb}: *", function (string $event, array $payload) use ($verb): void {
+                EventLogger::noticeModelEvent($payload[0], $verb);
+            });
+        }
 
         $this->refuseDebugOutsideLocal();
         $this->recordAiCost();

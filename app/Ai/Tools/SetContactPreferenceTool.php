@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Guest;
 use App\Services\GuestContactPreferenceService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -15,7 +16,7 @@ use Stringable;
  * a keyword such as STOP never reaches the Concierge: the WhatsApp job
  * handles it in code.
  */
-class SetContactPreferenceTool implements Tool
+class SetContactPreferenceTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Guest $guest,

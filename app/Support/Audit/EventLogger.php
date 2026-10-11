@@ -4,13 +4,21 @@ namespace App\Support\Audit;
 
 use App\Enums\ActorKind;
 use App\Enums\EvidenceLevel;
+use App\Models\AiActivity;
+use App\Models\AiUsageLog;
 use App\Models\EventLog;
 use App\Models\Hotel;
+use App\Models\MeterEvent;
+use App\Models\UsageCounter;
+use App\Support\Ai\AiRun;
 use BackedEnum;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Laravel\Ai\Models\Conversation;
+use Laravel\Ai\Models\ConversationMessage;
+use Throwable;
 
 /**
  * The single writer for the audit trail. Called automatically by the
@@ -34,6 +42,30 @@ class EventLogger
     /** @var array<string, mixed> Which agent, tool and conversation produced the write. */
     private static array $aiContext = [];
 
+    /**
+     * Open write captures (see capture()), innermost last. Each lists the
+     * records written while it was open.
+     *
+     * @var list<list<array{subject: Model, event_type: string, audited: bool}>>
+     */
+    private static array $captures = [];
+
+    /**
+     * Bookkeeping that is not hotel data: writing it is not a change made on
+     * the hotel's behalf, so a capture ignores it.
+     *
+     * @var list<class-string>
+     */
+    private const NOT_HOTEL_DATA = [
+        EventLog::class,
+        AiActivity::class,
+        AiUsageLog::class,
+        MeterEvent::class,
+        UsageCounter::class,
+        Conversation::class,
+        ConversationMessage::class,
+    ];
+
     public static function isRecording(): bool
     {
         return self::$recording;
@@ -41,6 +73,12 @@ class EventLogger
 
     /**
      * Record one event. Silently does nothing while recording is paused.
+     *
+     * $context adds identifiers to the entry's context (for example which
+     * conversation was opened). Never put message text or other content in
+     * it (FR-024).
+     *
+     * @param  array<string, scalar|null>  $context
      */
     public static function record(
         Model $subject,
@@ -48,7 +86,12 @@ class EventLogger
         ?array $changes = null,
         ?string $reason = null,
         ?EvidenceLevel $evidence = null,
+        array $context = [],
     ): void {
+        $eventType = Str::snake(class_basename($subject)).'.'.$verb;
+
+        self::notice($subject, $eventType, audited: true);
+
         if (! self::$recording) {
             return;
         }
@@ -57,18 +100,67 @@ class EventLogger
 
         EventLog::create([
             'hotel_id' => self::resolveHotelId($subject),
-            'event_type' => Str::snake(class_basename($subject)).'.'.$verb,
+            'event_type' => $eventType,
             'subject_type' => $subject->getMorphClass(),
             'subject_id' => $subject->getKey(),
             'actor_type' => $actor?->getMorphClass(),
             'actor_id' => $actor?->getKey(),
             'actor_kind' => self::resolveActorKind($actor)->value,
             'changes' => $changes ?: null,
-            'context' => self::context(),
+            'context' => array_merge(self::context() ?? [], $context) ?: null,
             'evidence_level' => ($evidence ?? EvidenceLevel::L1)->value,
             'reason' => $reason,
             'occurred_at' => now(),
         ]);
+    }
+
+    /**
+     * Run a callback and list the records it wrote: every audited event, and
+     * every model created, updated or deleted (wired to the Eloquent events
+     * in AppServiceProvider), plus writes a caller declares with notice().
+     * For the AI action recorder, which needs to know whether an AI write
+     * actually changed anything (SPEC-083).
+     *
+     * @return array{0: mixed, 1: list<array{subject: Model, event_type: string, audited: bool}>}
+     */
+    public static function capture(callable $callback): array
+    {
+        self::$captures[] = [];
+
+        try {
+            $result = $callback();
+        } catch (Throwable $e) {
+            array_pop(self::$captures);
+
+            throw $e;
+        }
+
+        return [$result, array_pop(self::$captures)];
+    }
+
+    /**
+     * Count a write toward every open capture. Called for audited events and
+     * model events; called directly by code that writes through a bulk query
+     * (no model events) so the write is not mistaken for no change.
+     */
+    public static function notice(Model $subject, string $eventType, bool $audited = false): void
+    {
+        if (self::$captures === [] || in_array($subject::class, self::NOT_HOTEL_DATA, true)) {
+            return;
+        }
+
+        foreach (array_keys(self::$captures) as $i) {
+            self::$captures[$i][] = ['subject' => $subject, 'event_type' => $eventType, 'audited' => $audited];
+        }
+    }
+
+    /**
+     * A model event (created, updated, deleted) seen by the wildcard
+     * listener in AppServiceProvider.
+     */
+    public static function noticeModelEvent(Model $model, string $verb): void
+    {
+        self::notice($model, Str::snake(class_basename($model)).'.'.$verb);
     }
 
     /**
@@ -158,8 +250,12 @@ class EventLogger
             $context['queue'] = true;
         }
 
-        if (self::$actorKindOverride === ActorKind::AI_AGENT && self::$aiContext !== []) {
-            $context['ai'] = self::$aiContext;
+        if (self::$actorKindOverride === ActorKind::AI_AGENT) {
+            $ai = array_filter([...self::$aiContext, 'run_id' => AiRun::id()], fn ($value) => $value !== null);
+
+            if ($ai !== []) {
+                $context['ai'] = $ai;
+            }
         }
 
         return $context ?: null;

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\CreatedBy;
+use App\Enums\EscalationRequestType;
 use App\Enums\GuestSignal;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
@@ -40,13 +41,26 @@ class GuestRequestService
      *
      * @return array{task: Task, created: bool}
      */
-    public function escalate(Guest $guest, Hotel $hotel, ?Reservation $reservation, string $reason): array
-    {
+    public function escalate(
+        Guest $guest,
+        Hotel $hotel,
+        ?Reservation $reservation,
+        string $reason,
+        ?EscalationRequestType $requestType = null,
+        ?string $detail = null,
+    ): array {
+        // A guest asking to see, forget or correct what the Concierge
+        // remembers is named in the task, so staff can act on it from the
+        // guest's memory panel (SPEC-084 FR-037).
+        $label = $this->memoryRequestLabel($requestType, $detail);
+        $title = $label ?? 'Guest needs human assistance';
+        $note = $label ? "{$label}. {$reason}" : $reason;
+
         try {
-            return DB::transaction(function () use ($guest, $hotel, $reservation, $reason): array {
+            return DB::transaction(function () use ($guest, $hotel, $reservation, $reason, $title, $note): array {
                 if ($open = $this->openEscalation($guest, $hotel, lock: true)) {
-                    $this->appendToDescription($open, $reason, $hotel);
-                    EventLogger::record($open, 'escalation_repeated', changes: ['reason' => $reason]);
+                    $this->appendToDescription($open, $note, $hotel);
+                    EventLogger::record($open, 'escalation_repeated', changes: ['reason' => $note]);
 
                     return ['task' => $open, 'created' => false];
                 }
@@ -58,7 +72,7 @@ class GuestRequestService
                     // reservation would point staff at the wrong visit, and
                     // the recognised one may be cancelled while another is live.
                     'reservation_id' => ($reservation?->isActive() ? $reservation : Reservation::activeFor($hotel, $guest))?->id,
-                    'title' => 'Guest needs human assistance',
+                    'title' => $title,
                     'description' => $reason,
                     'created_by' => CreatedBy::AI,
                     'status' => TaskStatus::PENDING,
@@ -78,11 +92,26 @@ class GuestRequestService
                 throw $e;
             }
 
-            $this->appendToDescription($open, $reason, $hotel);
-            EventLogger::record($open, 'escalation_repeated', changes: ['reason' => $reason]);
+            $this->appendToDescription($open, $note, $hotel);
+            EventLogger::record($open, 'escalation_repeated', changes: ['reason' => $note]);
 
             return ['task' => $open, 'created' => false];
         }
+    }
+
+    /**
+     * "Memory request — forget: vegetarian", or null for an ordinary
+     * escalation.
+     */
+    private function memoryRequestLabel(?EscalationRequestType $type, ?string $detail): ?string
+    {
+        $detail = Str::limit(trim((string) $detail), 100);
+
+        return match ($type) {
+            EscalationRequestType::FORGET_MEMORY => 'Memory request — forget'.($detail !== '' ? ": {$detail}" : ''),
+            EscalationRequestType::SEE_MEMORIES => 'Memory request — see memories',
+            null => null,
+        };
     }
 
     /**
