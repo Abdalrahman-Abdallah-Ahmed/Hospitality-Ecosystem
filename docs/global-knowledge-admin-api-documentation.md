@@ -13,6 +13,8 @@ These are the same actions, request fields, responses and rules as the [hotel kn
 - they act on global documents;
 - `hotel_id` is ignored if sent.
 
+Failure codes and the stored `error` behave as in the hotel API. In particular, a `usage_limit_reached` error is the neutral "The daily AI usage limit was reached; try again tomorrow." and never states an amount.
+
 | Method & path | Purpose |
 | --- | --- |
 | `GET /api/admin/knowledge-documents` | List global documents (never hotel ones) |

@@ -212,7 +212,7 @@ The text is kept as **segments**, one per page, sheet row range or section, whic
 | `too_many_rows` | More than 20,000 spreadsheet rows | Split the file |
 | `too_large_for_vision` | Too large to send for scanned-page reading (over 14 MB) | Upload a smaller scan |
 | `file_missing` | The stored file is gone | Replace the file |
-| `usage_limit_reached` | The account's AI usage limit was reached | Re-index later |
+| `usage_limit_reached` | The account's AI usage limit was reached. `error` (admins only) reads "The daily AI usage limit was reached; try again tomorrow." It never states what was spent or the limit; errors stored before 2026-10-11 were rewritten to this text | Re-index later |
 | `extraction_unavailable` / `embedding_unavailable` | Still failing after 3 automatic retries | Re-index later |
 
 A failure never changes or deletes the stored file, and never removes passages that were live before.

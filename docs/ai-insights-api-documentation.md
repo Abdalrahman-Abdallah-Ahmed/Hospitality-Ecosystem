@@ -34,12 +34,12 @@ Content-Type: application/json
 
 Gated by `App\Policies\AiInsightsPolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
 
-| Action | Rule (non-super-admin) |
+| Action | Permission (non-super-admin) |
 | --- | --- |
-| `index` (list) | The user's `role` must be `admin`. |
-| `store` (generate) | The user's `role` must be `admin`. |
+| `index` (list) | `ai_insights.view` |
+| `store` (generate) | `ai_insights.generate` |
 
-An `employee` gets HTTP `403` on both routes unless their [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants `ai_insights.view` (index) or `ai_insights.generate` (store). Employees without a role have neither.
+Admins hold every permission. An `employee` gets HTTP `403` unless their [staff role](staff-roles-api-documentation.md) grants the permission. Employees without a role have neither. Citations need no extra permission.
 
 `index` additionally scopes the query to `where('hotel_id', <caller's own hotel>)` — a regular admin only ever sees their own hotel's insights. **Caveat:** unlike some other list endpoints in this app, this uses `$request->user()->hotel?->id`, which resolves to `null` for a super admin (who typically has no owned hotel) or for an admin with no hotel — in that case the query becomes `where('hotel_id', null)` and returns an **empty list**, not "everything" or an error. Don't assume a `200` with an empty array means "no insights exist" for a super admin.
 
@@ -71,6 +71,17 @@ Successful custom API responses use this structure:
   "insight_type": "general",
   "evidence_level": "L2",
   "evidence_sources": ["019fabcd-5678-7000-9000-123456789abc"],
+  "citations": [
+    {
+      "source_type": "policy",
+      "source_id": "019fd111-2222-7000-9000-abcdef000001",
+      "title": "Check-in and check-out",
+      "location": "Section: Late check-out",
+      "scope": "hotel",
+      "last_updated": "2026-09-30",
+      "available": true
+    }
+  ],
   "created_at": "2026-08-08T10:00:00.000000Z",
   "updated_at": "2026-08-08T10:00:00.000000Z"
 }
@@ -79,13 +90,33 @@ Successful custom API responses use this structure:
 Field notes for the UI:
 
 - `id` and `hotel_id` are UUID strings.
-- `category` is one of `reservation`, `task`, `guest_message`, `general` (`App\Enums\AiInsightCategories`) — this is what the AI tagged the insight as, and is the field to drive an icon/badge, **not** `insightable_type`.
+- `category` is one of `reservation`, `task`, `guest_message`, `general`, `knowledge` (`App\Enums\AiInsightCategories`). `knowledge` means the insight rests only on the knowledge base and on no specific record (see [Knowledge Citations](#knowledge-citations)) — this is what the AI tagged the insight as, and is the field to drive an icon/badge, **not** `insightable_type`.
 - `insight_type` is one of `general`, `reservation`, `task` (`App\Enums\InsightTypes`) — this is which *request* produced the insight (what the caller asked for in `POST`'s `insight_type` field), and defaults to `general` if the request omitted it.
 - `insightable_type` / `insightable_id` are a **polymorphic link** to the specific record the insight is about (a `Reservation`, `Task`, or `Message`), or both `null` if the insight is general / not tied to one record, or if the AI-supplied source id didn't actually validate against the hotel's own data (see [Sourcing Caveats](#sourcing-caveats)). `insightable_type` is the raw PHP class name (e.g. `"App\\Models\\Reservation"`) — there is no morph map — so don't try to display it directly; branch on `category` instead if you need a type label.
 - **Neither `insightable_type`/`insightable_id` are resolved to the actual related record.** `index` does not eager-load the `insightable` relation — you only get the raw id/type pair. If you want to deep-link "view this reservation," resolve it client-side against data you already have (or a separate `GET /api/reservation/{id}` call), the same pattern used elsewhere in this API for non-eager-loaded relations.
 - No soft deletes — there is currently no delete endpoint at all, so insights accumulate indefinitely; there's no way to dismiss/archive one through this API yet.
 - `evidence_level` is one of `L1` (observed fact), `L2` (strong inference from data), `L3` (hypothesis), `L4` (unverified). An insight tied to a **verified** hotel record (`insightable_id` set) is saved as `L2`; anything else defaults to `L3`. Treat `L3` output as "the AI's opinion", not established fact — the UI should not present it with the same weight as an `L1` figure.
 - `evidence_sources` is an array of the record ids the claim rests on (usually just `[insightable_id]`), or `null` when the insight isn't grounded in a specific record.
+- `citations` is the list of knowledge sources the insight relied on. It is always present, and `[]` when no knowledge was used (including every insight created before citations existed). See [Knowledge Citations](#knowledge-citations).
+
+### Knowledge Citations
+
+While generating insights, the AI can search the hotel's knowledge base: this hotel's documents, articles and policies, plus shared general guidance. When an insight relies on a result, the insight lists it in `citations`.
+
+| Field | Meaning |
+| --- | --- |
+| `source_type` | `document`, `article` or `policy` |
+| `source_id` | The source's id, for linking to its own page |
+| `title`, `location`, `last_updated` | As they were when the insight was generated. `location` is a page, sheet or section, or `null` |
+| `scope` | `hotel` (this hotel's own source) or `general` (shared guidance, managed by super admins) |
+| `available` | `false` once the source has been deleted, switched off or unpublished. The title is still shown, and the frontend should grey the citation out rather than link to it |
+
+Rules the backend enforces:
+
+- **Traceable only.** The AI never sees source ids. It cites run-local references (`K1`, `K2`, …) that the knowledge tool handed it. A reference the tool never returned is dropped, and so is a source that no longer exists when the insight is saved. At most 10 citations are kept per insight.
+- **Never another hotel's.** Search only returns this hotel's sources and shared guidance, so a citation can never name another hotel's source.
+- **Citations never raise the evidence level.** Knowledge says how the hotel says things work, not what happened. `evidence_level` still comes only from the operational record (`insightable_*`). An insight with `category: knowledge` has no record and is always `L3`. If none of its citations trace to a live source, it is not saved at all.
+- **Search failures don't block insights.** If knowledge search fails, insights are still produced from operational data, with no citations.
 
 ### Sourcing Caveats
 
@@ -122,7 +153,9 @@ All optional, same generic behavior as other list endpoints in this API:
 
 An unknown `filter`/`sort` column returns `422` (same shape as [Error: Unknown Filter/Sort Column](#error-unknown-filtersort-column) below).
 
-Useful filters for a dashboard: `filter[category]=task`, `filter[insight_type]=reservation`.
+Useful filters for a dashboard: `filter[category]=task`, `filter[insight_type]=reservation`, `filter[category]=knowledge`. There is no filter on citations.
+
+Citation availability is checked for the whole page at once (one query per source type).
 
 ### Success Response
 

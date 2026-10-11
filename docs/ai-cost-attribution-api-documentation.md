@@ -115,6 +115,26 @@ a hotel. A hotel admin sees the usage (`knowledge_pages_read`,
 daily spend ceiling gets its document marked `usage_limit_reached` instead of
 indexed, and can re-index it later.
 
+### Capability: which AI feature a call is reported under
+
+Every row also carries `capability` (SPEC-091). It is the `App\Enums\AiAgentName` of the **AI run** the call belonged to, stamped by `AiCostRecorder` from `AiRun::agent()`. A call made outside any run is stamped `unattributed`.
+
+This is not the same as the `agent` column, which holds the class that made the call. Work nested inside a turn counts toward the turn: the turn classifier (`TurnSignalAgent`), a knowledge-search embedding and an inline pitch's `RecommendationAgent` call inside a Concierge reply are all `concierge`. That is what lets the report say which capability drives the bill.
+
+| Capability | Label | Usage features it is counted by |
+|---|---|---|
+| `concierge` | Concierge | `ai_messages`, `recommendations_generated` (inline pitches) |
+| `admin_advisor` | Admin AI | `ai_messages` |
+| `recommendation` | Recommendations | `recommendations_generated` |
+| `insights` | Insights | `ai_insights_generated` |
+| `document_vision` | Document reading | `knowledge_pages_read`, `embeddings_generated` |
+| `guest_memory` | Guest memories | `guest_memory_extractions` |
+| `knowledge` | Knowledge indexing | `embeddings_generated` |
+
+`turn_signal` remains a valid value but is never a run of its own, so no row carries it. The mapping lives in `tests/Feature/AiCapabilityCoverageTest.php`, as an exhaustive `match` over `AiAgentName`; no runtime code reads it. The test fails when a capability has no mapping, when a capability's run records none of its features, or when running it leaves a row with an `unattributed` capability or trigger.
+
+Rows written before the column existed were backfilled once by migration `2026_10_11_000002`: first from their run's entry in `ai_activities`, then from the agent class. Embedding and reranking calls made outside any run stay `unattributed`.
+
 **`trigger_kind` is the field that earns its keep.** It separates cost we
 control from cost guests drive. `GuestConciergeAgent` answers anyone who can
 message the hotel's number, so anyone who can message the hotel's number can
@@ -219,6 +239,10 @@ Both parameters are optional and default to the current calendar month.
       },
       "by_model": { "gpt-5.4": 289.30, "gemini-embedding-2": 29.14 },
       "by_hotel": { "9a2c…": 318.44 },
+      "by_capability": {
+        "concierge": { "label": "Concierge", "calls": 8710, "input_tokens": 41200000, "output_tokens": 2900000, "ai_cost_usd": 296.40, "ai_cost_eur": 271.93, "cost_is_estimated": false },
+        "knowledge": { "label": "Knowledge indexing", "calls": 312, "input_tokens": 1900000, "output_tokens": 0, "ai_cost_usd": 31.76, "ai_cost_eur": 29.14, "cost_is_estimated": false }
+      },
       "retry_cost_eur": 12.80,
       "failed_calls": 37,
       "contract_value": 1042.00,
@@ -255,6 +279,13 @@ Both parameters are optional and default to the current calendar month.
    - no contract value is recorded for the account, or
    - the requested range is not a whole calendar month, and prorating a
      monthly figure would invent a precision nobody agreed to.
+
+`by_capability` uses the same keys and labels as the `ai.by_capability` block of the usage reports ([usage metering](usage-metering-api-documentation.md)), so what an account used and what it cost can be read side by side:
+
+- Only capabilities with at least one call are listed.
+- `input_tokens` includes cached input.
+- The per-capability `ai_cost_usd` values add up to the account's `ai_cost_usd`.
+- `cost_is_estimated` is `true` when any call in the group was priced as an estimate, for example a model with no price on file that day.
 
 `retry_cost_eur` is the part of the bill that bought nothing: a call that
 retried three times cost four calls, and all four are logged with an `attempt`
