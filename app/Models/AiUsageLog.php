@@ -45,6 +45,7 @@ class AiUsageLog extends Model
         'trigger_type',
         'trigger_id',
         'trigger_kind',
+        'ai_run_id',
         'occurred_at',
     ];
 

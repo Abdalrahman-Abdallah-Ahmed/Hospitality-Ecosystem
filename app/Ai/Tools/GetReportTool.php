@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\Permission;
 use App\Exceptions\DomainRuleException;
 use App\Models\AiInsights;
@@ -27,7 +28,7 @@ use Stringable;
  * Never shown here: AI provider cost or margin, and any figure read from the
  * transaction ledger (FR-021).
  */
-class GetReportTool implements Tool
+class GetReportTool implements ReadsData, Tool
 {
     public const REPORTS = ['dashboard', 'occupancy', 'conversion', 'insights', 'usage'];
 

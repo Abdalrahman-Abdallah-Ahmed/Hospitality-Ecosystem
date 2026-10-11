@@ -72,12 +72,12 @@ it('names the one approved offer only on a turn that may pitch', function () {
     expect((string) $eligible->instructions())
         ->toContain('mention Snorkeling — Loves the sea')
         ->not->toContain('tailor a recommendation yourself')
-        ->and(collect($eligible->tools())->contains(fn ($tool) => $tool instanceof PitchActivityTool))->toBeTrue();
+        ->and(toolOfClass($eligible->tools(), PitchActivityTool::class))->not->toBeNull();
 
     foreach ([$ineligible, $none] as $agent) {
         expect((string) $agent->instructions())
             ->toContain('Do not suggest activities the guest did not ask about')
             ->not->toContain('Snorkeling')
-            ->and(collect($agent->tools())->contains(fn ($tool) => $tool instanceof PitchActivityTool))->toBeFalse();
+            ->and(toolOfClass($agent->tools(), PitchActivityTool::class))->toBeNull();
     }
 });

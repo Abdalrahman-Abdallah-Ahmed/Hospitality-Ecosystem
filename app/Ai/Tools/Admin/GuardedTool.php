@@ -2,13 +2,13 @@
 
 namespace App\Ai\Tools\Admin;
 
+use App\Enums\AiAgentName;
 use App\Enums\Permission;
 use App\Models\Hotel;
 use App\Models\User;
-use App\Support\Audit\EventLogger;
+use App\Support\Ai\AiActionRecorder;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Concerns\InteractsWithApprovals;
 use Laravel\Ai\Contracts\Approvable;
@@ -82,6 +82,12 @@ class GuardedTool implements Approvable, Tool
     {
         return TenantContext::runForHotel($this->hotel->id, function () use ($request) {
             if ($refusal = $this->refusal($request)) {
+                // A write the user may not make is still an AI action the
+                // hotel should see was attempted (SPEC-083).
+                if ($this->kind === self::WRITE) {
+                    AiActionRecorder::refused(AiAgentName::ADMIN_ADVISOR, $this->name(), $this->user, $this->conversationId, 'permission');
+                }
+
                 return $refusal;
             }
 
@@ -89,15 +95,15 @@ class GuardedTool implements Approvable, Tool
                 return $this->inner->handle($request);
             }
 
-            return EventLogger::asAiAgent(
-                fn () => DB::transaction(fn () => $this->inner->handle($request)),
-                onBehalfOf: $this->user,
-                ai: [
-                    'agent' => 'admin_advisor',
-                    'tool' => $this->name(),
-                    'tool_call_id' => $request->toolCallId(),
-                    'conversation_id' => $this->conversationId,
-                ],
+            // One transaction, audited as the AI acting for the user, and one
+            // AI activity entry however it ends.
+            return AiActionRecorder::around(
+                AiAgentName::ADMIN_ADVISOR,
+                $this->name(),
+                $this->user,
+                $request->toolCallId(),
+                $this->conversationId,
+                fn () => $this->inner->handle($request),
             );
         });
     }

@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\RoomStatusesEnum;
 use App\Models\Hotel;
@@ -12,7 +13,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class CreateRoomTool implements Tool
+class CreateRoomTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,

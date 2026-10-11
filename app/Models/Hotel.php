@@ -49,6 +49,8 @@ class Hotel extends Model
         'inspection_required',
         // Read through proactiveSettings(); validated by HotelController.
         'proactive_settings',
+        // Guest memories on or off for this hotel (SPEC-084 FR-032).
+        'guest_memories_enabled',
     ];
 
     protected $casts = [
@@ -58,6 +60,7 @@ class Hotel extends Model
         'inspection_required' => 'boolean',
         'inspection_required_since' => 'datetime',
         'proactive_settings' => 'array',
+        'guest_memories_enabled' => 'boolean',
     ];
 
     protected static function booted(): void

@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -9,7 +10,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class GetRecommendationsTool implements Tool
+class GetRecommendationsTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly ?Reservation $reservation,

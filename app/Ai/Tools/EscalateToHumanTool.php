@@ -2,6 +2,8 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
+use App\Enums\EscalationRequestType;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
@@ -16,7 +18,7 @@ use Stringable;
  * The guest needs a person (SPEC-054). Always available, also to a guest with
  * only past stays. One open escalation per guest: asking again adds to it.
  */
-class EscalateToHumanTool implements Tool
+class EscalateToHumanTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Guest $guest,
@@ -43,6 +45,8 @@ class EscalateToHumanTool implements Tool
             $this->hotel,
             $this->reservation,
             $request->string('reason')->toString(),
+            $request->enum('request_type', EscalationRequestType::class),
+            $request->filled('detail') ? $request->string('detail')->toString() : null,
         );
 
         // Nothing may be pitched in the reply to a guest who needed a human.
@@ -60,6 +64,11 @@ class EscalateToHumanTool implements Tool
     {
         return [
             'reason' => $schema->string()->description('Why this conversation needs a human.')->required(),
+            'request_type' => $schema->string()
+                ->enum(EscalationRequestType::class)
+                ->description('Only when the guest asks what you remember about them (see_memories) or asks you to forget or correct something you remember (forget_memory).'),
+            'detail' => $schema->string()
+                ->description('For forget_memory: what the guest asked you to forget or correct, in a few words.'),
         ];
     }
 }

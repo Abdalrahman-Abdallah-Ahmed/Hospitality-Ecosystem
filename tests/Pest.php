@@ -4,6 +4,7 @@ use App\Ai\Agents\DocumentVisionAgent;
 use App\Ai\Agents\TurnSignalAgent;
 use App\Ai\Tools\Admin\AdminToolset;
 use App\Ai\Tools\Admin\GuardedTool;
+use App\Ai\Tools\AuditedTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Ai\Tools\PitchActivityTool;
 use App\Ai\Tools\UpdateRecommendationTool;
@@ -16,6 +17,7 @@ use App\Jobs\EvaluateProactiveTriggersJob;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Guest;
+use App\Models\GuestMemory;
 use App\Models\Hotel;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeDocument;
@@ -1036,7 +1038,7 @@ function aatArgs(string $tool, array $s): array
         'KnowledgeSearchTool' => ['query' => 'pool hours'],
         'GetGuestsTool' => ['search' => $s['guest']->last_name],
         'GetGuestTool' => ['guest' => $s['guest']->id],
-        'GetGuestMessagesTool', 'GetRoomTypesTool', 'GetTaskCategoriesTool', 'GetHousekeepingBoardTool',
+        'GetRoomTypesTool', 'GetTaskCategoriesTool', 'GetHousekeepingBoardTool',
         'GetMaintenanceTool', 'GetActivitiesTool', 'GetStaffTool', 'GetHotelSettingsTool' => [],
         'GetReservationsTool' => ['code' => $s['code']],
         'GetReservationTool' => ['code' => $s['code']],
@@ -1301,4 +1303,133 @@ function rapSweep(): void
 function rapProactiveRows(Guest $guest)
 {
     return ProactiveMessage::withoutGlobalScope('hotel')->where('guest_id', $guest->id)->orderBy('created_at')->get();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Conversations, guest memories and AI audit (SPEC 011)
+|--------------------------------------------------------------------------
+*/
+
+function cmaHotel(string $timezone = 'Asia/Riyadh'): Hotel
+{
+    return rapHotel($timezone);
+}
+
+function cmaAdmin(Hotel $hotel): User
+{
+    return $hotel->owner;
+}
+
+/**
+ * @param  list<Permission>  $permissions
+ */
+function cmaEmployee(Hotel $hotel, array $permissions = []): User
+{
+    return fdEmployee($hotel, $permissions);
+}
+
+/**
+ * A guest's Concierge conversation written straight into the laravel/ai
+ * tables, the shape the package store writes.
+ *
+ * @param  list<array{role: string, content: string, at?: CarbonInterface, proactive?: bool, tool_calls?: array, attachments?: array}>  $messages
+ */
+function cmaGuestConversation(Guest $guest, array $messages): string
+{
+    return cmaConversation($guest->getMorphClass(), $guest->id, $messages);
+}
+
+function cmaStaffConversation(User $user, array $messages = [['role' => 'user', 'content' => 'Show me arrivals']]): string
+{
+    return cmaConversation($user->getMorphClass(), $user->id, $messages);
+}
+
+/**
+ * @param  list<array<string, mixed>>  $messages
+ */
+function cmaConversation(string $participantType, string $participantId, array $messages): string
+{
+    $id = (string) Str::uuid7();
+    $first = $messages[0]['at'] ?? now()->subHour();
+    $last = end($messages)['at'] ?? now();
+
+    DB::table('agent_conversations')->insert([
+        'id' => $id,
+        'participant_type' => $participantType,
+        'participant_id' => $participantId,
+        'title' => 'Conversation',
+        'created_at' => $first,
+        'updated_at' => $last,
+    ]);
+
+    foreach (array_values($messages) as $i => $message) {
+        $at = $message['at'] ?? now()->subMinutes(count($messages) - $i);
+
+        DB::table('agent_conversation_messages')->insert([
+            'id' => (string) Str::uuid7(),
+            'conversation_id' => $id,
+            'participant_type' => $participantType,
+            'participant_id' => $participantId,
+            'agent' => 'App\Ai\Agents\GuestConciergeAgent',
+            'role' => $message['role'],
+            'content' => $message['content'],
+            'attachments' => json_encode($message['attachments'] ?? []),
+            'tool_calls' => json_encode($message['tool_calls'] ?? []),
+            'tool_results' => '[]',
+            'usage' => json_encode(['input_tokens' => 10]),
+            'meta' => json_encode(($message['proactive'] ?? false) ? ['proactive' => true] : []),
+            'approval_state' => null,
+            'created_at' => $at,
+            'updated_at' => $at,
+        ]);
+    }
+
+    return $id;
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function cmaMemory(Guest $guest, array $overrides = []): GuestMemory
+{
+    return GuestMemory::create([
+        'hotel_id' => $guest->hotel_id,
+        'guest_id' => $guest->id,
+        'category' => 'preference',
+        'content' => 'Prefers a quiet room away from the lift.',
+        'language' => 'en',
+        'confidence' => 'high',
+        'source_stay_id' => $guest->stays()->value('id'),
+        'extracted_at' => now()->subDay(),
+        ...$overrides,
+    ]);
+}
+
+function cmaRequest($test, User $user, string $method, string $uri, array $payload = []): TestResponse
+{
+    return rapRequest($test, $user, $method, $uri, $payload);
+}
+
+/**
+ * The tool of this class an agent hands its model, whether it reaches the
+ * model as it is or wrapped for auditing (SPEC-083: every write tool is).
+ *
+ * @param  iterable<object>  $tools
+ * @param  class-string  $class
+ */
+function toolOfClass(iterable $tools, string $class): ?object
+{
+    return collect($tools)->first(fn (object $tool) => ($tool instanceof AuditedTool || $tool instanceof GuardedTool ? $tool->inner() : $tool) instanceof $class);
+}
+
+/**
+ * The class each tool in the list really is, wrapped or not.
+ *
+ * @param  iterable<object>  $tools
+ * @return list<class-string>
+ */
+function toolClasses(iterable $tools): array
+{
+    return collect($tools)->map(fn (object $tool) => ($tool instanceof AuditedTool || $tool instanceof GuardedTool ? $tool->inner() : $tool)::class)->values()->all();
 }

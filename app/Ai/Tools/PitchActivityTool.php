@@ -2,11 +2,13 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\PitchDecision;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\Stay;
 use App\Services\Pitching\PitchEligibilityService;
+use App\Support\Audit\EventLogger;
 use App\Support\Pitching\GateReport;
 use App\Support\Pitching\PitchTurn;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -27,7 +29,7 @@ use Stringable;
  * delivery is stamped only once WhatsApp has accepted the reply
  * (PitchCoordinator::delivered()).
  */
-class PitchActivityTool implements Tool
+class PitchActivityTool implements Tool, WritesData
 {
     public function __construct(
         private readonly PitchTurn $turn,
@@ -81,6 +83,11 @@ class PitchActivityTool implements Tool
             PitchDecision::withoutGlobalScope('hotel')
                 ->whereKey($this->turn->decision->id)
                 ->update(['is_retry' => $this->turn->isRetryTurn, 'chosen_rank' => $candidate->storedRank]);
+
+            // Both writes are conditional bulk updates, which fire no model
+            // events: say what changed, so the AI activity entry records a
+            // staged offer rather than "nothing changed" (SPEC-083).
+            EventLogger::notice(Recommendation::query()->findOrFail($candidate->recommendationId), 'recommendation.staged');
 
             return null;
         });

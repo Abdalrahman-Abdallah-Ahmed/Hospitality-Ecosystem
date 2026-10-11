@@ -76,6 +76,15 @@ class Guest extends Model
                 $guest->identity_resolved_at = $guest->identity_hash ? now() : null;
             }
         });
+
+        // A deleted guest's memories go with them, for good: memories are
+        // protected guest data and restoring the guest must not bring them
+        // back (SPEC-084 FR-020). `deleted` fires on soft delete too; the
+        // foreign key cascades on a force delete. One by one, so each
+        // deletion is audited.
+        static::deleted(function (Guest $guest) {
+            GuestMemory::query()->where('guest_id', $guest->id)->get()->each->delete();
+        });
     }
 
     /**
@@ -91,6 +100,11 @@ class Guest extends Model
             'preferred_language', 'nationality', 'preferences', 'loyalty_status', 'is_vip',
             'external_id', 'channel', 'master_guest_id',
         ];
+    }
+
+    public function memories(): HasMany
+    {
+        return $this->hasMany(GuestMemory::class);
     }
 
     public function reservations(): HasMany

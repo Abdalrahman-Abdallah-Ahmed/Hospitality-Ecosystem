@@ -9,6 +9,7 @@ use App\Http\Resources\HotelResource;
 use App\Models\Hotel;
 use App\Models\TaskCategory;
 use App\Models\Team;
+use App\Support\Audit\EventLogger;
 use App\Support\Proactive\ProactiveSettings;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
@@ -100,7 +101,17 @@ class HotelController extends Controller
             $hotel->forceFill(['inspection_required_since' => now()]);
         }
 
+        $memoriesWere = (bool) $hotel->guest_memories_enabled;
+
         $hotel->update($validated);
+
+        // The hotel is not an audited model, so turning guest memories on or
+        // off is recorded here (SPEC-084 FR-032).
+        if (array_key_exists('guest_memories_enabled', $validated) && $memoriesWere !== (bool) $hotel->guest_memories_enabled) {
+            EventLogger::record($hotel, 'guest_memories_toggled', changes: [
+                'guest_memories_enabled' => ['from' => $memoriesWere, 'to' => (bool) $hotel->guest_memories_enabled],
+            ]);
+        }
 
         return apiResponse('Hotel updated successfully.', 200, HotelResource::make($hotel));
     }

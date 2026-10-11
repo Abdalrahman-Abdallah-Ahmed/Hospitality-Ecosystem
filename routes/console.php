@@ -6,6 +6,7 @@ use App\Jobs\ExpireRecommendationsJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
 use App\Jobs\PurgeDeletedKnowledgeDocumentsJob;
+use App\Jobs\RetryGuestMemoryExtractionsJob;
 use App\Jobs\StartHousekeepingDayJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -42,6 +43,10 @@ Schedule::job(new FlagAiCostOverrunsJob)->dailyAt('04:30');
 // Expires recommendations awaiting approval or an offer once their stay is
 // over. Hourly, so each hotel's own date decides when that is.
 Schedule::job(new ExpireRecommendationsJob)->hourly();
+
+// Gives a guest memory extraction that failed or hit the spend ceiling its
+// one retry, a day later (SPEC-084 FR-036).
+Schedule::job(new RetryGuestMemoryExtractionsJob)->hourly()->withoutOverlapping();
 
 // Finds the proactive Concierge messages each hotel's triggers call for and
 // sends the ones due. Hotels with proactive messaging off are skipped; a

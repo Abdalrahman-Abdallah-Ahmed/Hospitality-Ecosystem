@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\RoomStatusesEnum;
 use App\Enums\TaskStatus;
 use App\Models\Hotel;
@@ -18,7 +19,7 @@ use Stringable;
  * Maintenance for the Admin AI: the maintenance list the maintenance screen
  * shows (SPEC-033), plus every room that is out of order right now.
  */
-class GetMaintenanceTool implements Tool
+class GetMaintenanceTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

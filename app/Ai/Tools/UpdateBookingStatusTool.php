@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\BookingStatus;
 use App\Models\Hotel;
 use App\Services\BookingService;
@@ -21,7 +22,7 @@ use Stringable;
  * rules. Cancelling is hard to reverse, so that one call is confirmed by the
  * admin first (FR-017); the others run straight away.
  */
-class UpdateBookingStatusTool implements ConfirmsBeforeRunning, Tool
+class UpdateBookingStatusTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use AdminToolSupport;
 

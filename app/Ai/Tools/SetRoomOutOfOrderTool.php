@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Services\MaintenanceService;
@@ -19,7 +20,7 @@ use Stringable;
  * the reservations that held it are listed. Hard to reverse while guests are
  * affected, so the admin confirms it first (FR-017).
  */
-class SetRoomOutOfOrderTool implements ConfirmsBeforeRunning, Tool
+class SetRoomOutOfOrderTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use AdminToolSupport;
 

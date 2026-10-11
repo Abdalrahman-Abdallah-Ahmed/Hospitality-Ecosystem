@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\RecommendationStatus;
 use App\Models\Hotel;
 use App\Models\Recommendation;
@@ -17,7 +18,7 @@ use Stringable;
  * awaiting a decision by default, with the guest, room and activity, so the
  * admin can name the one to approve.
  */
-class GetRecommendationsForReviewTool implements Tool
+class GetRecommendationsForReviewTool implements ReadsData, Tool
 {
     use AdminToolSupport;
 

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\Priority;
 use App\Models\Hotel;
 use App\Models\User;
@@ -19,7 +20,7 @@ use Stringable;
  * the housekeeping task screen does (MaintenanceService::reportIssue), with
  * the same rule on which tasks an issue can be reported on.
  */
-class ReportTaskIssueTool implements Tool
+class ReportTaskIssueTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

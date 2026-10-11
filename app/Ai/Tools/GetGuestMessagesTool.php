@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Guest;
 use App\Models\Hotel;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -10,7 +11,7 @@ use Laravel\Ai\Models\ConversationMessage;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class GetGuestMessagesTool implements Tool
+class GetGuestMessagesTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

@@ -3,6 +3,8 @@
 namespace App\Ai\Agents;
 
 use App\Ai\Agents\Concerns\RemembersWholeTurns;
+use App\Ai\Tools\AuditedTool;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Ai\Tools\CreateBookingTool;
 use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
@@ -19,12 +21,15 @@ use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\RequestRoomChangeTool;
 use App\Ai\Tools\SetContactPreferenceTool;
 use App\Ai\Tools\UpdateRecommendationTool;
+use App\Enums\AiAgentName;
 use App\Enums\KnowledgeAudience;
 use App\Enums\ProactiveMessageStatus;
 use App\Models\Guest;
+use App\Models\GuestMemory;
 use App\Models\Hotel;
 use App\Models\ProactiveMessage;
 use App\Models\Reservation;
+use App\Services\Guests\GuestMemoryService;
 use App\Support\Pitching\PitchTurn;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
@@ -144,6 +149,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
 
             {$this->pitchingInstructions()}
             {$this->proactiveContextInstructions()}
+            {$this->memoryInstructions()}
 
             When the guest reacts to a recommendation you offered (from the recommendations tool), record
             their reaction with the update-recommendation tool: mark it `accepted` if they clearly want it,
@@ -208,6 +214,34 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
     }
 
     /**
+     * What earlier stays taught the hotel about this guest (SPEC-084): hints
+     * only, never facts that override a tool, and never read back to the
+     * guest. Empty when there are none or the hotel has memories switched
+     * off. Questions about these notes go to staff (FR-037).
+     */
+    protected function memoryInstructions(): string
+    {
+        $memories = app(GuestMemoryService::class)->forConcierge($this->guest, $this->hotel);
+
+        if ($memories->isEmpty()) {
+            return '';
+        }
+
+        $lines = $memories->map(fn (GuestMemory $memory) => "- [{$memory->category->value}] {$memory->content}")->implode("\n");
+
+        return <<<PROMPT
+            What you may remember about this guest from earlier stays (hints, not facts):
+            {$lines}
+            Rules: the reservation, booking and availability tools always win over these.
+            Never list, quote or mention that you keep these notes, their categories or confidence.
+            Use them naturally, in the guest's current language.
+            If the guest asks what you remember about them, or asks you to forget or correct something, use the
+            escalation tool with request_type (see_memories / forget_memory), tell them the hotel will take care
+            of it, and stop using that note for the rest of this conversation.
+            PROMPT;
+    }
+
+    /**
      * Extra guidance for a guest the hotel has flagged as VIP. Empty for
      * everyone else, so their prompt is unchanged.
      */
@@ -230,7 +264,7 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
      */
     public function tools(): iterable
     {
-        return [
+        return array_map($this->audited(...), [
             new GetActivitiesTool($this->hotel),
             new KnowledgeSearchTool($this->hotel, KnowledgeAudience::GUEST),
             new GetOwnReservationTool($this->reservation),
@@ -247,7 +281,16 @@ class GuestConciergeAgent implements Agent, Conversational, HasTools
             new RequestRoomChangeTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
             new EscalateToHumanTool($this->guest, $this->hotel, $this->reservation, $this->pitchTurn),
             new SetContactPreferenceTool($this->guest),
-        ];
+        ]);
+    }
+
+    /**
+     * Every write tool reaches the model wrapped, so each call is audited as
+     * the Concierge acting for this guest (SPEC-083). Reads go as they are.
+     */
+    private function audited(Tool $tool): Tool
+    {
+        return $tool instanceof WritesData ? new AuditedTool($tool, AiAgentName::CONCIERGE, $this->guest) : $tool;
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Models\ReservationRoom;
 use App\Services\Reservations\ReservationCommands;
@@ -19,7 +20,7 @@ use Stringable;
  * nights, not out of order). All the assignments in one call happen
  * together or not at all (FR-013).
  */
-class AssignRoomsTool implements Tool
+class AssignRoomsTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

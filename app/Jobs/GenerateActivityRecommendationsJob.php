@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ai\Agents\RecommendationAgent;
 use App\Enums\ActorKind;
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Enums\RecommendationSource;
@@ -56,10 +57,15 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
         // recommendations for this reservation), not by a schedule — so its
         // cost is attributed to staff_request. The reservation is the trigger
         // record, which is what makes a per-reservation cost answerable.
+        //
+        // No AiActionRecorder::forJob() here: every recommendation is written
+        // through CreateRecommendationTool, which AuditedTool already records
+        // once per call (SPEC-083). A job-level entry would count them twice.
         AiCostContext::for(
             kind: AiTriggerKind::STAFF_REQUEST,
             hotel: $this->reservation->hotel,
             trigger: $this->reservation,
+            agent: AiAgentName::RECOMMENDATION,
             callback: fn () => EventLogger::asAiAgent(
                 fn () => $agent->prompt("Generate activity recommendations for guest {$guestName}.")
             ),

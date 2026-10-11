@@ -132,9 +132,11 @@ it('lets an employee read a resource only when their role grants it', function (
 })->with([
     'activities' => ['/api/activity', Permission::ACTIVITIES_VIEW],
     'activity categories' => ['/api/activity-category', Permission::ACTIVITY_CATEGORIES_VIEW],
+    'ai activity' => ['/api/ai-activity', Permission::HISTORY_VIEW],
     'availability' => [availabilityProbeUrl(), Permission::AVAILABILITY_VIEW],
     'ai insights' => ['/api/ai-insights', Permission::AI_INSIGHTS_VIEW],
     'bookings' => ['/api/booking', Permission::BOOKINGS_VIEW],
+    'conversations' => ['/api/conversations', Permission::CONVERSATIONS_VIEW],
     'booking cancellation requests' => ['/api/booking/cancellation-requests', Permission::BOOKINGS_VIEW],
     'dashboard' => ['/api/dashboard', Permission::DASHBOARD_VIEW],
     'guests' => ['/api/guest', Permission::GUESTS_VIEW],

@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
 use App\Models\Hotel;
@@ -20,7 +21,7 @@ use Stringable;
  * as a plain list, as it always has. The Admin AI uses it paged (SPEC-055
  * R6): filters, any status, at most 50 rows with the total.
  */
-class GetTasksTool implements Tool
+class GetTasksTool implements ReadsData, Tool
 {
     private const UNPAGED_LIMIT = 20;
 

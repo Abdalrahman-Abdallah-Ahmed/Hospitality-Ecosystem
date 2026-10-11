@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Services\Guests\GuestRegistrar;
@@ -16,7 +17,7 @@ use Stringable;
  * Only the fields the admin actually gave are written: a field left out is
  * left alone, never blanked.
  */
-class UpdateGuestTool implements Tool
+class UpdateGuestTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

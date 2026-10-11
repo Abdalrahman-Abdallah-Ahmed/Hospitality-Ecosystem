@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Services\Guests\GuestRegistrar;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -23,7 +24,7 @@ use Stringable;
  * An agent correcting a spelling is fine; an agent blanking a nationality
  * because the admin did not repeat it is not.
  */
-class CreateGuestTool implements Tool
+class CreateGuestTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

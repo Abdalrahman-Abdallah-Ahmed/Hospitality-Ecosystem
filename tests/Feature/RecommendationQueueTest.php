@@ -4,6 +4,7 @@ use App\Enums\RecommendationStatus;
 use App\Models\EventLog;
 use App\Models\Recommendation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -102,6 +103,12 @@ it('decides 100 at once in under two seconds', function () {
     $started = microtime(true);
     rapRequest($this, rapAdmin($hotel), 'POST', '/api/recommendations/decide', ['action' => 'approve', 'ids' => $ids])->assertOk();
 
-    expect(microtime(true) - $started)->toBeLessThan(2.0)
+    $elapsed = microtime(true) - $started;
+
+    // Under --parallel every process shares the CPU and the database, so the
+    // wall-clock budget gets the same headroom as StayListTest.
+    $budget = ParallelTesting::token() ? 4.0 : 2.0;
+
+    expect($elapsed)->toBeLessThan($budget)
         ->and(Recommendation::where('status', 'approved')->count())->toBe(100);
 });

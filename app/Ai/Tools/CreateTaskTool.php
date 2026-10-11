@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\CreatedBy;
 use App\Enums\Priority;
 use App\Enums\TaskStatus;
@@ -34,7 +35,7 @@ use Stringable;
  * with the same room, category and title from the last day (R9) — a model
  * retry or a repeated message, not a second job.
  */
-class CreateTaskTool implements Tool
+class CreateTaskTool implements Tool, WritesData
 {
     use AdminToolSupport;
 

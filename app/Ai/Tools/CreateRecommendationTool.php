@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\EvidenceLevel;
 use App\Enums\RecommendationSource;
 use App\Enums\RecommendationStatus;
@@ -15,7 +16,7 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
 
-class CreateRecommendationTool implements Tool
+class CreateRecommendationTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,

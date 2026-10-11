@@ -32,12 +32,17 @@ enum Permission: string
     case BOOKINGS_UPDATE_STATUS = 'bookings.update_status';
     case BOOKINGS_OVERRIDE_CAPACITY = 'bookings.override_capacity';
 
+    case CONVERSATIONS_VIEW = 'conversations.view';
+
     case DASHBOARD_VIEW = 'dashboard.view';
 
     case GUESTS_VIEW = 'guests.view';
     case GUESTS_CREATE = 'guests.create';
     case GUESTS_UPDATE = 'guests.update';
     case GUESTS_DELETE = 'guests.delete';
+
+    case GUEST_MEMORIES_VIEW = 'guest_memories.view';
+    case GUEST_MEMORIES_DELETE = 'guest_memories.delete';
 
     case HISTORY_VIEW = 'history.view';
 
@@ -134,6 +139,10 @@ enum Permission: string
      *   uploaded, corrected or switched on is what the guest AI tells guests.
      * - Approving recommendations is never a default: it decides what the hotel
      *   tells guests, so employees only get it through a staff role.
+     * - Reading guest conversations and viewing or deleting guest memories are
+     *   never defaults: both are protected guest data, which regular staff must
+     *   not receive automatically (constitution, Conversations and Guest
+     *   Memories).
      *
      * @return list<self>
      */

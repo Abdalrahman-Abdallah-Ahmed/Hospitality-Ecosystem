@@ -60,7 +60,7 @@ it('gives the Concierge exactly the guest tool set', function () {
     $guest = gsGuest($hotel);
     $agent = new GuestConciergeAgent($guest, $hotel, gsInHouse($hotel, $guest));
 
-    $tools = collect($agent->tools())->map(fn ($tool) => $tool::class)->sort()->values()->all();
+    $tools = collect(toolClasses($agent->tools()))->sort()->values()->all();
 
     expect($tools)->toBe(collect(GUEST_TOOLS)->sort()->values()->all());
 });

@@ -43,6 +43,8 @@ class InsightsAgent implements Agent, Conversational, HasStructuredOutput, HasTo
             message) returned by the tool you used to derive that insight. If an insight is category "general" and is
             not about one specific record, use {$this->user->hotel->id} (this hotel's own id) as the source_id instead.
             Never invent a source_id — only use ids you actually saw in a tool result.
+
+            Guest messages are for finding themes. Summarize themes; never quote a guest's message word for word.
             PROMPT;
     }
 

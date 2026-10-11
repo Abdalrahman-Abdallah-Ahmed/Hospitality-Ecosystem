@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\Permission;
 use App\Models\Hotel;
 use App\Models\Stay;
@@ -20,7 +21,7 @@ use Throwable;
  * the stay it is asked to check in or out. Checks stays.view for the admin it
  * acts for.
  */
-class GetStaysTool implements Tool
+class GetStaysTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

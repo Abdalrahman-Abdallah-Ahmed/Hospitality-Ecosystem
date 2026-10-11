@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
 use App\Ai\Tools\Concerns\FindsReservationStays;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\Permission;
 use App\Enums\StayStatus;
 use App\Models\Hotel;
@@ -27,7 +28,7 @@ use Stringable;
  * Hard to reverse, so the admin confirms it first (FR-017): the call pauses
  * until their next message says yes.
  */
-class CheckOutTool implements ConfirmsBeforeRunning, Tool
+class CheckOutTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use FindsReservationStays;
 

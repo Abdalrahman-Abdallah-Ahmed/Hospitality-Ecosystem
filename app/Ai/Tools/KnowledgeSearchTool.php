@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\KnowledgeAudience;
 use App\Enums\KnowledgeScope;
 use App\Enums\KnowledgeSourceType;
@@ -33,7 +34,7 @@ use Stringable;
  * left out of the result itself, so the model cannot repeat what it was
  * never given.
  */
-class KnowledgeSearchTool implements Tool
+class KnowledgeSearchTool implements ReadsData, Tool
 {
     /**
      * Candidates the HNSW index collects before the hotel filter applies

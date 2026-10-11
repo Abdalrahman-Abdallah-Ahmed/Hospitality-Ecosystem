@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\ListResult;
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Support\PhoneNumber;
@@ -20,7 +21,7 @@ use Stringable;
  * range, status, guest or code, dates in the hotel's own timezone, at most
  * 50 rows with the total.
  */
-class GetReservationsTool implements Tool
+class GetReservationsTool implements ReadsData, Tool
 {
     public function __construct(
         private readonly Hotel $hotel,

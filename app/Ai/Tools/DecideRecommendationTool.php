@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\User;
@@ -19,7 +20,7 @@ use Stringable;
  * decision first. There is no list argument: approving in bulk happens in
  * the approval queue, never through the AI.
  */
-class DecideRecommendationTool implements ConfirmsBeforeRunning, Tool
+class DecideRecommendationTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use AdminToolSupport;
 

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
 use App\Enums\StayStatus;
+use App\Jobs\ExtractGuestMemoriesJob;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
 use App\Support\Audit\EventLogger;
@@ -70,6 +71,21 @@ class Stay extends Model
         'first_contacted_at' => 'datetime',
         'last_contacted_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        // A check-out is when a guest's memories are extracted (SPEC-084).
+        // On the model, so every check-out path counts — the staff endpoint,
+        // the Admin AI, a whole reservation at once. After commit, so a
+        // check-out that rolls back extracts nothing. Forward only: stays
+        // that departed before this shipped are never extracted.
+        static::updated(function (Stay $stay): void {
+            if ($stay->wasChanged('status') && $stay->status === StayStatus::DEPARTED
+                && $stay->guest_id !== null && $stay->reservation_id !== null) {
+                ExtractGuestMemoriesJob::dispatch($stay->hotel_id, $stay->guest_id, $stay->reservation_id)->afterCommit();
+            }
+        });
+    }
 
     /**
      * @return array<int, string>

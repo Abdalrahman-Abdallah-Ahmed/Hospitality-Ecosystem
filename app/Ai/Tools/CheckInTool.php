@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Concerns\FindsReservationStays;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\Permission;
 use App\Enums\StayStatus;
 use App\Models\Hotel;
@@ -23,7 +24,7 @@ use Stringable;
  * same rules and messages as the front desk (FR-023). Checks stays.check_in
  * for the admin it acts for; writes are audited as the AI agent.
  */
-class CheckInTool implements Tool
+class CheckInTool implements Tool, WritesData
 {
     use FindsReservationStays;
 

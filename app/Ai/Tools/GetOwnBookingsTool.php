@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -16,7 +17,7 @@ use Stringable;
  * ones soonest first, then the most recent past ones. Prices are shown — the
  * guest sees them when browsing activities anyway (clarification Q7).
  */
-class GetOwnBookingsTool implements Tool
+class GetOwnBookingsTool implements ReadsData, Tool
 {
     private const PAST_LIMIT = 10;
 

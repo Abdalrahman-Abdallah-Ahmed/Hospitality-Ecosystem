@@ -18,7 +18,6 @@ use App\Ai\Tools\DecideRecommendationTool;
 use App\Ai\Tools\GetActivitiesTool;
 use App\Ai\Tools\GetAvailabilityTool;
 use App\Ai\Tools\GetBookingsTool;
-use App\Ai\Tools\GetGuestMessagesTool;
 use App\Ai\Tools\GetGuestsTool;
 use App\Ai\Tools\GetGuestTool;
 use App\Ai\Tools\GetHotelSettingsTool;
@@ -69,7 +68,9 @@ use Laravel\Ai\Contracts\Tool;
  *
  * Deliberately absent: deleting anything, and writing users, staff roles,
  * permissions, hotel settings, policies, documents, global knowledge or the
- * transaction ledger (FR-018, FR-019, FR-021, FR-022).
+ * transaction ledger (FR-018, FR-019, FR-021, FR-022); and reading guest
+ * messages, which are shown only in the dashboard's conversation viewer
+ * (SPEC-082 FR-033).
  */
 class AdminToolset
 {
@@ -104,7 +105,6 @@ class AdminToolset
             self::read(new KnowledgeSearchTool($hotel), Permission::KNOWLEDGE_BASE_ARTICLES_VIEW),
             self::read(new GetGuestsTool($hotel), Permission::GUESTS_VIEW),
             self::read(new GetGuestTool($hotel), Permission::GUESTS_VIEW),
-            self::read(new GetGuestMessagesTool($hotel), Permission::GUESTS_VIEW),
             self::read(new GetReservationsTool($hotel, paged: true), Permission::RESERVATIONS_VIEW),
             self::read(new GetReservationTool($hotel), Permission::RESERVATIONS_VIEW),
             self::read(new GetRoomTypesTool($hotel), Permission::ROOM_TYPES_VIEW),

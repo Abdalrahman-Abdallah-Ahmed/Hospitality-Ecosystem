@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Hotel;
 use App\Models\TaskCategory;
 use App\Models\Team;
@@ -16,7 +17,7 @@ use Stringable;
  * are never read here; any AI preference whose name suggests a secret is
  * dropped as well (FR-020). There is no write counterpart (FR-018).
  */
-class GetHotelSettingsTool implements Tool
+class GetHotelSettingsTool implements ReadsData, Tool
 {
     private const SECRET_KEY = '/secret|token|key|password|credential/i';
 

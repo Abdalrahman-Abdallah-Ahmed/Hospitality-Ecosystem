@@ -4,6 +4,7 @@ namespace App\Ai\Tools;
 
 use App\Ai\Tools\Admin\Concerns\AdminToolSupport;
 use App\Ai\Tools\Admin\ConfirmsBeforeRunning;
+use App\Ai\Tools\Contracts\WritesData;
 use App\Enums\ReservationRoomStatus;
 use App\Models\Hotel;
 use App\Models\ReservationRoom;
@@ -19,7 +20,7 @@ use Stringable;
  * (FR-017): the call pauses until their next message says yes. Nothing is
  * ever deleted (FR-019).
  */
-class CancelReservationTool implements ConfirmsBeforeRunning, Tool
+class CancelReservationTool implements ConfirmsBeforeRunning, Tool, WritesData
 {
     use AdminToolSupport;
 

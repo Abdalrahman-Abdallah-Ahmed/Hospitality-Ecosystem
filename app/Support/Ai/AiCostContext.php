@@ -2,13 +2,18 @@
 
 namespace App\Support\Ai;
 
+use App\Enums\AiActivityResult;
+use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Exceptions\AiSpendCeilingExceededException;
+use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
+use App\Models\User;
 use App\Services\AiCost\AiSpendCeiling;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Database\Eloquent\Model;
+use Throwable;
 
 /**
  * Who a provider call is being made for, and what set it off.
@@ -54,6 +59,13 @@ class AiCostContext
      * abuse stop needs. The check happens before the context is pushed, so a
      * stopped account throws without leaving anything behind on the stack.
      *
+     * The outermost context is also one AI run (SPEC-083): it opens an
+     * AiRun named after $agent, and on the way out records the run as
+     * succeeded, failed, or — stopped by the ceiling — refused. Nested
+     * contexts (the turn classifier, an embedding inside a turn) are part of
+     * the run already open. $conversationId may be left out and named later
+     * with AiRun::setConversation().
+     *
      * @throws AiSpendCeilingExceededException
      */
     public static function for(
@@ -62,13 +74,27 @@ class AiCostContext
         ?Model $trigger = null,
         ?HotelGroup $account = null,
         ?callable $callback = null,
+        AiAgentName|string|null $agent = null,
+        ?string $conversationId = null,
     ): mixed {
         $account ??= $hotel?->hotelGroup;
+        $opensRun = self::$stack === [];
 
-        // Nested contexts are part of a call already admitted — re-checking
-        // would stop an in-flight conversation halfway through.
-        if (self::$stack === []) {
-            app(AiSpendCeiling::class)->assertNotExceeded($account, $kind);
+        if ($opensRun) {
+            $agent = $agent instanceof AiAgentName ? $agent : (AiAgentName::tryFrom((string) $agent) ?? AiAgentName::UNATTRIBUTED);
+            $actedFor = $trigger instanceof User || $trigger instanceof Guest ? $trigger : null;
+
+            // Nested contexts are part of a call already admitted — re-checking
+            // would stop an in-flight conversation halfway through.
+            try {
+                app(AiSpendCeiling::class)->assertNotExceeded($account, $kind);
+            } catch (AiSpendCeilingExceededException $e) {
+                AiRun::refused($agent, $kind, $hotel, $actedFor, $conversationId, 'spend_ceiling');
+
+                throw $e;
+            }
+
+            AiRun::open($agent, $kind, $hotel, $actedFor, $conversationId);
         }
 
         self::$stack[] = [
@@ -81,11 +107,23 @@ class AiCostContext
         self::$attempts[count(self::$stack)] = 0;
 
         try {
-            return $callback();
+            $result = $callback();
+        } catch (Throwable $e) {
+            if ($opensRun) {
+                AiRun::close(AiActivityResult::FAILED, class_basename($e));
+            }
+
+            throw $e;
         } finally {
             unset(self::$attempts[count(self::$stack)]);
             array_pop(self::$stack);
         }
+
+        if ($opensRun) {
+            AiRun::close(AiActivityResult::SUCCEEDED);
+        }
+
+        return $result;
     }
 
     /**
@@ -145,5 +183,6 @@ class AiCostContext
     {
         self::$stack = [];
         self::$attempts = [];
+        AiRun::reset();
     }
 }
