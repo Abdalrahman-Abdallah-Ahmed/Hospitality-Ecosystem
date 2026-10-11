@@ -72,6 +72,11 @@ Successful custom API responses use this structure:
 
 **Validation errors (`422`) are the main exception**: they use Laravel's default shape, not the `message/code/body` wrapper.
 
+> **Related (*added 2026-10-10*):** a guest's WhatsApp conversations are read at
+> [`GET /api/conversations?guest_id={id}`](conversations-api-documentation.md), and what the AI
+> remembers about them at [`GET /api/guest/{id}/memories`](guest-memories-api-documentation.md).
+> Deleting a guest deletes their memories for good; restoring the guest does not bring them back.
+
 ## The Guest Object
 
 Every endpoint that returns a guest returns it with `hotel`, `reservations`, `conversations`, and **`stays`** eager-loaded:
