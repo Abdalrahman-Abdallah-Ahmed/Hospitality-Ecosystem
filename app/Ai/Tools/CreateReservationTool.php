@@ -75,13 +75,15 @@ class CreateReservationTool implements Tool, WritesData
         }
 
         try {
-            $reservation = EventLogger::asAiAgent(function () use ($request, $lines, $status, $code) {
+            $reservation = DB::transaction(fn () => EventLogger::asAiAgent(function () use ($request, $lines, $status, $code) {
                 $guest = ReservationCreator::findOrCreateGuest($this->hotel->id, [
                     'phone_number' => $request->string('guest_phone')->toString(),
                     'first_name' => $request->string('guest_first_name')->toString() ?: null,
                     'last_name' => $request->string('guest_last_name')->toString() ?: null,
                     'email' => $request->string('guest_email')->toString() ?: null,
                 ]);
+
+                $guests = (array) ($request['guests'] ?? []);
 
                 return ReservationCreator::create([
                     'hotel_id' => $this->hotel->id,
@@ -92,19 +94,21 @@ class CreateReservationTool implements Tool, WritesData
                     'status' => $status,
                     'adults' => $request->integer('adults') ?: 1,
                     'children' => $request->integer('children') ?: 0,
+                    'children_ages' => (array) ($request['children_ages'] ?? []),
                     'source' => 'whatsapp',
                     'special_requests' => $request->string('special_requests')->toString() ?: null,
                     'reservation_value' => $request->float('reservation_value', 0),
                     'currency' => $request->string('currency')->toString() ?: $this->hotel->currency,
+                    'guests' => $guests !== [] ? $guests : [['guest_id' => $guest->id, 'is_primary' => true]],
                 ], $lines);
-            });
+            }));
         } catch (ValidationException $e) {
             return collect($e->errors())->flatten()->first();
         }
 
         DB::afterCommit(fn () => app(CreationNotificationService::class)->whatsAppReservationCreated($reservation));
 
-        return json_encode($reservation->load(['guest', 'reservationRooms.roomType', 'reservationRooms.room'])->toArray());
+        return json_encode($reservation->load(['guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room'])->toArray());
     }
 
     /**
@@ -217,6 +221,15 @@ class CreateReservationTool implements Tool, WritesData
                 ->description('pending or confirmed. Defaults to pending. Guests are checked in with the check-in tool, never here.'),
             'adults' => $schema->integer()->description('Number of adults. Defaults to 1.'),
             'children' => $schema->integer()->description('Number of children. Defaults to 0.'),
+            'children_ages' => $schema->array()->items($schema->integer())->description('One age from 0 through 17 for every child.'),
+            'guests' => $schema->array()->items($schema->object([
+                'guest_id' => $schema->string()->description('Existing guest UUID.'),
+                'first_name' => $schema->string(),
+                'last_name' => $schema->string(),
+                'email' => $schema->string(),
+                'phone_number' => $schema->string(),
+                'is_primary' => $schema->boolean(),
+            ]))->description('All reservation guests. Exactly one entry must be primary.'),
             'special_requests' => $schema->string()->description('Any special requests the guest mentioned.'),
             'reservation_value' => $schema->number()->description('The total value of the reservation, if known.'),
             'currency' => $schema->string()->description("3-letter currency code. Defaults to the hotel's own currency."),

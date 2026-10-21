@@ -1,6 +1,7 @@
 <?php
 
 use App\Ai\Tools\CreateReservationTool;
+use App\Ai\Tools\UpdateReservationTool;
 use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -9,6 +10,7 @@ use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
 use App\Models\User;
+use App\Support\Audit\EventLogger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Tools\Request;
 
@@ -76,6 +78,109 @@ it('creates a guest and reservation from admin-provided details', function () {
 
     expect(Guest::count())->toBe(1);
     expect(Reservation::count())->toBe(1);
+});
+
+it('creates an AI reservation with a primary, additional guest, and children ages', function () {
+    $hotel = hotelForReservationTool();
+    $type = toolRoomType($hotel, 'Family');
+    $type->update(['max_occupancy' => 4, 'adult_capacity' => 2, 'child_capacity' => 2]);
+    $tool = new CreateReservationTool($hotel);
+
+    $result = $tool->handle(new Request([
+        'guest_phone' => '201222333444',
+        'guest_first_name' => 'Rami',
+        'rooms' => [['room_type' => 'Family']],
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+        'adults' => 2,
+        'children' => 2,
+        'children_ages' => [5, 8],
+        'guests' => [
+            ['phone_number' => '201222333444', 'first_name' => 'Rami', 'is_primary' => true],
+            ['phone_number' => '201222333999', 'first_name' => 'Maya', 'is_primary' => false],
+        ],
+    ]));
+
+    $reservation = Reservation::sole();
+
+    expect($reservation->children_ages)->toBe([5, 8])
+        ->and($reservation->reservationGuests()->count())->toBe(2)
+        ->and($reservation->reservationGuests()->where('is_primary', true)->sole()->guest_id)->toBe($reservation->guest_id)
+        ->and(Guest::count())->toBe(2);
+});
+
+it('rolls back the AI-created guest when party ages are invalid', function () {
+    $hotel = hotelForReservationTool();
+    toolRoomType($hotel, 'Family');
+
+    $result = (new CreateReservationTool($hotel))->handle(new Request([
+        'guest_phone' => '201222333445',
+        'rooms' => [['room_type' => 'Family']],
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+        'adults' => 1,
+        'children' => 2,
+        'children_ages' => [5],
+    ]));
+
+    expect((string) $result)->toContain('Provide exactly one age for every child.')
+        ->and(Guest::count())->toBe(0)
+        ->and(Reservation::count())->toBe(0);
+});
+
+it('does not let the AI attach a guest from another hotel', function () {
+    $hotel = hotelForReservationTool();
+    $otherHotel = hotelForReservationTool();
+    toolRoomType($hotel, 'Family');
+    $foreign = Guest::create(['hotel_id' => $otherHotel->id, 'phone_number' => '201222333448']);
+
+    $result = (new CreateReservationTool($hotel))->handle(new Request([
+        'guest_phone' => '201222333449',
+        'rooms' => [['room_type' => 'Family']],
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+        'adults' => 2,
+        'guests' => [
+            ['phone_number' => '201222333449', 'is_primary' => true],
+            ['guest_id' => $foreign->id, 'is_primary' => false],
+        ],
+    ]));
+
+    expect((string) $result)->toContain('unavailable at this hotel')
+        ->and(Guest::count())->toBe(1)
+        ->and(Reservation::count())->toBe(0);
+});
+
+it('updates an AI reservation guest list through the shared command path', function () {
+    $hotel = hotelForReservationTool();
+    toolRoomType($hotel, 'Family');
+    $created = json_decode((string) (new CreateReservationTool($hotel))->handle(new Request([
+        'guest_phone' => '201222333446',
+        'rooms' => [['room_type' => 'Family']],
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+    ])), true);
+    $additional = Guest::create(['hotel_id' => $hotel->id, 'phone_number' => '201222333447']);
+    $reservation = Reservation::findOrFail($created['id']);
+
+    // In the Admin AI the tool runs inside AiActionRecorder, which sets the AI actor.
+    EventLogger::asAiAgent(fn () => (new UpdateReservationTool($hotel))->handle(new Request([
+        'code' => $reservation->reservation_id,
+        'adults' => 2,
+        'guests' => [
+            ['guest_id' => $reservation->guest_id, 'is_primary' => false],
+            ['guest_id' => $additional->id, 'is_primary' => true],
+        ],
+    ])));
+
+    expect($reservation->fresh()->guest_id)->toBe($additional->id)
+        ->and($reservation->fresh()->reservationGuests()->where('is_primary', true)->sole()->guest_id)->toBe($additional->id);
+
+    $linkIds = $reservation->reservationGuests()->withTrashed()->pluck('id');
+    $events = EventLog::where('event_type', 'like', 'reservation_guest.%')->whereIn('subject_id', $linkIds)->get();
+
+    expect($events)->not->toBeEmpty()
+        ->and($events->every(fn ($event) => ($event->actor_kind->value ?? $event->actor_kind) === 'ai_agent'))->toBeTrue();
 });
 
 it('reuses the existing guest for the same phone number', function () {

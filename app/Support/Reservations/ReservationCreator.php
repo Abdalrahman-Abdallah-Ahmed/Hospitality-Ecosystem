@@ -42,13 +42,13 @@ class ReservationCreator
      * formatted differently each time (e.g. "+20 115 179 3758" from a
      * spreadsheet vs. "201151793758" from a WhatsApp webhook), so an exact
      * match would silently create a duplicate guest for the same person.
-     * Email is deliberately never part of the match here (only used to
+     * An unambiguous same-hotel email is used only when the phone finds nobody.
      * fill in a new guest's defaults) — this method's whole contract is
-     * "recognize by phone," not "by whichever signal wins."
+     * phone and email conflicts are rejected rather than merging profiles.
      */
     public static function findOrCreateGuest(string $hotelId, array $attributes): Guest
     {
-        $guest = app(GuestIdentityService::class)->findExistingGuest($hotelId, null, $attributes['phone_number'] ?? null);
+        $guest = app(GuestIdentityService::class)->findForReservation($hotelId, $attributes['email'] ?? null, $attributes['phone_number'] ?? null);
 
         if (! $guest) {
             $guest = Guest::create([
@@ -110,12 +110,15 @@ class ReservationCreator
      */
     public static function create(array $attributes, array $rooms, bool $capacityOverride = false, bool $fromImport = false, bool $overbookOverride = false): Reservation
     {
-        unset($attributes['room_id']);
+        $guests = $attributes['guests'] ?? null;
+        unset($attributes['room_id'], $attributes['guests']);
 
         $units = ReservationRoomSync::expand($rooms);
         ReservationRoomSync::validateNewUnits($attributes['hotel_id'], $units, allowInactive: $fromImport);
 
-        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport, $overbookOverride) {
+        self::validateChildrenAges($attributes, $fromImport && empty($attributes['children_ages']));
+
+        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport, $overbookOverride, $guests) {
             $availability = app(AvailabilityService::class);
             $availability->lockTypes($attributes['hotel_id'], array_column($units, 'room_type_id'));
 
@@ -134,6 +137,12 @@ class ReservationCreator
             } else {
                 $reservation = Reservation::create($attributes);
             }
+
+            app(ReservationGuestSync::class)->sync(
+                $reservation,
+                $guests ?? [['guest_id' => $reservation->guest_id, 'is_primary' => true]],
+                $attributes['guest_id'] ?? null,
+            );
 
             foreach ($units as $unit) {
                 self::addLine($reservation, $unit);
@@ -172,7 +181,14 @@ class ReservationCreator
      */
     public static function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false, bool $overbookOverride = false): Reservation
     {
-        unset($attributes['room_id']);
+        $guests = $attributes['guests'] ?? null;
+        unset($attributes['room_id'], $attributes['guests']);
+
+        if ($guests === null && isset($attributes['guest_id']) && $attributes['guest_id'] !== $reservation->guest_id) {
+            $guests = self::membersWithPrimary($reservation, $attributes['guest_id']);
+        }
+
+        self::validateChildrenAges([...$reservation->only(['children', 'children_ages']), ...$attributes], ! array_key_exists('children', $attributes) && ! array_key_exists('children_ages', $attributes));
 
         $statusBefore = $reservation->status;
         $statusAfter = isset($attributes['status'])
@@ -184,7 +200,7 @@ class ReservationCreator
             ? ReservationRoomSync::diff($reservation, $rooms, $statusBefore, $reactivating)
             : null;
 
-        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating, $overbookOverride) {
+        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating, $overbookOverride, $guests) {
             // Every line's type, cancelled ones too: reactivating the
             // reservation brings its cancelled lines back into inventory.
             $availability = app(AvailabilityService::class);
@@ -199,6 +215,12 @@ class ReservationCreator
 
             $reservation->update($attributes);
             $partyChanged = $reservation->wasChanged(['adults', 'children']);
+
+            if ($guests !== null) {
+                app(ReservationGuestSync::class)->sync($reservation, $guests, $attributes['guest_id'] ?? null);
+            } elseif ($partyChanged) {
+                app(ReservationGuestSync::class)->assertListFitsParty($reservation);
+            }
 
             if ($plan) {
                 self::applyPlan($reservation, $plan);
@@ -353,6 +375,42 @@ class ReservationCreator
                 'adult_capacity' => $lineTypes->sum('adult_capacity'),
             ]);
         }
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private static function validateChildrenAges(array $attributes, bool $legacyUnchanged): void
+    {
+        if ($legacyUnchanged) {
+            return;
+        }
+
+        $ages = $attributes['children_ages'] ?? [];
+        if (! is_array($ages) || count($ages) !== (int) ($attributes['children'] ?? 0)) {
+            throw ValidationException::withMessages(['children_ages' => 'Provide exactly one age for every child.']);
+        }
+        foreach ($ages as $age) {
+            if (! is_int($age) || $age < 0 || $age > 17) {
+                throw ValidationException::withMessages(['children_ages' => 'Each child age must be an integer from 0 to 17.']);
+            }
+        }
+    }
+
+    /** @return list<array{guest_id: string, is_primary: bool}> */
+    private static function membersWithPrimary(Reservation $reservation, string $primaryGuestId): array
+    {
+        $members = $reservation->reservationGuests()
+            ->get()
+            ->map(fn ($member) => [
+                'guest_id' => $member->guest_id,
+                'is_primary' => $member->guest_id === $primaryGuestId,
+            ])
+            ->all();
+
+        if (! collect($members)->contains(fn (array $member) => $member['guest_id'] === $primaryGuestId)) {
+            $members[] = ['guest_id' => $primaryGuestId, 'is_primary' => true];
+        }
+
+        return $members;
     }
 
     /**

@@ -1,13 +1,16 @@
 <?php
 
+use App\Ai\Tools\GetOwnReservationTool;
 use App\Enums\UserRole;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\ReservationGuest;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Services\SenderRecognitionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Ai\Tools\Request;
 
 uses(RefreshDatabase::class);
 
@@ -113,6 +116,50 @@ it('recognizes a guest phone number and resolves the hotel through their current
     expect($recognition->hotelId)->toBe($hotel->id);
     expect($recognition->sender->id)->toBe($guest->id);
     expect($recognition->reservation->id)->toBe($reservation->id);
+});
+
+it('keeps reservation authority with the primary guest while showing their full party', function () {
+    $hotel = Hotel::create([
+        'owner_id' => User::factory()->create()->id,
+        'name' => 'Party Hotel',
+        'slug' => 'party-hotel',
+        'currency' => 'USD',
+    ]);
+    $primary = Guest::create(['hotel_id' => $hotel->id, 'phone_number' => '+201151793750', 'first_name' => 'Rami']);
+    $additional = Guest::create(['hotel_id' => $hotel->id, 'phone_number' => '+201151793751', 'first_name' => 'Maya']);
+    $reservation = Reservation::create([
+        'hotel_id' => $hotel->id,
+        'guest_id' => $primary->id,
+        'reservation_id' => 'RES-PARTY-1',
+        'arrival_date' => now()->subDay(),
+        'departure_date' => now()->addDay(),
+        'status' => 'confirmed',
+        'adults' => 1,
+        'children' => 1,
+        'children_ages' => [7],
+    ]);
+    ReservationGuest::create([
+        'hotel_id' => $hotel->id,
+        'reservation_id' => $reservation->id,
+        'guest_id' => $primary->id,
+        'is_primary' => true,
+    ]);
+    ReservationGuest::create([
+        'hotel_id' => $hotel->id,
+        'reservation_id' => $reservation->id,
+        'guest_id' => $additional->id,
+        'is_primary' => false,
+    ]);
+
+    $ownReservation = json_decode((string) (new GetOwnReservationTool($reservation))->handle(new Request([])), true);
+    $recognition = senderRecognitionService()->resolve('+201151793751');
+
+    expect($ownReservation['children_ages'])->toBe([7])
+        ->and($ownReservation['guests'])->toHaveCount(2)
+        ->and($ownReservation['guests'][0]['is_primary'])->toBeTrue()
+        ->and($recognition->sender->id)->toBe($additional->id)
+        ->and($recognition->reservation)->toBeNull()
+        ->and((string) (new GetOwnReservationTool($recognition->reservation))->handle(new Request([])))->toBe('No reservation found for this guest.');
 });
 
 it('resolves the guest hotel through their current reservation instead of their stored hotel_id', function () {

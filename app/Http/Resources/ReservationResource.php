@@ -26,12 +26,23 @@ class ReservationResource extends JsonResource
             'status' => $this->status,
             'adults' => $this->adults,
             'children' => $this->children,
+            'children_ages' => $this->children_ages,
             'source' => $this->source,
             'special_requests' => $this->special_requests,
             'reservation_value' => $this->reservation_value,
             'currency' => $this->currency,
             'hotel' => HotelResource::make($this->whenLoaded('hotel')),
             'guest' => GuestResource::make($this->whenLoaded('guest')),
+            'guest_count' => $this->whenLoaded('reservationGuests', fn () => $this->reservationGuests
+                ->filter(fn ($member) => $member->guest !== null)
+                ->count()),
+            'guests' => $this->whenLoaded('reservationGuests', fn () => $this->reservationGuests
+                ->filter(fn ($member) => $member->guest !== null)
+                ->map(fn ($member) => [
+                    ...GuestResource::make($member->guest)->resolve(),
+                    'is_primary' => $member->is_primary,
+                ])
+                ->values()),
             // Every line, cancelled ones included, for history.
             'rooms' => ReservationRoomResource::collection($this->whenLoaded('reservationRooms')),
             'room_summary' => $this->whenLoaded('reservationRooms', fn () => $this->roomSummary()),

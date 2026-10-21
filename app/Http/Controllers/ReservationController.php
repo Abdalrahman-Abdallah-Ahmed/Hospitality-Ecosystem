@@ -27,7 +27,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ReservationController extends Controller
 {
-    private const RELATIONS = ['hotel', 'guest', 'reservationRooms.roomType', 'reservationRooms.room'];
+    private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room'];
 
     public function __construct(
         private readonly StayLifecycleService $lifecycle,
@@ -154,7 +154,8 @@ class ReservationController extends Controller
     {
         $this->authorize('update', $reservation);
 
-        $validated = unsetAttributes($request->validated(), ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
+        $validated = $request->validated();
+        $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
 
         $overbook = $this->overbookOverride($request);
 

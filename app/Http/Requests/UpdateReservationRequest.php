@@ -32,6 +32,16 @@ class UpdateReservationRequest extends GenericUpdateRequest
             'rooms.*.room_id' => ['nullable', 'uuid'],
             'capacity_override' => ['sometimes', 'boolean'],
             'overbook_override' => ['sometimes', 'boolean'],
+            'children_ages' => ['sometimes', 'array'],
+            'children_ages.*' => ['integer', 'between:0,17'],
+            'guests' => ['sometimes', 'present', 'array', 'min:1'],
+            'guests.*' => ['array'],
+            'guests.*.guest_id' => ['nullable', 'uuid', 'required_without_all:guests.*.phone_number,guests.*.email'],
+            'guests.*.is_primary' => ['sometimes', 'boolean'],
+            'guests.*.first_name' => ['nullable', 'string', 'max:255'],
+            'guests.*.last_name' => ['nullable', 'string', 'max:255'],
+            'guests.*.email' => ['nullable', 'email', 'max:255'],
+            'guests.*.phone_number' => ['nullable', 'string', 'max:50'],
         ];
     }
 
