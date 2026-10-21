@@ -161,3 +161,58 @@ its reason.
 
 No frontend change. Only the primary guest gets reservation details on WhatsApp.
 Additional guests are treated as their own guest profile.
+
+---
+
+# SPEC-012 — Reservation lifecycle and no-shows
+
+Backend spec: `specs/015-reservation-lifecycle/`. API details:
+`docs/reservations-api-documentation.md` ("Status lifecycle", "No-shows") and
+`docs/stays-api-documentation.md` ("No-show").
+
+## 6. No-show status and actions
+
+### 6.1 Status
+
+- New reservation status `no_show`. Give it its own badge (e.g. grey "No-show") and add it
+  to the status filter (`filter[status]=no_show`).
+- Each room line has `stay_id` and `stay_status` (`expected`, `in_house`, `departed`,
+  `no_show`, `cancelled`, or `null`). Show "No-show" on a room line whose `stay_status` is
+  `no_show`, and use `stay_id` for the per-room endpoints (no stays lookup needed).
+
+### 6.2 Actions (permission `reservations.no_show`)
+
+Hide the actions for users without the permission (`permissions` on `GET /api/user`).
+
+| Where | Action | Endpoint | Show when |
+| --- | --- | --- | --- |
+| Reservation page | Mark no-show | `POST /api/reservation/{id}/no-show` | status `pending`/`confirmed`, arrival day reached, no room checked in |
+| Reservation page | Undo no-show | `POST /api/reservation/{id}/undo-no-show` | status `no_show` |
+| Room line / stays screen | Mark room no-show | `POST /api/stays/{id}/no-show` | that room's `stay_status` is `expected`, arrival day reached |
+| Room line / stays screen | Undo room no-show | `POST /api/stays/{id}/undo-no-show` | `stay_status` is `no_show` and the reservation isn't `checked_out` |
+
+- Ask for confirmation before marking ("The rooms will be released."), with an optional
+  **reason** field (max 500) sent as `{ "reason": "..." }`.
+- Undo: also an optional reason. If it fails with `422` on `rooms` (rooms resold), offer
+  "Overbook anyway" to users with `reservations.overbook`, resending with
+  `"overbook_override": true`.
+- Show `422` messages from `stays` / `status` / `rooms` as returned.
+- Every no-show response has `warnings` (usually `[]`). On an undo it can say a room was
+  given to another booking meanwhile and was taken off this one: show it, and prompt to
+  assign another room before check-in.
+- After a room no-show, a group can be checked out normally; the old "Cancel the rooms
+  that did not arrive first" error no longer appears for no-show rooms.
+
+### 6.3 Editing rules
+
+- Remove `no_show` (and `checked_in`/`checked_out`) from the status dropdown on the edit
+  form. Offer only the allowed next statuses:
+  - `pending` → confirmed, cancelled
+  - `confirmed` → pending, cancelled
+  - `cancelled` → pending, confirmed
+  - `checked_in`, `checked_out`, `no_show` → none (read-only)
+- For a `no_show` reservation, make every field read-only except the **guest list** and
+  **special requests**. The backend answers `422` "Undo the no-show first." on any other
+  changed field. Sending unchanged values is fine.
+- A rejected status change returns `422` on `status`, e.g. "A checked_out reservation
+  can't be changed to pending."
