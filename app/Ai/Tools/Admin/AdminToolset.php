@@ -34,6 +34,7 @@ use App\Ai\Tools\GetStaysTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\GetTasksTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Ai\Tools\NoShowTool;
 use App\Ai\Tools\ReportTaskIssueTool;
 use App\Ai\Tools\ReturnRoomToServiceTool;
 use App\Ai\Tools\SetHousekeepingStatusTool;
@@ -136,6 +137,7 @@ class AdminToolset
             self::write(new AssignRoomsTool($hotel), [Permission::RESERVATIONS_UPDATE], [ReservationRoom::class]),
             self::write(new CheckInTool($hotel, $user), [Permission::STAYS_CHECK_IN], [Stay::class, Reservation::class, Room::class]),
             self::write(new CheckOutTool($hotel, $user), [Permission::STAYS_CHECK_OUT], [Stay::class, Reservation::class, Room::class]),
+            self::write(new NoShowTool($hotel, $user), [Permission::RESERVATIONS_NO_SHOW], [Reservation::class, Stay::class]),
 
             // Write: rooms, housekeeping, maintenance, tasks.
             self::write(new CreateRoomTool($hotel), [Permission::ROOMS_CREATE], [Room::class]),

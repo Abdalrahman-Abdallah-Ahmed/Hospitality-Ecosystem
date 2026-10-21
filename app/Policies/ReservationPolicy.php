@@ -62,6 +62,16 @@ class ReservationPolicy
     }
 
     /**
+     * Determine whether the user can mark, or undo, a no-show on a whole
+     * reservation or on one of its rooms (SPEC-012). Room actions authorize
+     * against the room's reservation.
+     */
+    public function noShow(User $user, Reservation $reservation): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_NO_SHOW, $reservation);
+    }
+
+    /**
      * Determine whether the user can update the model.
      */
     public function update(User $user, Reservation $reservation): bool

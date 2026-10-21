@@ -14,14 +14,16 @@ use App\Ai\Tools\GetOwnReservationTool;
 use App\Ai\Tools\GetRecommendationsTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Ai\Tools\NoShowTool;
 use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\RequestRoomChangeTool;
 use App\Ai\Tools\SetContactPreferenceTool;
 use App\Ai\Tools\UpdateRecommendationTool;
-use App\Http\Controllers\StayCheckInController;
-use App\Http\Controllers\StayCheckOutController;
+use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\StayController;
 use App\Services\BookingService;
 use App\Services\MaintenanceService;
+use App\Services\NoShowService;
 use App\Services\StayLifecycleService;
 use App\Support\Reservations\RoomAssignmentRules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -65,14 +67,16 @@ it('gives the Concierge exactly the guest tool set', function () {
     expect($tools)->toBe(collect(GUEST_TOOLS)->sort()->values()->all());
 });
 
-arch('guest tools never reach check-in, check-out or room assignment')
+arch('guest tools never reach check-in, check-out, no-shows or room assignment')
     ->expect(GUEST_TOOLS)
     ->not->toUse([
         StayLifecycleService::class,
-        StayCheckInController::class,
-        StayCheckOutController::class,
+        StayController::class,
+        ReservationController::class,
         CheckInTool::class,
         CheckOutTool::class,
+        NoShowTool::class,
+        NoShowService::class,
         RoomAssignmentRules::class,
         MaintenanceService::class,
     ]);

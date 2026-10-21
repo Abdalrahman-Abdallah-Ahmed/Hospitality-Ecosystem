@@ -34,6 +34,8 @@ An employee with no staff role has:
 
 `bookings.update` was added on purpose (2026-10-05): the people who take and cancel bookings can also correct a booking's date or party size. That is a smaller act than cancelling, and it is checked against the activity's availability like a new booking. `bookings.override_capacity` (booking past an activity's daily capacity) is never a default.
 
+`reservations.no_show` is never a default either: a no-show releases rooms and records a lost booking, so a hotel grants it on purpose.
+
 `stays.view`, `stays.check_in` and `stays.check_out` are never defaults: the stays lists show guest names, rooms and dates, and check-in/out change room status and occupancy, so a hotel grants them on purpose to its front-desk roles.
 
 `rooms.update_housekeeping_status` and `rooms.set_out_of_order` are never defaults either: both change which rooms can be sold. A housekeeper who should report faults and complete inspections needs `tasks.update`; one who should also be able to take a room off sale when reporting needs `rooms.set_out_of_order`.
@@ -96,6 +98,7 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `reservations.delete` | `DELETE /api/reservation/{id}` |
 | `reservations.import` | `POST /api/reservation/import` |
 | `reservations.overbook` | `overbook_override: true` on `POST /api/reservation` and `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
+| `reservations.no_show` | `POST /api/reservation/{id}/no-show`, `POST /api/reservation/{id}/undo-no-show`, `POST /api/stays/{id}/no-show`, `POST /api/stays/{id}/undo-no-show`, and the Admin AI no-show tool (not a default) |
 | `rooms.view` | `GET /api/room`, `GET /api/room/{id}`, `GET /api/housekeeping/board` |
 | `rooms.create` | `POST /api/room` |
 | `rooms.update` | `PUT /api/room/{id}` |
@@ -137,6 +140,7 @@ The AI advisor itself stays admin-only, but each of its tools checks, every time
 | `rooms.update_housekeeping_status` | set a room's housekeeping status |
 | `rooms.set_out_of_order` | take out of order, update, return to service |
 | `availability.view`, `stays.view`, `stays.check_in`, `stays.check_out` | availability / arrivals, departures, in-house / check in / check out |
+| `reservations.no_show` | mark or undo a no-show (reservation or room) |
 | `tasks.view` / `.create` / `.update`, `task_categories.view` | tasks and maintenance / create a task / update a task, report a room issue / categories |
 | `activities.view` / `.create` | activities / add an activity |
 | `bookings.view` / `.create` / `.update_status` | bookings / book an activity / change status, answer cancellation requests |

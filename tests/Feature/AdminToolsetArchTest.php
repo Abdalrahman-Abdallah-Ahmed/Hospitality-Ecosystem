@@ -96,6 +96,8 @@ it('asks for confirmation exactly for the hard-to-reverse actions', function () 
     expect($confirms('CancelReservationTool', aatArgs('CancelReservationTool', $s)))->toBeTrue()
         ->and($confirms('CheckOutTool', aatArgs('CheckOutTool', $s)))->toBeTrue()
         ->and($confirms('SetRoomOutOfOrderTool', aatArgs('SetRoomOutOfOrderTool', $s)))->toBeTrue()
+        ->and($confirms('NoShowTool', aatArgs('NoShowTool', $s)))->toBeTrue()
+        ->and($confirms('NoShowTool', [...aatArgs('NoShowTool', $s), 'action' => 'undo']))->toBeFalse()
         ->and($confirms('UpdateBookingStatusTool', ['booking' => $s['booking']->reference, 'status' => 'cancelled', 'reason' => 'x']))->toBeTrue()
         ->and($confirms('UpdateBookingStatusTool', ['booking' => $s['booking']->reference, 'status' => 'confirmed']))->toBeFalse()
         ->and($confirms('DecideBookingCancellationTool', ['booking' => $s['booking']->reference, 'decision' => 'approve']))->toBeTrue()
@@ -103,7 +105,7 @@ it('asks for confirmation exactly for the hard-to-reverse actions', function () 
 
     $gated = $byName->filter(fn (GuardedTool $tool) => $tool->inner() instanceof ConfirmsBeforeRunning)->keys()->sort()->values()->all();
 
-    expect($gated)->toBe(['CancelReservationTool', 'CheckOutTool', 'DecideBookingCancellationTool', 'DecideRecommendationTool', 'SetRoomOutOfOrderTool', 'UpdateBookingStatusTool', 'UpdateReservationTool']);
+    expect($gated)->toBe(['CancelReservationTool', 'CheckOutTool', 'DecideBookingCancellationTool', 'DecideRecommendationTool', 'NoShowTool', 'SetRoomOutOfOrderTool', 'UpdateBookingStatusTool', 'UpdateReservationTool']);
 
     foreach ($byName->except($gated) as $name => $tool) {
         expect($tool->shouldRequestApproval(new Request(aatArgs($name, $s))))->toBeNull($name);

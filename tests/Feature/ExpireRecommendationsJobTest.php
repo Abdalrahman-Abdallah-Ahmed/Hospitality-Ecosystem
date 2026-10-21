@@ -23,6 +23,7 @@ it('expires waiting and approved recommendations whose stay is over', function (
     match ($how) {
         'reservation cancelled' => $reservation->forceFill(['status' => 'cancelled'])->saveQuietly(),
         'reservation checked out' => $reservation->forceFill(['status' => 'checked_out'])->saveQuietly(),
+        'reservation no-show' => $reservation->forceFill(['status' => 'no_show'])->saveQuietly(),
         'every stay over' => Stay::withoutGlobalScope('hotel')->where('reservation_id', $reservation->id)->update(['status' => StayStatus::DEPARTED->value]),
         'departure date passed' => $reservation->forceFill(['departure_date' => now($hotel->timezone)->subDay()->toDateString()])->saveQuietly(),
     };
@@ -32,7 +33,7 @@ it('expires waiting and approved recommendations whose stay is over', function (
     expect($pending->fresh()->status)->toBe(RecommendationStatus::EXPIRED)
         ->and($approved->fresh()->status)->toBe(RecommendationStatus::EXPIRED)
         ->and(EventLog::where('event_type', 'recommendation.expired')->whereIn('subject_id', [$pending->id, $approved->id])->count())->toBe(2);
-})->with(['reservation cancelled', 'reservation checked out', 'every stay over', 'departure date passed']);
+})->with(['reservation cancelled', 'reservation checked out', 'reservation no-show', 'every stay over', 'departure date passed']);
 
 it('leaves offered recommendations and stays still running alone', function () {
     $hotel = rapHotel();

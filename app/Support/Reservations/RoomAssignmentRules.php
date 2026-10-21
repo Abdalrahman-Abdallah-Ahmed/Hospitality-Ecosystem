@@ -4,6 +4,7 @@ namespace App\Support\Reservations;
 
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
+use App\Enums\StayStatus;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use Illuminate\Validation\ValidationException;
@@ -43,6 +44,12 @@ class RoomAssignmentRules
             ->whereNull('reservation_rooms.deleted_at')
             ->whereNull('reservations.deleted_at')
             ->whereIn('reservations.status', $holding)
+            // A line whose guest never came, or already left, holds the room
+            // no longer (SPEC-012), as in availability.
+            ->whereNotExists(fn ($stay) => $stay->from('stays')
+                ->whereColumn('stays.reservation_room_id', 'reservation_rooms.id')
+                ->whereNull('stays.deleted_at')
+                ->whereIn('stays.status', [StayStatus::NO_SHOW->value, StayStatus::DEPARTED->value]))
             ->where('reservations.arrival_date', '<', $reservation->departure_date)
             ->where('reservations.departure_date', '>', $reservation->arrival_date)
             ->value('reservations.reservation_id');

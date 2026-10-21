@@ -2,17 +2,16 @@
 
 namespace App\Services;
 
-use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\StayStatus;
 use App\Exceptions\CheckInOutException;
 use App\Models\Hotel;
 use App\Models\Reservation;
-use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
 use App\Models\Task;
 use App\Support\Reservations\ReservationCreator;
+use App\Support\Reservations\ReservationLock;
 use App\Support\Reservations\RoomAssignmentRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -45,7 +44,7 @@ class StayLifecycleService
      */
     public function checkIn(Stay $stay, ?string $roomId = null, ?string $at = null): array
     {
-        return $this->checkInStays($this->reservationOf($stay), [$stay->id], $roomId ? [$stay->id => $roomId] : [], $at);
+        return $this->checkInStays($stay->reservationOrFail(), [$stay->id], $roomId ? [$stay->id => $roomId] : [], $at);
     }
 
     /**
@@ -67,7 +66,7 @@ class StayLifecycleService
      */
     public function checkOut(Stay $stay, ?string $at = null): array
     {
-        return $this->checkOutStays($this->reservationOf($stay), [$stay->id], $at);
+        return $this->checkOutStays($stay->reservationOrFail(), [$stay->id], $at);
     }
 
     /**
@@ -89,7 +88,7 @@ class StayLifecycleService
         $hotel = Hotel::findOrFail($reservation->hotel_id);
 
         return DB::transaction(function () use ($reservation, $stayIds, $roomsByStayId, $at, $hotel) {
-            [$reservation, $stays] = $this->lock($reservation);
+            [$reservation, $stays] = ReservationLock::lock($reservation);
             $reasons = [];
 
             foreach (array_keys($roomsByStayId) as $stayId) {
@@ -101,7 +100,7 @@ class StayLifecycleService
             }
 
             $targets = $stayIds === null
-                ? $stays->filter(fn (Stay $stay) => $stay->status === StayStatus::EXPECTED && $this->isLive($stay))
+                ? $stays->filter(fn (Stay $stay) => $stay->status === StayStatus::EXPECTED && $stay->isLive())
                 : $stays->only($stayIds);
 
             // Already in the house: nothing to do, and nothing to report (FR-010).
@@ -176,8 +175,8 @@ class StayLifecycleService
             $reasons['reservation_status'] = "Reservation is {$reservation->status->value}; only confirmed reservations can be checked in.";
         }
 
-        if (! $this->isLive($stay) || $stay->status !== StayStatus::EXPECTED) {
-            $reasons['stay_status'] = 'This room is '.($this->isLive($stay) ? $stay->status->value : 'cancelled').'.';
+        if (! $stay->isLive() || $stay->status !== StayStatus::EXPECTED) {
+            $reasons['stay_status'] = 'This room is '.($stay->isLive() ? $stay->status->value : 'cancelled').'.';
 
             return $reasons;
         }
@@ -237,7 +236,7 @@ class StayLifecycleService
         $hotel = Hotel::findOrFail($reservation->hotel_id);
 
         return DB::transaction(function () use ($reservation, $stayIds, $at, $hotel) {
-            [$reservation, $stays] = $this->lock($reservation);
+            [$reservation, $stays] = ReservationLock::lock($reservation);
             $reasons = [];
 
             $targets = $stayIds === null
@@ -264,7 +263,7 @@ class StayLifecycleService
             // FR-012a: the last room out may not leave rooms behind that never arrived.
             $leaving = $toCheckOut->modelKeys();
             $stillIn = $stays->filter(fn (Stay $stay) => $stay->status === StayStatus::IN_HOUSE && ! in_array($stay->id, $leaving, true));
-            $waiting = $stays->filter(fn (Stay $stay) => $stay->status === StayStatus::EXPECTED && $this->isLive($stay));
+            $waiting = $stays->filter(fn (Stay $stay) => $stay->status === StayStatus::EXPECTED && $stay->isLive());
 
             if ($stillIn->isEmpty() && $waiting->isNotEmpty()) {
                 $list = $waiting->map(fn (Stay $stay) => trim($reservation->reservation_id.' '.($stay->reservationRoom?->roomType?->name ?? '').' ('.($stay->reservationRoom?->room?->room_number ?? 'unassigned').')'))->implode(', ');
@@ -305,35 +304,6 @@ class StayLifecycleService
 
             return $this->checkOutResult($reservation, $stayIds === null ? $toCheckOut->values() : $targets->values(), $tasks);
         });
-    }
-
-    /**
-     * Locks the reservation, then its lines and stays, and returns fresh
-     * copies: every check below reads what is committed now, not what the
-     * caller loaded before waiting.
-     *
-     * @return array{Reservation, Collection<string, Stay>}
-     */
-    private function lock(Reservation $reservation): array
-    {
-        $locked = Reservation::withoutGlobalScope('hotel')->whereKey($reservation->id)->lockForUpdate()->firstOrFail();
-
-        ReservationRoom::withoutGlobalScope('hotel')
-            ->where('reservation_id', $locked->id)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get();
-
-        $stays = Stay::withoutGlobalScope('hotel')
-            ->where('reservation_id', $locked->id)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get()
-            ->load(['reservationRoom.room', 'reservationRoom.roomType'])
-            ->sortBy(fn (Stay $stay) => $stay->reservationRoom?->created_at?->format('Y-m-d H:i:s.u').'|'.$stay->reservationRoom?->id)
-            ->keyBy('id');
-
-        return [$locked, $stays];
     }
 
     /**
@@ -403,25 +373,6 @@ class StayLifecycleService
             ->where('status', StayStatus::IN_HOUSE)
             ->where('id', '!=', $stay->id)
             ->exists();
-    }
-
-    private function isLive(Stay $stay): bool
-    {
-        return $stay->status !== StayStatus::CANCELLED
-            && $stay->reservationRoom?->status !== ReservationRoomStatus::CANCELLED;
-    }
-
-    private function reservationOf(Stay $stay): Reservation
-    {
-        $reservation = $stay->reservation_id
-            ? Reservation::withoutGlobalScope('hotel')->find($stay->reservation_id)
-            : null;
-
-        if (! $reservation) {
-            throw CheckInOutException::for(["stays.{$stay->id}.reservation" => ['This stay has no reservation to check in or out.']]);
-        }
-
-        return $reservation;
     }
 
     private function today(Hotel $hotel): string

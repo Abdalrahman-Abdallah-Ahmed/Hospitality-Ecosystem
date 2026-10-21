@@ -241,8 +241,33 @@ The reservation becomes `checked_out` when none of its rooms is in the house any
 
 **Rooms that never arrived.** The last room of a reservation cannot be checked out while
 another of its rooms is still `expected`: `422` on `stays.expected`, "Cancel the rooms
-that did not arrive first: RES-1001 Deluxe (unassigned)." Remove that room from the
-reservation (`PUT /api/reservation/{id}` without it), then check out.
+that did not arrive first: RES-1001 Deluxe (unassigned)." Mark that room a no-show
+(`POST /api/stays/{id}/no-show`, below), or remove it from the reservation, then check
+out. A no-show room never blocks the check-out.
+
+---
+
+## No-show (2026-10-21)
+
+### `POST /api/stays/{stay}/no-show` — one room never arrived
+
+### `POST /api/stays/{stay}/undo-no-show` — that room waits again
+
+Needs `reservations.no_show`. Optional body `{ "reason": "..." }`.
+
+- Marking needs an `expected` room, the arrival day reached (hotel time), and a `pending`,
+  `confirmed` or `checked_in` reservation. The stay becomes `no_show`, its room is
+  released, and it leaves the arrivals list. When it was the last room waiting, the
+  reservation becomes `no_show`.
+- Undo works only while the reservation is not checked out ("This reservation is checked
+  out; its no-show rooms are final.") or cancelled, and only for a room whose line wasn't
+  cancelled. Availability is re-checked (`overbook_override`, as on the reservation). A
+  room given to another booking meanwhile is taken off this line, with a message in
+  `warnings`; the restored stay follows the reservation's current dates.
+- Errors are `422` on `stays`, like check-in.
+
+The whole-reservation forms are in
+[reservations-api-documentation.md](reservations-api-documentation.md#no-shows-2026-10-21).
 
 **Errors**: a stay that is `expected` or `cancelled` → `422` on `stays.{id}.stay_status`;
 a bad `checked_out_at` → `422` on `checked_out_at`.
@@ -285,9 +310,10 @@ and the same permissions for the admin it acts for. Its writes are audited with
 | Stays list | Arrivals, departures or in-house for a day |
 | Check-in | Every waiting room of a reservation, or only named room numbers; can put a guest in a named room for an unassigned line |
 | Check-out | Every room in the house, or only named room numbers |
+| No-show | Mark or undo a no-show for a whole reservation or one room number; marking asks the admin to confirm first (`reservations.no_show`) |
 
-The Guest Concierge cannot check guests in or out, and tells guests to contact the front
-desk.
+The Guest Concierge cannot check guests in or out or mark no-shows, and tells guests to
+contact the front desk.
 
 ---
 
@@ -298,5 +324,6 @@ desk.
 | `stays.view` | `GET /api/stays`, `GET /api/stays/{id}`, `GET /api/stays/arrivals`, `GET /api/stays/departures`, `GET /api/stays/in-house` |
 | `stays.check_in` | `POST /api/stays/{id}/check-in`, `POST /api/reservation/{id}/check-in`, and `status: checked_in` on the reservation edit |
 | `stays.check_out` | `POST /api/stays/{id}/check-out`, `POST /api/reservation/{id}/check-out`, and `status: checked_out` on the reservation edit |
+| `reservations.no_show` | `POST /api/stays/{id}/no-show`, `POST /api/stays/{id}/undo-no-show`, `POST /api/reservation/{id}/no-show`, `POST /api/reservation/{id}/undo-no-show` |
 
 None of them is an employee default: grant them to front-desk roles.

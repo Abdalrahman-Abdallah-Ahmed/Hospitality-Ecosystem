@@ -158,8 +158,75 @@ Field notes for the UI:
 | `checked_in` | At least one of its rooms has checked in (set by check-in). |
 | `checked_out` | All of its rooms have checked out (set by check-out). |
 | `cancelled` | Reservation cancelled. |
+| `no_show` | The guest never arrived (2026-10-21). Set only by the no-show endpoints below, or by the import. Holds no rooms. |
 
 Any other string is rejected by the API with a `422` on `status`.
+
+### Status lifecycle (2026-10-21)
+
+A status can only change along these paths, through the operation named. Anything else is
+`422` on `status`, naming both statuses, e.g. "A checked_out reservation can't be changed
+to pending."
+
+| From | To | Through |
+| --- | --- | --- |
+| (new) | `pending`, `confirmed` | `POST /api/reservation` |
+| `pending` | `confirmed` | `PUT /api/reservation/{id}` |
+| `confirmed` | `pending` | `PUT /api/reservation/{id}` |
+| `pending`, `confirmed` | `cancelled` | `PUT /api/reservation/{id}` |
+| `cancelled` | `pending`, `confirmed` | `PUT /api/reservation/{id}` (availability re-checked) |
+| `confirmed` | `checked_in` | check-in (first room in) |
+| `checked_in` | `checked_out` | check-out (last room out) |
+| `pending`, `confirmed` | `no_show` | `POST /api/reservation/{id}/no-show`, or the last waiting room marked a no-show |
+| `no_show` | the status it had (`pending` or `confirmed`) | `POST /api/reservation/{id}/undo-no-show` |
+
+- `status: no_show` on create or edit → `422`: "Use POST /reservation/{id}/no-show."
+- Any status on a `no_show` reservation → `422`: "Use POST /reservation/{id}/undo-no-show."
+- The reservation import still records past statuses (`checked_out`, `no_show`) as they were.
+
+### No-shows (2026-10-21)
+
+Needs `reservations.no_show` (not a default; admins have it). Every body is optional:
+`{ "reason": "Flight cancelled" }` (string, max 500). The reason is stored with the action
+in the reservation's history (`reservation.no_show_marked` / `reservation.no_show_undone`).
+
+| Endpoint | Does |
+| --- | --- |
+| `POST /api/reservation/{id}/no-show` | Every waiting room becomes a no-show; the reservation becomes `no_show` |
+| `POST /api/reservation/{id}/undo-no-show` | Back to the status it had; its no-show rooms wait to check in again |
+| `POST /api/stays/{id}/no-show` | One room becomes a no-show (see [stays-api-documentation.md](stays-api-documentation.md)) |
+| `POST /api/stays/{id}/undo-no-show` | One room waits again (only while the reservation is not checked out) |
+
+Rules:
+
+- From the arrival day (hotel time); before that → `422` on `stays`.
+- A whole no-show needs a `pending` or `confirmed` reservation with no room checked in or
+  out. Otherwise mark the rooms that did not arrive one at a time.
+- A no-show releases its rooms at once: availability counts them free, the room can be
+  assigned to another booking, and no cleaning task is made.
+- An undo works at any time, even after the dates have passed. It re-checks availability:
+  rooms sold since → `422` on `rooms`, unless `overbook_override: true` with
+  `reservations.overbook` (`403` without it).
+- No message goes to the guest. Pending recommendations expire and nothing is pitched.
+- Repeating a mark or an undo that is already done changes nothing and returns `200`.
+- On undo, a room that was given to another booking for overlapping nights while this one
+  was a no-show is taken off the restored line (it stays on the other booking), and
+  `warnings` says so: assign another room before check-in. Restored rooms also pick up any
+  date changes made in the meantime.
+- A room can't be restored on a cancelled reservation, or when its own line was cancelled
+  (`422` on `stays`).
+
+Response (`200`): `{ "reservation": ReservationResource, "stays": [stay objects], "warnings": [] }`,
+with message "Marked as a no-show." or "No-show undone."
+
+**While a reservation is `no_show`** only `guests` and `special_requests` can change on
+`PUT /api/reservation/{id}`. Changing any other field (dates, party, `rooms`, `source`,
+`reservation_value`, `currency`, `reservation_id`, `guest_id`) → `422` on that field:
+"Undo the no-show first." Sending a field with the value it already has is not a change.
+
+**Room lines** now carry `stay_id` and `stay_status` (`expected`, `in_house`, `departed`,
+`no_show`, `cancelled`); both are `null` for a legacy line without a stay. Use `stay_id`
+for the per-room endpoints (`/api/stays/{id}/...`) without listing the stays.
 
 **Checking in and out.** Use the check-in and check-out endpoints in
 [stays-api-documentation.md](stays-api-documentation.md): `POST /api/reservation/{id}/check-in`,

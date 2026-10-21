@@ -755,3 +755,26 @@ it('never shows or attaches another hotel\'s guests on a reservation guest list 
     expect(ReservationGuest::withoutGlobalScope('hotel')->where('guest_id', $guestB->id)->exists())->toBeFalse()
         ->and($reservationA->fresh()->guest_id)->toBe($guestA->id);
 });
+
+it('never lets another hotel mark or undo a no-show (SPEC-012)', function () {
+    [$hotelA] = fdHotel();
+    [$hotelB, $typeB, [$roomB]] = fdHotel();
+    $reservationB = fdBook($hotelB, $typeB, [$roomB->id]);
+    [$stayB] = fdStays($reservationB);
+    $adminA = $hotelA->owner;
+
+    foreach ([
+        "/api/reservation/{$reservationB->id}/no-show",
+        "/api/reservation/{$reservationB->id}/undo-no-show",
+        "/api/stays/{$stayB->id}/no-show",
+        "/api/stays/{$stayB->id}/undo-no-show",
+    ] as $uri) {
+        fdPost($this, $adminA, $uri)->assertForbidden();
+    }
+
+    $result = aatCall(aatTool($adminA->fresh(), 'NoShowTool'), ['action' => 'mark', 'reservation_id' => $reservationB->reservation_id]);
+
+    expect($result)->toBe('This hotel has no reservation with that code.')
+        ->and($reservationB->fresh()->status->value)->toBe('confirmed')
+        ->and($stayB->fresh()->status->value)->toBe('expected');
+});

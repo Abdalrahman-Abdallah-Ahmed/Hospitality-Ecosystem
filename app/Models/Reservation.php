@@ -48,6 +48,8 @@ class Reservation extends Model
         'adults' => 'integer',
         'children' => 'integer',
         'children_ages' => 'array',
+        // Written only by NoShowService (SPEC-012); deliberately not fillable.
+        'status_before_no_show' => ReservationStatus::class,
     ];
 
     /**
@@ -58,7 +60,7 @@ class Reservation extends Model
         return [
             'guest_id', 'arrival_date', 'departure_date', 'status',
             'adults', 'children', 'children_ages', 'source', 'special_requests',
-            'reservation_value', 'currency',
+            'reservation_value', 'currency', 'status_before_no_show',
         ];
     }
 
@@ -150,22 +152,25 @@ class Reservation extends Model
 
     /**
      * The rooms as the AI tools present them: every line with its type, room
-     * number (null while unassigned) and status, plus a per-type summary of
-     * the live ones ("2 × Deluxe"). Reads the loaded lines when present.
+     * number (null while unassigned), status and its stay's status (null for a
+     * legacy line without one), plus a per-type summary of the live ones
+     * ("2 × Deluxe"). Reads the loaded lines when present; callers that load
+     * them should load `reservationRooms.stay` too.
      *
-     * @return array{rooms: array<int, array{room_type: ?string, room_number: ?string, status: string}>, room_summary: array<int, string>}
+     * @return array{rooms: array<int, array{room_type: ?string, room_number: ?string, status: string, stay_status: ?string}>, room_summary: array<int, string>}
      */
     public function roomsForAi(): array
     {
         $lines = $this->relationLoaded('reservationRooms')
             ? $this->reservationRooms
-            : $this->reservationRooms()->with(['roomType', 'room'])->get();
+            : $this->reservationRooms()->with(['roomType', 'room', 'stay'])->get();
 
         return [
             'rooms' => $lines->map(fn (ReservationRoom $line) => [
                 'room_type' => $line->roomType?->name,
                 'room_number' => $line->room?->room_number,
                 'status' => $line->status->value,
+                'stay_status' => $line->stay?->status?->value,
             ])->values()->all(),
             'room_summary' => $lines
                 ->reject(fn (ReservationRoom $line) => $line->status === ReservationRoomStatus::CANCELLED)

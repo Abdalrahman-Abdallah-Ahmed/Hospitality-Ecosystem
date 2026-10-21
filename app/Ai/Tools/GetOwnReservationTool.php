@@ -6,7 +6,6 @@ use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
-use App\Models\ReservationRoom;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Contracts\Tool;
@@ -49,13 +48,9 @@ class GetOwnReservationTool implements ReadsData, Tool
             ->orderBy('reservation_guests.id')
             ->get(['guests.id', 'guests.first_name', 'guests.last_name', 'reservation_guests.is_primary']);
 
-        // roomsForAi() reads the loaded lines; each gains its stay's status
-        // (SPEC-007 FR-019), in the same order.
+        // roomsForAi() reads the loaded lines, each with its stay's status
+        // (SPEC-007 FR-019).
         $rooms = $reservation->roomsForAi();
-        $rooms['rooms'] = $reservation->reservationRooms->values()->map(fn (ReservationRoom $line, int $i) => [
-            ...$rooms['rooms'][$i],
-            'stay_status' => $line->stay?->status?->value,
-        ])->all();
 
         return json_encode([
             'id' => $reservation->id,

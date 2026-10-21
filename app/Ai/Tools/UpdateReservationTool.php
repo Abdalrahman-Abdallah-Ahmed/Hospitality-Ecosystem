@@ -97,7 +97,7 @@ class UpdateReservationTool implements ConfirmsBeforeRunning, Tool, WritesData
             return $result;
         }
 
-        $result->load(['reservationRooms.roomType', 'reservationRooms.room']);
+        $result->load(['reservationRooms.roomType', 'reservationRooms.room', 'reservationRooms.stay']);
 
         return $this->done(
             ['reservation_id' => $result->id, 'code' => $result->reservation_id],
