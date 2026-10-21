@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\UserRole;
+use App\Imports\ReservationsImport;
 use App\Models\Guest;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
@@ -9,6 +10,7 @@ use App\Models\RoomType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 
 uses(RefreshDatabase::class);
 
@@ -221,4 +223,105 @@ it('writes nothing for a row that fails part-way', function () {
 
     expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0199')->exists())->toBeFalse()
         ->and(Room::where('hotel_id', $hotel->id)->where('room_number', '777')->exists())->toBeFalse();
+});
+
+it('imports a named party and complete child ages through the shared reservation command', function () {
+    [, $hotel] = adminWithHotel();
+    $import = new ReservationsImport($hotel);
+    $import->collection(collect([new Collection([
+        'guest_phone' => '555-0201',
+        'guest_first_name' => 'Primary',
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+        'adults' => 1,
+        'children' => 2,
+        'children_ages' => '5,8',
+        'guests' => json_encode([
+            ['phone_number' => '555-0201', 'is_primary' => true],
+            ['phone_number' => '555-0202', 'is_primary' => false, 'first_name' => 'Additional'],
+        ]),
+    ])]));
+
+    $reservation = Reservation::sole();
+
+    expect($import->imported)->toBe(1)
+        ->and($reservation->children_ages)->toBe([5, 8])
+        ->and($reservation->reservationGuests()->count())->toBe(2)
+        ->and($reservation->reservationGuests()->where('is_primary', true)->sole()->guest_id)->toBe($reservation->guest_id);
+});
+
+it('skips an import row with malformed supplied child ages without leaving partial records', function () {
+    [, $hotel] = adminWithHotel();
+    $import = new ReservationsImport($hotel);
+    $import->collection(collect([new Collection([
+        'guest_phone' => '555-0203',
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+        'children' => 2,
+        'children_ages' => '5,not-an-age',
+    ])]));
+
+    expect($import->imported)->toBe(0)
+        ->and($import->skipped)->toHaveCount(1)
+        ->and(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0203')->exists())->toBeFalse()
+        ->and(Reservation::where('hotel_id', $hotel->id)->exists())->toBeFalse();
+});
+
+it('skips an imported guest list containing a guest from another hotel', function () {
+    [, $hotel] = adminWithHotel();
+    [, $otherHotel] = adminWithHotel();
+    $foreign = Guest::create(['hotel_id' => $otherHotel->id, 'phone_number' => '555-0205']);
+    $import = new ReservationsImport($hotel);
+    $import->collection(collect([new Collection([
+        'guest_phone' => '555-0204',
+        'arrival_date' => '2026-11-01',
+        'departure_date' => '2026-11-04',
+        'adults' => 2,
+        'guests' => json_encode([
+            ['phone_number' => '555-0204', 'is_primary' => true],
+            ['guest_id' => $foreign->id, 'is_primary' => false],
+        ]),
+    ])]));
+
+    expect($import->imported)->toBe(0)
+        ->and($import->skipped)->toHaveCount(1)
+        ->and(Guest::count())->toBe(1)
+        ->and(Reservation::where('hotel_id', $hotel->id)->exists())->toBeFalse();
+});
+
+it('imports children without ages as legacy data, but rejects a wrong number of supplied ages', function () {
+    [, $hotel] = adminWithHotel();
+    $import = new ReservationsImport($hotel);
+    $import->collection(collect([
+        new Collection([
+            'guest_phone' => '555-0206',
+            'arrival_date' => '2026-11-01',
+            'departure_date' => '2026-11-04',
+            'adults' => 2,
+            'children' => 2,
+        ]),
+        new Collection([
+            'guest_phone' => '555-0207',
+            'arrival_date' => '2026-11-01',
+            'departure_date' => '2026-11-04',
+            'adults' => 2,
+            'children' => 2,
+            'children_ages' => '5',
+        ]),
+        new Collection([
+            'guest_phone' => '555-0208',
+            'arrival_date' => '2026-11-01',
+            'departure_date' => '2026-11-04',
+            'adults' => 1,
+            'children' => 1,
+            'children_ages' => '18',
+        ]),
+    ]));
+
+    $reservation = Reservation::sole();
+
+    expect($import->imported)->toBe(1)
+        ->and($import->skipped)->toHaveCount(2)
+        ->and($reservation->children)->toBe(2)
+        ->and($reservation->children_ages)->toBe([]);
 });

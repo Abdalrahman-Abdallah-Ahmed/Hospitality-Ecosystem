@@ -76,7 +76,7 @@ it('creates one expected stay per line, linked to it', function () {
 it('splits value and party across the stays', function () {
     [$hotel, $type, $guest] = syncFixture();
 
-    $reservation = syncBook($hotel, $type, $guest, attributes: ['reservation_value' => 100.01, 'adults' => 3, 'children' => 1]);
+    $reservation = syncBook($hotel, $type, $guest, attributes: ['reservation_value' => 100.01, 'adults' => 3, 'children' => 1, 'children_ages' => [8]]);
 
     [$first, $second] = $reservation->reservationRooms()->get()->map(fn ($line) => stayOf($line->id))->all();
     expect((float) $first->room_revenue)->toBe(50.01)

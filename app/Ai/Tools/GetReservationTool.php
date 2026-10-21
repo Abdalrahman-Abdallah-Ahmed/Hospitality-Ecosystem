@@ -39,7 +39,7 @@ class GetReservationTool implements ReadsData, Tool
             return 'This hotel has no reservation with that code.';
         }
 
-        $reservation->load(['guest', 'reservationRooms.roomType', 'reservationRooms.room']);
+        $reservation->load(['guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room']);
 
         $stays = Stay::withoutGlobalScope('hotel')
             ->where('reservation_id', $reservation->id)
@@ -54,12 +54,18 @@ class GetReservationTool implements ReadsData, Tool
             'departure_date' => $reservation->departure_date?->toDateString(),
             'adults' => $reservation->adults,
             'children' => $reservation->children,
+            'children_ages' => $reservation->children_ages,
             'special_requests' => $reservation->special_requests,
             'guest' => $reservation->guest ? [
                 'id' => $reservation->guest->id,
                 'name' => $this->guestName($reservation->guest),
                 'is_vip' => (bool) $reservation->guest->is_vip,
             ] : null,
+            'guests' => $reservation->reservationGuests->filter(fn ($member) => $member->guest !== null)->map(fn ($member) => [
+                'id' => $member->guest->id,
+                'name' => $this->guestName($member->guest),
+                'is_primary' => $member->is_primary,
+            ])->values(),
             'rooms' => $reservation->reservationRooms->map(fn (ReservationRoom $line) => [
                 'line_id' => $line->id,
                 'room_type' => $line->roomType?->name,

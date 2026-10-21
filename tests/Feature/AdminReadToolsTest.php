@@ -59,7 +59,7 @@ it('lists reservations by arrival date, status, guest and code', function () {
         ->and($today['items'][0]['rooms'][0])->toMatchArray(['room_type' => 'Deluxe', 'room_number' => null]);
 });
 
-it('keeps the Insights view of reservations and tasks exactly as it was', function () {
+it('keeps the Insights reservation view compatible with party data', function () {
     $s = aatSeed();
 
     $reservations = json_decode((string) (new GetReservationsTool($s['hotel']))->handle(new Request([])), true);
@@ -67,7 +67,7 @@ it('keeps the Insights view of reservations and tasks exactly as it was', functi
 
     // A plain list, not the paged shape, with the keys Insights reads.
     expect(array_is_list($reservations))->toBeTrue()
-        ->and(array_keys($reservations[0]))->toBe(['id', 'reservation_id', 'guest_name', 'rooms', 'room_summary', 'status', 'adults', 'children'])
+        ->and(array_keys($reservations[0]))->toBe(['id', 'reservation_id', 'guest_name', 'rooms', 'room_summary', 'status', 'adults', 'children', 'children_ages', 'guests', 'guest_count'])
         ->and(array_is_list($tasks))->toBeTrue()
         ->and(array_keys($tasks[0]))->toBe(['id', 'title', 'description', 'status', 'priority', 'due_date', 'category', 'assigned_to']);
 

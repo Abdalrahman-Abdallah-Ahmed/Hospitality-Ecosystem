@@ -29,6 +29,7 @@ use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
+use App\Models\ReservationGuest;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
@@ -93,6 +94,24 @@ function tenantOwnedModelFactories(): array
                 'arrival_date' => '2026-09-01',
                 'departure_date' => '2026-09-04',
                 'status' => 'confirmed',
+            ]);
+        },
+        ReservationGuest::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+            $reservation = Reservation::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'reservation_id' => 'RES-'.uniqid(),
+                'arrival_date' => '2026-09-01',
+                'departure_date' => '2026-09-04',
+                'status' => 'confirmed',
+            ]);
+
+            return ReservationGuest::create([
+                'hotel_id' => $hotel->id,
+                'reservation_id' => $reservation->id,
+                'guest_id' => $guest->id,
+                'is_primary' => true,
             ]);
         },
         ReservationRoom::class => fn (Hotel $hotel) => createReservationWithRooms($hotel, [[]])
@@ -708,4 +727,31 @@ it('keeps one hotel out of another hotel guest memories (SPEC-084)', function ()
     cmaRequest($this, $adminA, 'DELETE', "/api/guest/{$guestB->id}/memories/{$memoryB->id}")->assertNotFound();
 
     expect($memoryB->fresh())->not->toBeNull();
+});
+
+it('never shows or attaches another hotel\'s guests on a reservation guest list (SPEC-011 SC-005)', function () {
+    [$adminA, $hotelA] = adminWithHotel();
+    [, $hotelB] = adminWithHotel();
+    $typeA = avType($hotelA, 'Iso');
+    avRooms($hotelA, $typeA, 2);
+    $guestA = gsGuest($hotelA, ['phone_number' => '+201000000031']);
+    $guestB = gsGuest($hotelB, ['phone_number' => '+201000000032']);
+    $reservationA = createReservationWithRooms($hotelA, [['room_type_id' => $typeA->id]], ['guest_id' => $guestA->id, 'adults' => 2]);
+    $reservationB = createReservationWithRooms($hotelB, [[]], ['guest_id' => $guestB->id]);
+
+    // Attaching hotel B's guest to hotel A's reservation is refused and changes nothing.
+    $this->withHeaders(apiHeaders())->actingAs($adminA, 'sanctum')
+        ->putJson("/api/reservation/{$reservationA->id}", ['guests' => [
+            ['guest_id' => $guestA->id, 'is_primary' => true],
+            ['guest_id' => $guestB->id, 'is_primary' => false],
+        ]])
+        ->assertUnprocessable();
+
+    // Hotel B's reservation and its guest list stay out of reach.
+    $this->withHeaders(apiHeaders())->actingAs($adminA, 'sanctum')
+        ->getJson("/api/reservation/{$reservationB->id}")
+        ->assertForbidden();
+
+    expect(ReservationGuest::withoutGlobalScope('hotel')->where('guest_id', $guestB->id)->exists())->toBeFalse()
+        ->and($reservationA->fresh()->guest_id)->toBe($guestA->id);
 });

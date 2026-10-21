@@ -66,6 +66,15 @@ class UpdateReservationTool implements ConfirmsBeforeRunning, Tool, WritesData
             }
         }
 
+        if ($request->has('children_ages')) {
+            $attributes['children_ages'] = (array) $request['children_ages'];
+        }
+
+        $guests = $request->has('guests') ? (array) $request['guests'] : null;
+        if ($guests !== null) {
+            $attributes['guests'] = $guests;
+        }
+
         $rooms = null;
 
         if ($request->filled('rooms')) {
@@ -92,7 +101,7 @@ class UpdateReservationTool implements ConfirmsBeforeRunning, Tool, WritesData
 
         return $this->done(
             ['reservation_id' => $result->id, 'code' => $result->reservation_id],
-            [...$attributes, ...($rooms !== null ? ['rooms' => $result->roomsForAi()['room_summary']] : [])],
+            [...array_diff_key($attributes, ['guests' => true]), ...($rooms !== null ? ['rooms' => $result->roomsForAi()['room_summary']] : [])],
         );
     }
 
@@ -104,6 +113,15 @@ class UpdateReservationTool implements ConfirmsBeforeRunning, Tool, WritesData
             'departure_date' => $schema->string()->description('New departure date, YYYY-MM-DD.'),
             'adults' => $schema->integer()->description('Total adults across all rooms.'),
             'children' => $schema->integer()->description('Total children across all rooms.'),
+            'children_ages' => $schema->array()->items($schema->integer())->description('One age from 0 through 17 for every child. Send whenever children changes.'),
+            'guests' => $schema->array()->items($schema->object([
+                'guest_id' => $schema->string()->description('Existing guest UUID.'),
+                'first_name' => $schema->string(),
+                'last_name' => $schema->string(),
+                'email' => $schema->string(),
+                'phone_number' => $schema->string(),
+                'is_primary' => $schema->boolean(),
+            ]))->description('Complete replacement list. Exactly one entry must be primary.'),
             'special_requests' => $schema->string(),
             'rooms' => $schema->array()->items($schema->object([
                 'room_type' => $schema->string()->description('Room type name, e.g. Deluxe.')->required(),

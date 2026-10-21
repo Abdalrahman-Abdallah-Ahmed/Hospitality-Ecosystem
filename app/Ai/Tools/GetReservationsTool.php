@@ -131,7 +131,7 @@ class GetReservationsTool implements ReadsData, Tool
 
     private function query(): Builder
     {
-        return Reservation::with(['guest', 'reservationRooms.roomType', 'reservationRooms.room'])
+        return Reservation::with(['guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room'])
             ->where('hotel_id', $this->hotel->id);
     }
 
@@ -148,6 +148,16 @@ class GetReservationsTool implements ReadsData, Tool
             'status' => $reservation->status->value,
             'adults' => $reservation->adults,
             'children' => $reservation->children,
+            'children_ages' => $reservation->children_ages,
+            'guests' => $reservation->reservationGuests
+                ->filter(fn ($member) => $member->guest !== null)
+                ->map(fn ($member) => [
+                    'id' => $member->guest->id,
+                    'name' => trim($member->guest->first_name.' '.$member->guest->last_name),
+                    'is_primary' => $member->is_primary,
+                ])
+                ->values(),
+            'guest_count' => $reservation->reservationGuests->filter(fn ($member) => $member->guest !== null)->count(),
         ];
     }
 }

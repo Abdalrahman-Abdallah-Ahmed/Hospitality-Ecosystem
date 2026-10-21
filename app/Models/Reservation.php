@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -32,6 +33,7 @@ class Reservation extends Model
         'status',
         'adults',
         'children',
+        'children_ages',
         'source',
         'special_requests',
         'reservation_value',
@@ -45,6 +47,7 @@ class Reservation extends Model
         'reservation_value' => 'decimal:2',
         'adults' => 'integer',
         'children' => 'integer',
+        'children_ages' => 'array',
     ];
 
     /**
@@ -54,7 +57,7 @@ class Reservation extends Model
     {
         return [
             'guest_id', 'arrival_date', 'departure_date', 'status',
-            'adults', 'children', 'source', 'special_requests',
+            'adults', 'children', 'children_ages', 'source', 'special_requests',
             'reservation_value', 'currency',
         ];
     }
@@ -62,6 +65,17 @@ class Reservation extends Model
     public function guest(): BelongsTo
     {
         return $this->belongsTo(Guest::class);
+    }
+
+    public function reservationGuests(): HasMany
+    {
+        return $this->hasMany(ReservationGuest::class)->orderByDesc('is_primary')->orderBy('created_at')->orderBy('id');
+    }
+
+    public function guests(): HasManyThrough
+    {
+        return $this->hasManyThrough(Guest::class, ReservationGuest::class, 'reservation_id', 'id', 'id', 'guest_id')
+            ->whereNull('reservation_guests.deleted_at');
     }
 
     /**

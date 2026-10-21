@@ -75,6 +75,14 @@ Successful custom API responses use this structure:
 
 ## The Reservation Object
 
+### Reservation guests and children's ages (2026-10-14)
+
+`guest_id` and `guest` remain the primary guest for compatibility. Responses also include `guests` as full guest objects with an `is_primary` marker, plus `guest_count` and `children_ages`. Soft-deleted guest profiles are omitted from `guests` and `guest_count`; the reservation's historical `guest_id` remains unchanged.
+
+On create or update, send `guests` as the complete desired list. Each entry uses an existing `guest_id`, or contact details for a guest to resolve or create. Phone matching takes precedence; an email is reused only when it identifies one same-hotel guest. Ambiguous emails and phone/email conflicts are rejected. Exactly one entry must set `is_primary: true`; a single entry can omit it and becomes primary. If top-level `guest_id` is supplied, it must match the resolved primary. Because `guest_id` is required on create, the primary must be an existing guest there; on update, a primary named by contact details is allowed when `guest_id` is omitted, and `guest_id` then follows the resolved primary. Guest entries must belong to the reservation's hotel, cannot repeat, and cannot exceed `adults + children`. An update that includes `guests` replaces the complete list; removing a guest does not delete their profile. An update that lowers `adults` or `children` below the number of named guests is rejected with a `guests` error; remove guests first.
+
+`children_ages` is an ordered integer array from 0 through 17. A new reservation with children must include one age per child. On update, if `children` or `children_ages` is supplied, the resulting ages count must equal `children`; legacy reservations with no ages can still receive unrelated updates.
+
 Every endpoint that returns a reservation returns it in this shape, with `hotel`, `guest`, and `rooms` (each with its `room_type` and `room`) always eager-loaded:
 
 ```json
@@ -88,6 +96,12 @@ Every endpoint that returns a reservation returns it in this shape, with `hotel`
   "status": "confirmed",
   "adults": 2,
   "children": 1,
+  "children_ages": [7],
+  "guest_count": 2,
+  "guests": [
+    { "id": "019f9b37-c266-7099-9793-ad875bf378d1", "first_name": "Youssef", "last_name": "Kamal", "is_primary": true },
+    { "id": "019f9b37-c267-7099-9793-ad875bf378d2", "first_name": "Maya", "last_name": "Kamal", "is_primary": false }
+  ],
   "source": "booking_com",
   "special_requests": "Late check-in",
   "reservation_value": "450.50",
@@ -273,6 +287,11 @@ HTTP `422`:
   "status": "confirmed",
   "adults": 4,
   "children": 1,
+  "children_ages": [7],
+  "guests": [
+    { "guest_id": "019f9b37-c266-7099-9793-ad875bf378d1", "is_primary": true },
+    { "first_name": "Maya", "last_name": "Kamal", "phone_number": "+201001234568", "is_primary": false }
+  ],
   "source": "walk_in",
   "special_requests": "Late check-in",
   "reservation_value": 450.5,
@@ -293,7 +312,7 @@ This books three rooms: two unassigned Deluxe rooms and Suite room 501.
 | Field | Rules |
 | --- | --- |
 | `hotel_id` | **required**, string, must exist in `hotels.id` — see the hotel-scoping note below. |
-| `guest_id` | **required**, string, must exist in `guests.id`, and must belong to `hotel_id`. |
+| `guest_id` | **required**, string, must exist in `guests.id`, and must belong to `hotel_id`. It remains the primary guest pointer and must match the primary entry in `guests` when that list is supplied. |
 | `rooms` | **required**, array of 1–50 items. The total `quantity` across items must be ≤ 50. |
 | `rooms.*.room_type_id` | **required**, uuid. Must be an **active**, non-deleted room type of this hotel; otherwise `422` on `rooms.{i}.room_type_id` ("The selected room type is not available." — the same message whether it is inactive, deleted, or another hotel's). |
 | `rooms.*.quantity` | optional integer 1–50, default 1. Expanded into that many lines. |
@@ -307,6 +326,8 @@ This books three rooms: two unassigned Deluxe rooms and Suite room 501.
 | `status` | optional, one of the [status values](#status-values). Defaults to `pending` if omitted. |
 | `adults` | optional, integer. |
 | `children` | optional, integer. |
+| `children_ages` | optional when there are no children; otherwise required. Ordered array of integers from 0 through 17, exactly one per child. Ages sent with `children: 0` are rejected. |
+| `guests` | optional complete guest list. Each item has either a same-hotel `guest_id` or contact details (`phone_number` and/or `email`, optionally names), and one item must be primary when there is more than one. A single item may omit `is_primary`. |
 | `source` | optional, string, max 255 (e.g. `walk_in`, `booking_com`, `phone`). |
 | `special_requests` | optional, string. |
 | `reservation_value` | optional, numeric. |
@@ -612,6 +633,7 @@ The **first row must be a header row** naming these columns (order doesn't matte
 | `guest_first_name` | optional | |
 | `guest_last_name` | optional | |
 | `guest_email` | optional | |
+| `guests` | optional | JSON array of guest objects using the reservation API's `guest_id` or contact fields and `is_primary`. Supply the complete list, including the primary guest. A phone match is preferred; an email match is reused only when unambiguous at this hotel. |
 | `room_number` | optional | If set and no room with that number exists yet for the hotel, **a new room is created automatically** (see below) rather than the row being rejected. The reservation gets one line of that room's type, on that room. |
 | `room_type` | optional | A room type name, matched case-insensitively and **created when missing**. Used for a new room created from `room_number`, and — when there is no `room_number` — as the type of the reservation's single, unassigned line. With neither column, the line uses the hotel's default room type. |
 | `floor` | optional | Same as `room_type` — only used if a new room is created. |
@@ -619,6 +641,7 @@ The **first row must be a header row** naming these columns (order doesn't matte
 | `status` | optional | Defaults to `pending`. **Any value other than the five real statuses (`pending`, `confirmed`, `checked_in`, `checked_out`, `cancelled`) causes that row to be skipped** — with a raw PHP error string as the reason (e.g. `"typo" is not a valid backing value for enum App\Enums\ReservationStatus`), not a friendly message. Show `skipped[].reason` as-is, or map known enum-error patterns to a nicer message client-side. |
 | `adults` | optional | Cast to integer; defaults to `1` (falls back to `1` if the value is `0` or non-numeric, since the code uses `(int) ... ?: 1`). |
 | `children` | optional | Cast to integer; defaults to `0`. |
+| `children_ages` | optional | Comma-separated whole-number ages from `0` through `17` (for example `5,8`). When supplied, the count must equal `children`. Omit this column to preserve legacy imports that have children but no ages. |
 | `source` | optional | Free text; defaults to `"import"`. |
 | `special_requests` | optional | Free text. |
 | `reservation_value` | optional | Cast to float; defaults to `0`. |
@@ -630,7 +653,7 @@ The **first row must be a header row** naming these columns (order doesn't matte
 - Every imported reservation gets exactly **one room line** (see `room_number`/`room_type` above). The party-capacity check and the availability check are **not** run on imports, and a room type the hotel has since deactivated is accepted: legacy data is recorded as it is. Rows beyond availability are saved and show up as overbooked nights in `GET /api/availability`. Each row is written in its own transaction, so a row that fails part-way (e.g. an invalid `status`) leaves no guest, room or reservation behind.
 - A row is processed **independently** — one bad row (missing phone, invalid status, duplicate `reservation_id`, etc.) is caught and skipped; it does not fail the whole import.
 - `room_number` with no existing match **creates the room** rather than rejecting the row. If your UI wants to warn the user before this happens, you'd need to cross-check `room_number` values against `GET /api/room` client-side before upload — the API gives no dry-run/preview mode.
-- Guests are matched by `phone_number` scoped to the hotel; a soft-deleted guest with a matching phone number is restored rather than duplicated.
+- Guests are matched by phone first, then by an unambiguous email, scoped to the hotel; a soft-deleted guest with a matching identity is restored rather than duplicated. Supplied child ages are strictly parsed and validated; a malformed or incomplete list skips the row.
 - **Super admins cannot target a different hotel with this endpoint.** Every other write endpoint in this API resolves the target hotel via a shared helper that lets a super admin pass an explicit `hotel_id` (since they have no hotel of their own). Import does not — it always uses `$request->user()->hotel`, so a super admin gets `403 You do not belong to any hotel.` calling this endpoint at all. If bulk-import needs to be super-admin-capable later, that's a backend gap, not something the frontend can work around.
 
 ### Success Response

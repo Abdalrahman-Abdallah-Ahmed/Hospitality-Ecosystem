@@ -3,6 +3,7 @@
 namespace App\Imports;
 
 use App\Enums\ReservationStatus;
+use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomType;
@@ -125,12 +126,60 @@ class ReservationsImport implements ToCollection, WithHeadingRow
             'status' => trim((string) ($row['status'] ?? '')) ?: ReservationStatus::PENDING->value,
             'adults' => (int) ($row['adults'] ?? 1) ?: 1,
             'children' => (int) ($row['children'] ?? 0),
+            'children_ages' => $this->childrenAges($row['children_ages'] ?? null),
             'source' => trim((string) ($row['source'] ?? '')) ?: 'import',
             'special_requests' => trim((string) ($row['special_requests'] ?? '')) ?: null,
             'reservation_value' => (float) ($row['reservation_value'] ?? 0),
             'currency' => trim((string) ($row['currency'] ?? '')) ?: $this->hotel->currency,
+            'guests' => $this->guests($row, $guest),
         ], [
             ['room_type_id' => $roomTypeId, 'room_id' => $room?->id],
         ], fromImport: true);
+    }
+
+    /** @return list<int> */
+    private function childrenAges(mixed $raw): array
+    {
+        if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+            return [];
+        }
+
+        $items = is_array($raw) ? $raw : explode(',', (string) $raw);
+
+        return array_map(function (mixed $item): int {
+            $value = trim((string) $item);
+            if ($value === '' || ! ctype_digit($value)) {
+                throw new \InvalidArgumentException('children_ages must contain only whole-number ages.');
+            }
+
+            $age = (int) $value;
+            if ($age > 17) {
+                throw new \InvalidArgumentException('Each child age must be between 0 and 17.');
+            }
+
+            return $age;
+        }, $items);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function guests(Collection $row, Guest $primaryGuest): array
+    {
+        $raw = trim((string) ($row['guests'] ?? ''));
+
+        if ($raw === '') {
+            return [['guest_id' => $primaryGuest->id, 'is_primary' => true]];
+        }
+
+        try {
+            $guests = json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw new \InvalidArgumentException('guests must be a JSON array.');
+        }
+
+        if (! is_array($guests) || ! array_is_list($guests) || collect($guests)->contains(fn ($guest) => ! is_array($guest))) {
+            throw new \InvalidArgumentException('guests must be a JSON array of guest objects.');
+        }
+
+        return $guests;
     }
 }

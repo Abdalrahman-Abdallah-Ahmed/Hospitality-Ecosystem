@@ -8,6 +8,7 @@ use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -37,6 +38,16 @@ class GetOwnReservationTool implements ReadsData, Tool
 
         $reservation = $this->relevantReservation()
             ->load(['hotel', 'reservationRooms' => fn ($query) => $query->with(['roomType', 'room', 'stay'])]);
+        $guests = DB::table('reservation_guests')
+            ->join('guests', 'guests.id', '=', 'reservation_guests.guest_id')
+            ->where('reservation_guests.hotel_id', $reservation->hotel_id)
+            ->where('reservation_guests.reservation_id', $reservation->id)
+            ->whereNull('reservation_guests.deleted_at')
+            ->whereNull('guests.deleted_at')
+            ->orderByDesc('reservation_guests.is_primary')
+            ->orderBy('reservation_guests.created_at')
+            ->orderBy('reservation_guests.id')
+            ->get(['guests.id', 'guests.first_name', 'guests.last_name', 'reservation_guests.is_primary']);
 
         // roomsForAi() reads the loaded lines; each gains its stay's status
         // (SPEC-007 FR-019), in the same order.
@@ -55,6 +66,14 @@ class GetOwnReservationTool implements ReadsData, Tool
             'departure_date' => $reservation->departure_date->toDateString(),
             'adults' => $reservation->adults,
             'children' => $reservation->children,
+            'children_ages' => $reservation->children_ages,
+            'guests' => $guests
+                ->map(fn ($member) => [
+                    'id' => $member->id,
+                    'name' => trim($member->first_name.' '.$member->last_name),
+                    'is_primary' => $member->is_primary,
+                ])
+                ->values(),
             ...$rooms,
             'reservation_value' => $reservation->reservation_value,
             'currency' => $reservation->currency,
