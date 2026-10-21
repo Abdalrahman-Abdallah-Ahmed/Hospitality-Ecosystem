@@ -4,7 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Enums\ReservationChannels;
 use App\Enums\ReservationStatus;
+use App\Http\Controllers\Concerns\HandlesFrontDeskActions;
+use App\Http\Requests\CheckInRequest;
+use App\Http\Requests\CheckOutRequest;
 use App\Http\Requests\ImportReservationsRequest;
+use App\Http\Requests\NoShowRequest;
 use App\Http\Requests\ReservationIndexRequest;
 use App\Http\Requests\StoreReservationRequest;
 use App\Http\Requests\UpdateReservationRequest;
@@ -13,13 +17,13 @@ use App\Imports\ReservationsImport;
 use App\Models\Hotel;
 use App\Models\Reservation;
 use App\Models\Stay;
+use App\Services\NoShowService;
 use App\Services\Reservations\ReservationCommands;
 use App\Services\StayLifecycleService;
 use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -27,11 +31,14 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ReservationController extends Controller
 {
-    private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room'];
+    use HandlesFrontDeskActions;
+
+    private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room', 'reservationRooms.stay'];
 
     public function __construct(
         private readonly StayLifecycleService $lifecycle,
         private readonly ReservationCommands $reservations,
+        private readonly NoShowService $noShows,
     ) {}
 
     /**
@@ -244,24 +251,57 @@ class ReservationController extends Controller
     }
 
     /**
-     * Whether the request asks to save even if it oversells a room type. Asking
-     * without reservations.overbook is refused before anything is written,
-     * whether or not the booking would actually have oversold.
+     * Remove the specified resource from storage.
      */
-    private function overbookOverride(Request $request): bool
+    /**
+     * Checks in every room of the reservation waiting to (SPEC-024 FR-009);
+     * `rooms` puts a guest in a named room for a line that has none.
+     */
+    public function checkIn(CheckInRequest $request, Reservation $reservation): JsonResponse
     {
-        if (! $request->boolean('overbook_override')) {
-            return false;
-        }
+        $this->authorize('checkIn', [Stay::class, $reservation]);
 
-        $this->authorize('overbook', Reservation::class);
-
-        return true;
+        return $this->checkedIn($this->lifecycle->checkInReservation(
+            $reservation,
+            $request->roomsByStayId(),
+            $request->validated('checked_in_at'),
+        ));
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Checks out every room of the reservation still in the house (SPEC-025).
      */
+    public function checkOut(CheckOutRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('checkOut', [Stay::class, $reservation]);
+
+        return $this->checkedOut($this->lifecycle->checkOutReservation($reservation, $request->validated('checked_out_at')));
+    }
+
+    /**
+     * Every room of the reservation never arrived (SPEC-012 FR-005).
+     */
+    public function noShow(NoShowRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('noShow', $reservation);
+
+        return $this->noShowResult('Marked as a no-show.', $this->noShows->markReservation($reservation, $request->validated('reason')));
+    }
+
+    /**
+     * Restores a no-show reservation to the status it had (SPEC-012 FR-009).
+     */
+    public function undoNoShow(NoShowRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('noShow', $reservation);
+
+        return $this->noShowResult('No-show undone.', $this->noShows->undoReservation(
+            $reservation,
+            $request->validated('reason'),
+            $this->overbookOverride($request),
+        ));
+    }
+
     public function destroy(Reservation $reservation)
     {
         $this->authorize('delete', $reservation);

@@ -56,7 +56,7 @@ it('lists reservations by arrival date, status, guest and code', function () {
     $today = aatCall($tool, []);
 
     expect($codes($today))->toBe([$s['code']])
-        ->and($today['items'][0]['rooms'][0])->toMatchArray(['room_type' => 'Deluxe', 'room_number' => null]);
+        ->and($today['items'][0]['rooms'][0])->toMatchArray(['room_type' => 'Deluxe', 'room_number' => null, 'stay_status' => 'expected']);
 });
 
 it('keeps the Insights reservation view compatible with party data', function () {

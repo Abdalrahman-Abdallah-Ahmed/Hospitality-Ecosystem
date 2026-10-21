@@ -9,13 +9,13 @@ enum ReservationStatus: string
     case CHECKED_IN = 'checked_in';
     case CHECKED_OUT = 'checked_out';
     case CANCELLED = 'cancelled';
+    case NO_SHOW = 'no_show';
 
     /**
      * The statuses whose live room lines take a room out of availability:
      * booked (tentative or confirmed) or in the house. A pending booking holds
      * its rooms exactly like a confirmed one, so it is never sold twice.
-     * Checked-out and cancelled reservations hold nothing, and neither will
-     * SPEC-012's no_show.
+     * Checked-out, cancelled and no-show reservations hold nothing (SPEC-012).
      *
      * @return list<self>
      */

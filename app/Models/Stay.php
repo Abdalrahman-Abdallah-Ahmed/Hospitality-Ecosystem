@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
+use App\Enums\ReservationRoomStatus;
 use App\Enums\StayStatus;
+use App\Exceptions\CheckInOutException;
 use App\Jobs\ExtractGuestMemoriesJob;
 use App\Models\Concerns\Filterable;
 use App\Models\Concerns\RecordsEvents;
@@ -162,6 +164,35 @@ class Stay extends Model
     public function reservation(): BelongsTo
     {
         return $this->belongsTo(Reservation::class);
+    }
+
+    /**
+     * Still part of the booking: neither the stay nor its line was cancelled.
+     * The one definition check-in, check-out and no-shows share.
+     */
+    public function isLive(): bool
+    {
+        return $this->status !== StayStatus::CANCELLED
+            && $this->reservationRoom?->status !== ReservationRoomStatus::CANCELLED;
+    }
+
+    /**
+     * The stay's reservation, whatever the tenant scope, for the front-desk
+     * actions on one room (check-in/out, no-shows).
+     *
+     * @throws CheckInOutException when the stay has none
+     */
+    public function reservationOrFail(): Reservation
+    {
+        $reservation = $this->reservation_id
+            ? Reservation::withoutGlobalScope('hotel')->find($this->reservation_id)
+            : null;
+
+        if (! $reservation) {
+            throw CheckInOutException::for(["stays.{$this->id}.reservation" => ['This stay has no reservation to check in or out.']]);
+        }
+
+        return $reservation;
     }
 
     /**

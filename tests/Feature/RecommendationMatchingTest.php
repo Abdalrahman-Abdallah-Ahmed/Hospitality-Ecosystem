@@ -9,6 +9,7 @@ use App\Models\EventLog;
 use App\Models\Hotel;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
+use App\Models\Reservation;
 use App\Models\Stay;
 use App\Services\RecommendationOutcomeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -208,6 +209,16 @@ it('marks the recommendation expired when the guest departs undecided', function
     expect($outcome->outcome)->toBe(OutcomeType::EXPIRED)
         ->and($outcome->attribution_method)->toBe(AttributionMethod::NONE)
         ->and($outcome->evidence_level)->toBe(EvidenceLevel::L4);
+});
+
+it('closes an undecided recommendation of a reservation marked a no-show, with no stay rows needed', function () {
+    [, $hotel] = wp5AdminWithHotel();
+    [$recommendation] = wp5Recommendation($hotel);
+    Recommendation::whereKey($recommendation->id)->update(['delivered_at' => now()->subHours(5)]);
+    Reservation::withoutGlobalScope('hotel')->whereKey($recommendation->reservation_id)->update(['status' => 'no_show']);
+
+    expect(runMatcher($hotel)->expired)->toBe(1)
+        ->and(wp5Outcome($recommendation)->outcome)->toBe(OutcomeType::EXPIRED);
 });
 
 it('stores the window and matcher version in context for every inferred row', function () {

@@ -50,7 +50,7 @@ it('answers "not found" for another hotel\'s reservation, guest, task, booking a
         ->and(strtolower($result))->toContain('has no');
 })->with([
     'GetReservationTool', 'GetGuestTool', 'UpdateGuestTool', 'UpdateReservationTool', 'CancelReservationTool',
-    'AssignRoomsTool', 'CheckInTool', 'CheckOutTool', 'UpdateTaskTool', 'ReportTaskIssueTool',
+    'AssignRoomsTool', 'CheckInTool', 'CheckOutTool', 'NoShowTool', 'UpdateTaskTool', 'ReportTaskIssueTool',
     'UpdateBookingStatusTool', 'DecideBookingCancellationTool', 'UpdateKnowledgeArticleTool',
 ]);
 

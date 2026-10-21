@@ -222,6 +222,29 @@ it('lets an employee check guests in and out only when their role grants it', fu
     'check-out a reservation' => ['check-out', 'reservation'],
 ]);
 
+it('never gives employees without a role the no-show permission', function () {
+    expect(Permission::employeeDefaults())->not->toContain(Permission::RESERVATIONS_NO_SHOW);
+});
+
+it('lets an employee mark and undo no-shows only when their role grants it', function (string $action, string $scope) {
+    [$hotel, $type, [$room]] = fdHotel();
+    $reservation = fdBook($hotel, $type, [$room->id]);
+    [$stay] = fdStays($reservation);
+    $base = $scope === 'room' ? "/api/stays/{$stay->id}" : "/api/reservation/{$reservation->id}";
+
+    if ($action === 'undo-no-show') {
+        fdPost($this, $hotel->owner, "{$base}/no-show")->assertOk();
+    }
+
+    fdPost($this, fdEmployee($hotel, [Permission::RESERVATIONS_UPDATE, Permission::STAYS_CHECK_IN]), "{$base}/{$action}")->assertForbidden();
+    fdPost($this, fdEmployee($hotel, [Permission::RESERVATIONS_NO_SHOW]), "{$base}/{$action}")->assertOk();
+})->with([
+    'mark a reservation' => ['no-show', 'reservation'],
+    'mark a room' => ['no-show', 'room'],
+    'undo a reservation' => ['undo-no-show', 'reservation'],
+    'undo a room' => ['undo-no-show', 'room'],
+]);
+
 it('replaces the defaults with the role instead of adding to them', function () {
     $hotel = hotelForPermissions();
     $housekeeper = employeeWithPermissions($hotel, [Permission::ROOMS_VIEW]);

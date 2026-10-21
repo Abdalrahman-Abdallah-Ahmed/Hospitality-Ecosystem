@@ -118,6 +118,10 @@ class ReservationCreator
 
         self::validateChildrenAges($attributes, $fromImport && empty($attributes['children_ages']));
 
+        if (! $fromImport && isset($attributes['status'])) {
+            ReservationLifecycle::assertCreate(self::statusOf($attributes['status']));
+        }
+
         return DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport, $overbookOverride, $guests) {
             $availability = app(AvailabilityService::class);
             $availability->lockTypes($attributes['hotel_id'], array_column($units, 'room_type_id'));
@@ -184,6 +188,14 @@ class ReservationCreator
         $guests = $attributes['guests'] ?? null;
         unset($attributes['room_id'], $attributes['guests']);
 
+        if ($reservation->status === ReservationStatus::NO_SHOW) {
+            self::assertNoShowEditable($reservation, $attributes, $rooms);
+        }
+
+        if (isset($attributes['status'])) {
+            ReservationLifecycle::assertEdit($reservation, self::statusOf($attributes['status']));
+        }
+
         if ($guests === null && isset($attributes['guest_id']) && $attributes['guest_id'] !== $reservation->guest_id) {
             $guests = self::membersWithPrimary($reservation, $attributes['guest_id']);
         }
@@ -191,16 +203,14 @@ class ReservationCreator
         self::validateChildrenAges([...$reservation->only(['children', 'children_ages']), ...$attributes], ! array_key_exists('children', $attributes) && ! array_key_exists('children_ages', $attributes));
 
         $statusBefore = $reservation->status;
-        $statusAfter = isset($attributes['status'])
-            ? ($attributes['status'] instanceof ReservationStatus ? $attributes['status'] : ReservationStatus::from($attributes['status']))
-            : $statusBefore;
+        $statusAfter = isset($attributes['status']) ? self::statusOf($attributes['status']) : $statusBefore;
         $reactivating = $statusBefore === ReservationStatus::CANCELLED && $statusAfter !== ReservationStatus::CANCELLED;
 
         $plan = $rooms !== null
             ? ReservationRoomSync::diff($reservation, $rooms, $statusBefore, $reactivating)
             : null;
 
-        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating, $overbookOverride, $guests) {
+        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating, $overbookOverride, $guests, $statusBefore) {
             // Every line's type, cancelled ones too: reactivating the
             // reservation brings its cancelled lines back into inventory.
             $availability = app(AvailabilityService::class);
@@ -208,6 +218,15 @@ class ReservationCreator
                 ...$reservation->reservationRooms()->pluck('room_type_id')->all(),
                 ...array_column($plan['create'] ?? [], 'room_type_id'),
             ]);
+            // The status the checks above read, confirmed under the row lock:
+            // a no-show (or check-in) committed meanwhile changes which edits
+            // are allowed, so this edit stops rather than write over it.
+            $lockedStatus = Reservation::withoutGlobalScope('hotel')->withTrashed()->whereKey($reservation->id)->lockForUpdate()->value('status');
+
+            if ($lockedStatus !== $statusBefore) {
+                throw ValidationException::withMessages(['status' => "The reservation changed while it was being edited (it is now {$lockedStatus->value}); reload it and try again."]);
+            }
+
             $footprintBefore = $availability->footprint($reservation);
 
             $roomIdsBefore = self::roomIdsOf($reservation);
@@ -377,6 +396,40 @@ class ReservationCreator
         }
     }
 
+    private static function statusOf(mixed $status): ReservationStatus
+    {
+        return $status instanceof ReservationStatus ? $status : ReservationStatus::from($status);
+    }
+
+    /**
+     * While a reservation is a no-show, only its guest list and special
+     * requests may change (SPEC-012 FR-010a). Everything else waits for the
+     * no-show to be undone, where availability is checked again. An allow-
+     * list, so a field added later is locked by default; sending a field
+     * with the value it already has is not a change.
+     *
+     * @param  array<string, mixed>  $attributes  without `guests`
+     * @param  array<int, array<string, mixed>>|null  $rooms
+     *
+     * @throws ValidationException
+     */
+    private static function assertNoShowEditable(Reservation $reservation, array $attributes, ?array $rooms): void
+    {
+        $probe = clone $reservation;
+        $probe->fill($attributes);
+
+        // Status is ReservationLifecycle's: it names the undo endpoint.
+        $locked = array_diff(array_keys($probe->getDirty()), ['special_requests', 'status']);
+
+        if ($rooms !== null) {
+            $locked[] = 'rooms';
+        }
+
+        if ($locked !== []) {
+            throw ValidationException::withMessages(array_fill_keys(array_values($locked), 'Undo the no-show first.'));
+        }
+    }
+
     /** @param array<string, mixed> $attributes */
     private static function validateChildrenAges(array $attributes, bool $legacyUnchanged): void
     {
@@ -425,8 +478,9 @@ class ReservationCreator
      * the HTTP and AI entry points hand those statuses to it instead.
      *
      * Cancelled needs no flag: the sync cancels the stays of cancelled lines,
-     * and this also cancels a line-less legacy stay. No-show is not a
-     * reservation status and is never mirrored.
+     * and this also cancels a line-less legacy stay. A no-show recorded this
+     * way (import, fixtures) marks the expected stays no-show; staff mark
+     * no-shows through NoShowService instead.
      */
     public static function syncStays(Reservation $reservation, bool $recordStatus = false): void
     {
@@ -440,6 +494,7 @@ class ReservationCreator
                 ! $recordStatus => null,
                 $reservation->status === ReservationStatus::CHECKED_IN && $stay->status === StayStatus::EXPECTED => $stayService->checkIn($stay),
                 $reservation->status === ReservationStatus::CHECKED_OUT && in_array($stay->status, [StayStatus::EXPECTED, StayStatus::IN_HOUSE], true) => $stayService->checkOut($stay),
+                $reservation->status === ReservationStatus::NO_SHOW && $stay->status === StayStatus::EXPECTED => $stayService->markNoShow($stay),
                 default => null,
             };
         }

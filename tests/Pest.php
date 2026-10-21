@@ -1063,6 +1063,7 @@ function aatArgs(string $tool, array $s): array
         'AssignRoomsTool' => ['code' => $s['code'], 'assignments' => [['room_number' => '102']]],
         'CheckInTool' => ['reservation_id' => $s['code']],
         'CheckOutTool' => ['reservation_id' => $s['code']],
+        'NoShowTool' => ['action' => 'mark', 'reservation_id' => $s['code']],
         'CreateRoomTool' => ['room_number' => '901', 'room_type' => $s['type']->name],
         'SetHousekeepingStatusTool' => ['room_number' => '101', 'housekeeping_status' => 'dirty'],
         'SetRoomOutOfOrderTool' => ['room_number' => '103', 'reason' => 'Water leak'],

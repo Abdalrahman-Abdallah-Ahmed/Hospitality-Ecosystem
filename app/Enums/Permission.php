@@ -75,6 +75,7 @@ enum Permission: string
     case RESERVATIONS_DELETE = 'reservations.delete';
     case RESERVATIONS_IMPORT = 'reservations.import';
     case RESERVATIONS_OVERBOOK = 'reservations.overbook';
+    case RESERVATIONS_NO_SHOW = 'reservations.no_show';
 
     case ROOMS_VIEW = 'rooms.view';
     case ROOMS_CREATE = 'rooms.create';

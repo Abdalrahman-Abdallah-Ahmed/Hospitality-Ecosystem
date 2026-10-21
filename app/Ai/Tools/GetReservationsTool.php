@@ -131,7 +131,7 @@ class GetReservationsTool implements ReadsData, Tool
 
     private function query(): Builder
     {
-        return Reservation::with(['guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room'])
+        return Reservation::with(['guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room', 'reservationRooms.stay'])
             ->where('hotel_id', $this->hotel->id);
     }
 

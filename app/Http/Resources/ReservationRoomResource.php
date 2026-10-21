@@ -21,6 +21,12 @@ class ReservationRoomResource extends JsonResource
             // True on a line cancelled because its whole reservation was: the
             // lines un-cancelling the reservation brings back.
             'cancelled_with_reservation' => $this->cancelled_with_reservation,
+            // The line's stay, so a room action (check-in, no-show) can name
+            // it without a separate stays lookup: its id and status (expected,
+            // in_house, departed, no_show or cancelled); null for a legacy
+            // line without one (SPEC-012 FR-015).
+            'stay_id' => $this->whenLoaded('stay', fn () => $this->stay?->id),
+            'stay_status' => $this->whenLoaded('stay', fn () => $this->stay?->status?->value),
             'room_type' => RoomTypeResource::make($this->whenLoaded('roomType')),
             'room' => RoomResource::make($this->whenLoaded('room')),
             'created_at' => $this->created_at,

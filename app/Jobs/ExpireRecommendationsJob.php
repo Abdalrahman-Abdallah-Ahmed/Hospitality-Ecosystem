@@ -17,10 +17,9 @@ use Illuminate\Foundation\Queue\Queueable;
  * Closes recommendations nobody will ever offer (SPEC-071 FR-010): pending
  * or approved ones that were never offered, for a stay that is over.
  *
- * A stay is over when the reservation was cancelled or checked out, every
- * stay of it departed, never arrived or was cancelled, or its planned
- * departure date has passed in the hotel's timezone. Reservations have no
- * no-show status yet (SPEC-012), so a no-show is read from the stays.
+ * A stay is over when the reservation was cancelled, checked out or marked a
+ * no-show (SPEC-012), every stay of it departed, never arrived or was
+ * cancelled, or its planned departure date has passed in the hotel's timezone.
  *
  * Runs per hotel, so "today" is each hotel's own date.
  */
@@ -46,7 +45,7 @@ class ExpireRecommendationsJob implements ShouldQueue
             ->whereNull('delivered_at')
             ->whereNull('pitch_decision_id')
             ->whereHas('reservation', fn (Builder $reservation) => $reservation->where(fn (Builder $q) => $q
-                ->whereIn('status', [ReservationStatus::CANCELLED->value, ReservationStatus::CHECKED_OUT->value])
+                ->whereIn('status', [ReservationStatus::CANCELLED->value, ReservationStatus::CHECKED_OUT->value, ReservationStatus::NO_SHOW->value])
                 ->orWhereDate('departure_date', '<', $today)
                 ->orWhere(fn (Builder $q) => $q
                     ->whereHas('stays')

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\AttributionMethod;
 use App\Enums\OutcomeType;
+use App\Enums\ReservationStatus;
 use App\Enums\StayStatus;
 use App\Models\Booking;
 use App\Models\Hotel;
@@ -157,8 +158,10 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
 
         $recommendations = Recommendation::where('hotel_id', $hotel->id)
             ->whereDoesntHave('outcome')
-            ->whereHas('reservation.stay', fn ($query) => $query
-                ->whereIn('status', [StayStatus::DEPARTED, StayStatus::NO_SHOW]))
+            ->where(fn ($query) => $query
+                ->whereHas('reservation', fn ($reservation) => $reservation->where('status', ReservationStatus::NO_SHOW))
+                ->orWhereHas('reservation.stay', fn ($stay) => $stay
+                    ->whereIn('status', [StayStatus::DEPARTED, StayStatus::NO_SHOW])))
             ->cursor();
 
         foreach ($recommendations as $recommendation) {
