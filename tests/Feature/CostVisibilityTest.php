@@ -23,6 +23,7 @@ use App\Models\KnowledgeDocument;
 use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
 use App\Models\ReservationImport;
+use App\Models\ReservationImportPreview;
 use App\Models\ReservationImportRow;
 use App\Models\StaffRole;
 use App\Models\Task;
@@ -191,6 +192,15 @@ function cvSeed(): array
         'total_rows' => 1,
         'invalid' => 1,
     ]);
+    $importPreview = ReservationImportPreview::create([
+        'hotel_id' => $hotel->id,
+        'uploaded_by' => $admin->id,
+        'file_name' => 'reservations.csv',
+        'file_path' => "reservation-import-previews/{$hotel->id}/reservations.csv",
+        'head_rows' => [['arrival_date', 'departure_date', 'guest_phone'], ['2026-09-01', '2026-09-04', '01001234567']],
+        'last_row' => 2,
+        'expires_at' => now()->addDay(),
+    ]);
     ReservationImportRow::create([
         'hotel_id' => $hotel->id,
         'reservation_import_id' => $import->id,
@@ -219,6 +229,7 @@ function cvSeed(): array
             'recommendation' => $recommendation->id,
             'reservation' => $reservation->id,
             'reservationImport' => $import->id,
+            'reservationImportPreview' => $importPreview->id,
             'room' => $room->id,
             'room_type' => $type->id,
             'staff_role' => StaffRole::query()->where('hotel_id', $hotel->id)->value('id'),

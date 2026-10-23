@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\ImportDecimalMark;
 use App\Enums\ImportRowOutcome;
 use App\Enums\ImportStage;
 use App\Enums\ImportStatus;
@@ -109,10 +110,11 @@ class PrepareReservationImportJob implements ShouldQueue
     private function prepare(ReservationImport $import, ImportFileReader $reader, RowNormalizer $normalizer, RowValidator $validator, ReservationMapper $mapper, ReservationImportResolver $resolver, ImportOutcomeRecorder $recorder): ?bool
     {
         $hotel = Hotel::findOrFail($import->hotel_id);
-        $read = $reader->read($import->file_path, config('reservation_import.disk'));
+        $read = $reader->read($import->file_path, config('reservation_import.disk'), $import->header_row ?? 1, $import->column_map);
         $import->update(['total_rows' => count($read['rows']), 'unrecognized_columns' => $read['unrecognized'], 'stage' => ImportStage::NORMALIZE]);
 
-        $rows = array_map(fn (array $row) => $validator->validate($normalizer->normalize($row['row_number'], $row['values'], $import->date_order, $hotel)), $read['rows']);
+        $decimalMark = $import->decimal_mark ?? ImportDecimalMark::AUTO;
+        $rows = array_map(fn (array $row) => $validator->validate($normalizer->normalize($row['row_number'], $row['values'], $import->date_order, $hotel, $decimalMark)), $read['rows']);
         $import->update(['stage' => ImportStage::MAP]);
 
         $today = CarbonImmutable::now($hotel->timezone ?: 'UTC')->startOfDay();

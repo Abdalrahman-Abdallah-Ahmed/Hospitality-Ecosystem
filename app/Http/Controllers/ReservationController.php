@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ImportDateOrder;
+use App\Enums\ImportDecimalMark;
 use App\Enums\ImportStatus;
 use App\Enums\ReservationChannels;
 use App\Enums\ReservationStatus;
@@ -340,6 +341,7 @@ class ReservationController extends Controller
             'file_path' => $path,
             'dry_run' => $request->boolean('dry_run'),
             'date_order' => $request->validated('date_order') ?? ImportDateOrder::DAY_FIRST->value,
+            'decimal_mark' => $request->validated('decimal_mark') ?? ImportDecimalMark::AUTO->value,
             'status' => ImportStatus::QUEUED,
         ]);
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ImportDecimalMark;
 use App\Models\ReservationImport;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -20,6 +21,13 @@ class ReservationImportResource extends JsonResource
             'uploaded_by' => $this->uploader ? ['id' => $this->uploader->id, 'name' => $this->uploader->name] : null,
             'dry_run' => $this->dry_run,
             'date_order' => $this->date_order?->value,
+            // How the file was read (016): its preview, header row, the
+            // confirmed column map (null when headers were matched by name)
+            // and the decimal mark of its amounts.
+            'preview_id' => $this->reservation_import_preview_id,
+            'header_row' => $this->header_row ?? 1,
+            'column_map' => $this->column_map === null ? null : (object) $this->column_map,
+            'decimal_mark' => ($this->decimal_mark ?? ImportDecimalMark::AUTO)->value,
             'status' => $this->status?->value,
             'stage' => $this->stage?->value,
             'progress' => [

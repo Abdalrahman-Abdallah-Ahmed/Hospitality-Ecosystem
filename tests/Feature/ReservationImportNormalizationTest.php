@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ImportDateOrder;
+use App\Enums\ImportDecimalMark;
 use App\Enums\ReservationStatus;
 use App\Models\Hotel;
 use App\Support\Import\DateParser;
@@ -8,6 +9,7 @@ use App\Support\Import\PhoneNormalizer;
 use App\Support\Import\Reservations\ImportFailed;
 use App\Support\Import\Reservations\ImportFileReader;
 use App\Support\Import\Reservations\RowNormalizer;
+use App\Support\Import\Reservations\RowValidator;
 
 /*
 | SPEC-100: the normalize stage reads what legacy exports write, and never
@@ -22,11 +24,11 @@ function nzCsv(string $content): string
     return $path;
 }
 
-function nzRow(array $values, ?string $countryCode = 'EG', ImportDateOrder $order = ImportDateOrder::DAY_FIRST)
+function nzRow(array $values, ?string $countryCode = 'EG', ImportDateOrder $order = ImportDateOrder::DAY_FIRST, ImportDecimalMark $decimalMark = ImportDecimalMark::AUTO)
 {
     $hotel = new Hotel(['country_code' => $countryCode, 'timezone' => 'UTC']);
 
-    return (new RowNormalizer)->normalize(2, $values, $order, $hotel);
+    return (new RowNormalizer)->normalize(2, $values, $order, $hotel, $decimalMark);
 }
 
 // --- Dates ---------------------------------------------------------------
@@ -87,6 +89,50 @@ it('maps headers through the synonym table and lists the rest once', function ()
         ->and($read['unrecognized'])->toBe(['Fax']);
 });
 
+it('reads the abbreviated headers of PMS reservation reports', function () {
+    $path = nzCsv("Conf. No.,Profile No.,Arr. Date,Dep. Date,Rms\nGHH-1,P010001,2025-09-12,2025-09-14,2");
+
+    expect((new ImportFileReader)->read($path)['rows'][0]['values'])->toMatchArray([
+        'reservation_reference' => 'GHH-1',
+        'guest_external_id' => 'P010001',
+        'arrival_date' => '2025-09-12',
+        'departure_date' => '2025-09-14',
+        'room_count' => '2',
+    ]);
+});
+
+it('skips title rows above a chosen header row and keeps the file\'s row numbers (016)', function () {
+    $path = nzCsv("Grand Harbor Hotel,,\nReservations report,,\nguest_phone,arrival_date,departure_date\n01001234567,2025-09-12,2025-09-14");
+
+    $rows = (new ImportFileReader)->read($path, headerRow: 3)['rows'];
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]['row_number'])->toBe(4)
+        ->and($rows[0]['values']['guest_phone'])->toBe('01001234567');
+});
+
+it('reads only mapped columns when a column map is given, listing the rest (016)', function () {
+    $path = nzCsv("Arr,Dep,Mob,Fax,Email\n2025-09-12,2025-09-14,01001234567,x,a@example.test");
+
+    $read = (new ImportFileReader)->read($path, columnMap: [0 => 'arrival_date', 1 => 'departure_date', 2 => 'guest_phone', 3 => null]);
+
+    expect($read['rows'][0]['values'])->toBe([
+        'arrival_date' => '2025-09-12',
+        'departure_date' => '2025-09-14',
+        'guest_phone' => '01001234567',
+    ])
+        ->and($read['unrecognized'])->toBe(['Fax', 'Email']);
+});
+
+it('ignores a known header the column map leaves unmapped (016)', function () {
+    $path = nzCsv("arrival_date,departure_date,guest_phone,guest_email\n2025-09-12,2025-09-14,01001234567,a@example.test");
+
+    $read = (new ImportFileReader)->read($path, columnMap: ['0' => 'arrival_date', '1' => 'departure_date', '2' => 'guest_phone', '3' => null]);
+
+    expect($read['rows'][0]['values'])->not->toHaveKey('guest_email')
+        ->and($read['unrecognized'])->toBe(['guest_email']);
+});
+
 it('fails a file missing a required column, naming it', function () {
     $path = nzCsv("guest_phone,arrival_date\n01001234567,2025-09-12");
 
@@ -123,6 +169,9 @@ it('maps legacy status labels', function (string $label, ReservationStatus $stat
     ['Guaranteed', ReservationStatus::CONFIRMED],
     ['tentative', ReservationStatus::PENDING],
     ['checked_out', ReservationStatus::CHECKED_OUT],
+    ['C/O', ReservationStatus::CHECKED_OUT],
+    ['Due Out', ReservationStatus::CHECKED_IN],
+    ['Waitlist', ReservationStatus::PENDING],
 ]);
 
 it('treats an unknown status label as an error, not a guess', function () {
@@ -161,6 +210,66 @@ it('normalizes a guest from the guest columns, lower-casing the email', function
         'email' => 'sara@example.com',
         'is_primary' => true,
     ]);
+});
+
+it('reads amounts by the decimal mark chosen for the file (016)', function (mixed $raw, ImportDecimalMark $mark, ?float $expected) {
+    $row = nzRow(['reservation_value' => $raw, 'guest_phone' => '01001234567'], decimalMark: $mark);
+
+    if ($expected === null) {
+        expect($row->reservationValue)->toBeNull()
+            ->and($row->errors['reservation_value'] ?? '')->toContain((string) $raw);
+    } else {
+        expect($row->reservationValue)->toBe($expected)
+            ->and($row->errors)->not->toHaveKey('reservation_value');
+    }
+})->with([
+    'auto: thousands alone is ambiguous' => ['25,200', ImportDecimalMark::AUTO, null],
+    'auto: both marks' => ['1,260.50', ImportDecimalMark::AUTO, 1260.5],
+    'auto: currency and thousands' => ['EGP 3,600', ImportDecimalMark::AUTO, null],
+    'auto: comma decimal' => ['99,50', ImportDecimalMark::AUTO, 99.5],
+    'dot: thousands' => ['25,200', ImportDecimalMark::DOT, 25200.0],
+    'dot: both marks' => ['1,260.50', ImportDecimalMark::DOT, 1260.5],
+    'dot: currency and thousands' => ['EGP 3,600', ImportDecimalMark::DOT, 3600.0],
+    'dot: millions' => ['1,250,000', ImportDecimalMark::DOT, 1250000.0],
+    'dot: plain decimal' => ['99.5', ImportDecimalMark::DOT, 99.5],
+    'dot: comma decimal does not fit' => ['99,50', ImportDecimalMark::DOT, null],
+    'dot: comma-decimal thousands do not fit' => ['1.260,50', ImportDecimalMark::DOT, null],
+    'comma: thousands' => ['25.200', ImportDecimalMark::COMMA, 25200.0],
+    'comma: both marks' => ['1.260,50', ImportDecimalMark::COMMA, 1260.5],
+    'comma: decimal' => ['99,50', ImportDecimalMark::COMMA, 99.5],
+    'comma: dot-decimal thousands do not fit' => ['1,260.50', ImportDecimalMark::COMMA, null],
+    'a numeric cell is never reinterpreted' => [1260.5, ImportDecimalMark::COMMA, 1260.5],
+]);
+
+it('splits a full-name column into first and last name (016)', function (string $raw, ?string $first, ?string $last) {
+    $row = nzRow(['guest_full_name' => $raw, 'guest_phone' => '01001234567']);
+
+    expect($row->guests[0])->toMatchArray(['first_name' => $first, 'last_name' => $last]);
+})->with([
+    'family name of several words' => ['Mohamed Abdel Rahman', 'Mohamed', 'Abdel Rahman'],
+    'last name before a comma' => ['Smith, John', 'John', 'Smith'],
+    'one word' => ['  Sara  ', 'Sara', null],
+    'empty' => ['', null, null],
+    'repeated spaces' => ['Ahmed   El  Sayed', 'Ahmed', 'El Sayed'],
+]);
+
+it('prefers separate first and last name columns over a full name (016)', function () {
+    $row = nzRow(['guest_full_name' => 'Ahmed Saleh', 'guest_first_name' => 'Mona', 'guest_phone' => '01001234567']);
+
+    expect($row->guests[0])->toMatchArray(['first_name' => 'Mona', 'last_name' => null]);
+});
+
+it('still needs a contact for a guest named only by full name (016)', function () {
+    $row = nzRow(['guest_full_name' => 'Ahmed Saleh', 'arrival_date' => '2025-09-12', 'departure_date' => '2025-09-14']);
+    (new RowValidator)->validate($row);
+
+    expect($row->errors['guest_phone'] ?? null)->toBe('Ahmed Saleh has no phone, email or guest id. Add at least one.');
+});
+
+it('reads a Guest Name header as the full-name column (016)', function () {
+    $path = nzCsv("Guest Name,guest_phone,arrival_date,departure_date\nAhmed Saleh,01001234567,2025-09-12,2025-09-14");
+
+    expect((new ImportFileReader)->read($path)['rows'][0]['values'])->toHaveKey('guest_full_name', 'Ahmed Saleh');
 });
 
 it('refuses an amount whose separator could mean thousands or decimals', function (string $raw) {

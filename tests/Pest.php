@@ -63,6 +63,11 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Ai\Embeddings;
 use Laravel\Ai\Tools\Request;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Shared\Date;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 /*
@@ -1525,4 +1530,47 @@ function imRows(ReservationImport $import): Collection
 {
     return TenantContext::withoutScope(fn () => ReservationImportRow::where('reservation_import_id', $import->id)
         ->orderBy('row_number')->get()->keyBy('row_number'));
+}
+
+/**
+ * A temp .xlsx holding $rows as written, title lines included (016). Values
+ * that are DateTimeInterface become real date cells.
+ *
+ * @param  list<list<mixed>>  $rows
+ */
+function imXlsx(array $rows, string $name = 'reservations.xlsx'): UploadedFile
+{
+    $book = new Spreadsheet;
+    $sheet = $book->getActiveSheet();
+
+    foreach ($rows as $r => $row) {
+        foreach (array_values($row) as $c => $value) {
+            $cell = Coordinate::stringFromColumnIndex($c + 1).($r + 1);
+            if ($value instanceof DateTimeInterface) {
+                $sheet->setCellValue($cell, Date::PHPToExcel($value));
+                $sheet->getStyle($cell)->getNumberFormat()->setFormatCode('dd/mm/yyyy');
+            } elseif ($value !== null) {
+                $sheet->setCellValueExplicit($cell, (string) $value, DataType::TYPE_STRING);
+            }
+        }
+    }
+
+    $path = tempnam(sys_get_temp_dir(), 'import').'.xlsx';
+    (new Xlsx($book))->save($path);
+
+    return new UploadedFile($path, $name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+}
+
+function imPreview($test, User $user, UploadedFile $file, array $fields = []): TestResponse
+{
+    return $test->withHeaders(apiHeaders())
+        ->actingAs($user, 'sanctum')
+        ->post('/api/reservation/import-previews', ['file' => $file, ...$fields], ['Accept' => 'application/json']);
+}
+
+function imConfirm($test, User $user, string $previewId, array $body): TestResponse
+{
+    return $test->withHeaders(apiHeaders())
+        ->actingAs($user, 'sanctum')
+        ->postJson("/api/reservation/import-previews/{$previewId}/confirm", $body);
 }

@@ -30,6 +30,7 @@ use App\Http\Controllers\ProactiveMessageController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\ReservationImportController;
+use App\Http\Controllers\ReservationImportPreviewController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomHousekeepingController;
 use App\Http\Controllers\RoomOutOfOrderController;
@@ -77,6 +78,12 @@ Route::middleware('api.key')->group(function () {
         Route::get('/reservation/imports/{reservationImport}', [ReservationImportController::class, 'show']);
         Route::get('/reservation/imports/{reservationImport}/rows', [ReservationImportController::class, 'rows']);
         Route::get('/reservation/imports/{reservationImport}/report', [ReservationImportController::class, 'report']);
+        // Column mapping (016), also before the /reservation resource.
+        Route::post('/reservation/import-previews', [ReservationImportPreviewController::class, 'store']);
+        Route::get('/reservation/import-previews', [ReservationImportPreviewController::class, 'index']);
+        Route::get('/reservation/import-previews/{reservationImportPreview}', [ReservationImportPreviewController::class, 'show']);
+        Route::post('/reservation/import-previews/{reservationImportPreview}/confirm', [ReservationImportPreviewController::class, 'confirm']);
+        Route::delete('/reservation/import-previews/{reservationImportPreview}', [ReservationImportPreviewController::class, 'destroy']);
         Route::post('/reservation/{reservation}/check-in', [ReservationController::class, 'checkIn']);
         Route::post('/reservation/{reservation}/check-out', [ReservationController::class, 'checkOut']);
         Route::post('/reservation/{reservation}/no-show', [ReservationController::class, 'noShow']);

@@ -2,37 +2,40 @@
 
 namespace App\Support\Import\Reservations;
 
+use Maatwebsite\Excel\Concerns\WithFormatData;
 use Maatwebsite\Excel\Facades\Excel;
 use Throwable;
 
 /**
  * Parse stage: reads the first sheet of an uploaded file and puts every row
- * under the import's canonical column names. Headers are normalized (case,
- * spacing, punctuation) and then translated through the synonym table in
- * config/reservation_import.php; anything not canonical is reported once as
+ * under the import's canonical column names.
+ *
+ * A direct upload has no column map: its header row (row 1) is normalized
+ * (case, spacing, punctuation) and translated through the synonym table in
+ * config/reservation_import.php. An import confirmed from a preview (016)
+ * brings the header row and column map the admin chose, and only the mapped
+ * columns are read. Either way, anything not read is reported once as
  * unrecognized rather than per row.
  */
 class ImportFileReader
 {
+    private const UNREADABLE = 'The file could not be read. Upload an .xlsx, .xls or .csv file with a header row.';
+
     /**
+     * @param  array<int|string, ?string>|null  $columnMap  sheet position => canonical field, or null to leave it unread
      * @return array{rows: list<array{row_number: int, values: array<string, mixed>}>, unrecognized: list<string>}
      *
      * @throws ImportFailed
      */
-    public function read(string $path, ?string $disk = null): array
+    public function read(string $path, ?string $disk = null, int $headerRow = 1, ?array $columnMap = null): array
     {
-        try {
-            $sheets = Excel::toArray(new class {}, $path, $disk);
-        } catch (Throwable $e) {
-            report($e);
+        $sheet = $this->firstSheet(fn () => Excel::toArray(new class {}, $path, $disk));
 
-            throw new ImportFailed('The file could not be read. Upload an .xlsx, .xls or .csv file with a header row.');
-        }
+        // Rows above the header (report titles) are not data.
+        $sheet = array_slice($sheet, $headerRow - 1);
+        $header = array_shift($sheet) ?? [];
 
-        $sheet = $sheets[0] ?? [];
-        $headerRow = array_shift($sheet) ?? [];
-
-        [$columns, $unrecognized] = $this->columns($headerRow);
+        [$columns, $unrecognized] = $columnMap === null ? $this->columns($header) : $this->mappedColumns($header, $columnMap);
         $this->assertRequiredColumns($columns);
 
         $rows = [];
@@ -45,17 +48,74 @@ class ImportFileReader
                 }
             }
 
-            // +2: 1-based, plus the header row.
-            $rows[] = ['row_number' => $index + 2, 'values' => $values];
+            // The file's own row number: 1-based, after the header row.
+            $rows[] = ['row_number' => $index + $headerRow + 1, 'values' => $values];
         }
 
         return ['rows' => $this->withoutTrailingBlankRows($rows), 'unrecognized' => $unrecognized];
     }
 
     /**
+     * The head of the first sheet for a column-mapping preview (016), read
+     * once with cells formatted as shown in the spreadsheet, so a date cell
+     * is a date and not a serial number.
+     *
+     * @return array{rows: list<list<string>>, last_row: int}
+     *
+     * @throws ImportFailed
+     */
+    public function head(string $path, ?string $disk = null): array
+    {
+        // Cell formats are only loaded outside read-only mode; the import
+        // itself keeps reading data only.
+        $readOnly = config('excel.imports.read_only');
+        config(['excel.imports.read_only' => false]);
+        try {
+            $sheet = $this->firstSheet(fn () => Excel::toArray(new class implements WithFormatData {}, $path, $disk));
+        } finally {
+            config(['excel.imports.read_only' => $readOnly]);
+        }
+
+        $lastRow = 0;
+        foreach ($sheet as $index => $cells) {
+            if (! self::isBlank($cells)) {
+                $lastRow = $index + 1;
+            }
+        }
+
+        $rows = array_map(function (array $cells): array {
+            $cells = array_map(fn (mixed $cell) => trim((string) $cell), array_values($cells));
+            while ($cells !== [] && end($cells) === '') {
+                array_pop($cells);
+            }
+
+            return $cells;
+        }, array_slice($sheet, 0, (int) config('reservation_import.preview_head_rows', 30)));
+
+        return ['rows' => $rows, 'last_row' => $lastRow];
+    }
+
+    /**
+     * @param  callable(): array<int, array<int, array<int, mixed>>>  $read
+     * @return array<int, array<int, mixed>>
+     *
+     * @throws ImportFailed
+     */
+    private function firstSheet(callable $read): array
+    {
+        try {
+            return $read()[0] ?? [];
+        } catch (Throwable $e) {
+            report($e);
+
+            throw new ImportFailed(self::UNREADABLE);
+        }
+    }
+
+    /**
      * "Guest Phone", "guest-phone" and "GUEST_PHONE" are one header.
      */
-    private static function normalizeHeader(mixed $header): string
+    public static function normalizeHeader(mixed $header): string
     {
         $header = mb_strtolower(trim((string) $header));
         $header = preg_replace('/[^\p{L}\p{N}]+/u', '_', $header);
@@ -87,6 +147,32 @@ class ImportFileReader
                 $columns[$position] = $column;
             } else {
                 $columns[$position] = null;
+                $unrecognized[] = trim((string) $raw);
+            }
+        }
+
+        return [$columns, array_values(array_unique($unrecognized))];
+    }
+
+    /**
+     * The admin's confirmed mapping is the only source of column meaning:
+     * the synonym table is not consulted, and every unmapped column with a
+     * header is reported as unrecognized.
+     *
+     * @param  list<mixed>  $headerRow
+     * @param  array<int|string, ?string>  $columnMap
+     * @return array{0: array<int, ?string>, 1: list<string>}
+     */
+    private function mappedColumns(array $headerRow, array $columnMap): array
+    {
+        $columns = [];
+        foreach ($columnMap as $position => $field) {
+            $columns[(int) $position] = $field;
+        }
+
+        $unrecognized = [];
+        foreach ($headerRow as $position => $raw) {
+            if (($columns[$position] ?? null) === null && trim((string) $raw) !== '') {
                 $unrecognized[] = trim((string) $raw);
             }
         }

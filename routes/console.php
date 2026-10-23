@@ -5,6 +5,7 @@ use App\Jobs\EvaluateProactiveTriggersJob;
 use App\Jobs\ExpireRecommendationsJob;
 use App\Jobs\MatchRecommendationOutcomesJob;
 use App\Jobs\Metering\RebuildUsageCountersJob;
+use App\Jobs\PruneReservationImportPreviewsJob;
 use App\Jobs\PurgeDeletedKnowledgeDocumentsJob;
 use App\Jobs\RetryGuestMemoryExtractionsJob;
 use App\Jobs\StartHousekeepingDayJob;
@@ -28,6 +29,8 @@ Schedule::job(new RebuildUsageCountersJob)->dailyAt('04:00');
 // Removes knowledge documents deleted more than 30 days ago, for good: the
 // row, its passages and its files. Until then they can be restored.
 Schedule::job(new PurgeDeletedKnowledgeDocumentsJob)->dailyAt('04:15');
+// Unfinished column-mapping uploads hold guest data; they go once expired (016).
+Schedule::job(new PruneReservationImportPreviewsJob)->hourly();
 
 // Starts each hotel's housekeeping day: stay-over rooms become dirty with one
 // cleaning task each. Hourly, so every time zone gets its own local date; the

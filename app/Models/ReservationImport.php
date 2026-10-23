@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
 use App\Enums\ImportDateOrder;
+use App\Enums\ImportDecimalMark;
 use App\Enums\ImportStage;
 use App\Enums\ImportStatus;
 use App\Models\Concerns\Filterable;
@@ -33,10 +34,14 @@ class ReservationImport extends Model
     protected $fillable = [
         'hotel_id',
         'uploaded_by',
+        'reservation_import_preview_id',
         'file_name',
         'file_path',
         'dry_run',
         'date_order',
+        'header_row',
+        'column_map',
+        'decimal_mark',
         'status',
         'stage',
         'total_rows',
@@ -57,6 +62,9 @@ class ReservationImport extends Model
     protected $casts = [
         'dry_run' => 'boolean',
         'date_order' => ImportDateOrder::class,
+        'header_row' => 'integer',
+        'column_map' => 'array',
+        'decimal_mark' => ImportDecimalMark::class,
         'status' => ImportStatus::class,
         'stage' => ImportStage::class,
         'total_rows' => 'integer',
@@ -76,6 +84,12 @@ class ReservationImport extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    /** The column-mapping preview this import was confirmed from, if any (016). */
+    public function preview(): BelongsTo
+    {
+        return $this->belongsTo(ReservationImportPreview::class, 'reservation_import_preview_id');
     }
 
     public function rows(): HasMany

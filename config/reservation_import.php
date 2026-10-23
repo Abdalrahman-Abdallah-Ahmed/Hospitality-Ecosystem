@@ -29,6 +29,9 @@ return [
         'confirmation' => 'reservation_reference',
         'confirmation_no' => 'reservation_reference',
         'confirmation_number' => 'reservation_reference',
+        'confirmation_code' => 'reservation_reference',
+        'conf_no' => 'reservation_reference',
+        'conf_number' => 'reservation_reference',
         'reference' => 'reservation_reference',
 
         'phone' => 'guest_phone',
@@ -52,12 +55,17 @@ return [
         'lastname' => 'guest_last_name',
         'surname' => 'guest_last_name',
         'family_name' => 'guest_last_name',
+        'guest_name' => 'guest_full_name',
+        'name' => 'guest_full_name',
+        'full_name' => 'guest_full_name',
 
         'guest_id' => 'guest_external_id',
         'guest_code' => 'guest_external_id',
         'guest_no' => 'guest_external_id',
         'profile_id' => 'guest_external_id',
         'external_guest_id' => 'guest_external_id',
+        'profile_no' => 'guest_external_id',
+        'profile_number' => 'guest_external_id',
 
         'primary' => 'is_primary',
         'primary_guest' => 'is_primary',
@@ -65,6 +73,8 @@ return [
 
         'arrival' => 'arrival_date',
         'arrival_dt' => 'arrival_date',
+        'arr' => 'arrival_date',
+        'arr_date' => 'arrival_date',
         'check_in' => 'arrival_date',
         'check_in_date' => 'arrival_date',
         'checkin' => 'arrival_date',
@@ -72,6 +82,8 @@ return [
         'date_in' => 'arrival_date',
         'departure' => 'departure_date',
         'departure_dt' => 'departure_date',
+        'dep' => 'departure_date',
+        'dep_date' => 'departure_date',
         'check_out' => 'departure_date',
         'check_out_date' => 'departure_date',
         'checkout' => 'departure_date',
@@ -90,6 +102,8 @@ return [
         'no_of_rooms' => 'room_count',
         'number_of_rooms' => 'room_count',
         'room_qty' => 'room_count',
+        'rms' => 'room_count',
+        'no_rooms' => 'room_count',
 
         'reservation_status' => 'status',
         'booking_status' => 'status',
@@ -133,9 +147,41 @@ return [
         'reservation_reference', 'arrival_date', 'departure_date', 'status', 'source',
         'adults', 'children', 'children_ages', 'special_requests', 'reservation_value', 'currency',
         'room_number', 'room_type', 'floor', 'room_count',
-        'guest_first_name', 'guest_last_name', 'guest_phone', 'guest_email', 'guest_external_id',
+        'guest_first_name', 'guest_last_name', 'guest_full_name', 'guest_phone', 'guest_email', 'guest_external_id',
         'is_primary', 'guests',
         'activity_name', 'activity_date', 'activity_time', 'activity_pax',
+    ],
+
+    // How each canonical column is named on the mapping screen. The frontend
+    // translates these by key.
+    'field_labels' => [
+        'reservation_reference' => 'Reservation reference',
+        'arrival_date' => 'Arrival date',
+        'departure_date' => 'Departure date',
+        'status' => 'Status',
+        'source' => 'Source',
+        'adults' => 'Adults',
+        'children' => 'Children',
+        'children_ages' => 'Children ages',
+        'special_requests' => 'Special requests',
+        'reservation_value' => 'Reservation value',
+        'currency' => 'Currency',
+        'room_number' => 'Room number',
+        'room_type' => 'Room type',
+        'floor' => 'Floor',
+        'room_count' => 'Room count',
+        'guest_first_name' => 'Guest first name',
+        'guest_last_name' => 'Guest last name',
+        'guest_full_name' => 'Guest full name',
+        'guest_phone' => 'Guest phone',
+        'guest_email' => 'Guest email',
+        'guest_external_id' => 'Guest id (old system)',
+        'is_primary' => 'Primary guest',
+        'guests' => 'Guests (JSON list)',
+        'activity_name' => 'Activity',
+        'activity_date' => 'Activity date',
+        'activity_time' => 'Activity time',
+        'activity_pax' => 'Activity guests',
     ],
 
     // A file missing any of these fails before a row is read.
@@ -148,10 +194,11 @@ return [
     // spaces, dashes and underscores. An empty status means pending.
     'status_labels' => [
         'confirmed' => ['confirmed', 'conf', 'guaranteed', 'definite', 'booked', 'reserved', 'reservation'],
-        'pending' => ['pending', 'tentative', 'provisional', 'option', 'unconfirmed'],
+        // A waitlisted request holds nothing yet, which is what pending means here.
+        'pending' => ['pending', 'tentative', 'provisional', 'option', 'unconfirmed', 'waitlist', 'wait list', 'waitlisted'],
         'cancelled' => ['cancelled', 'canceled', 'cxl', 'cancel', 'cnl'],
-        'checked_in' => ['checked in', 'checkedin', 'check in', 'in house', 'inhouse', 'arrived', 'ci'],
-        'checked_out' => ['checked out', 'checkedout', 'check out', 'departed', 'co'],
+        'checked_in' => ['checked in', 'checkedin', 'check in', 'in house', 'inhouse', 'arrived', 'ci', 'c/i', 'due out'],
+        'checked_out' => ['checked out', 'checkedout', 'check out', 'departed', 'co', 'c/o'],
         'no_show' => ['no show', 'noshow', 'ns'],
     ],
 
@@ -161,5 +208,12 @@ return [
 
     // Private local disk the uploaded file waits on until prepare ends.
     'disk' => 'local',
+
+    // Column mapping previews (016): how long an upload waits to be mapped,
+    // how many leading rows are kept for the mapping screen, and how many of
+    // those may be chosen as the header row.
+    'preview_ttl_hours' => 24,
+    'preview_head_rows' => 30,
+    'preview_header_rows' => 10,
 
 ];

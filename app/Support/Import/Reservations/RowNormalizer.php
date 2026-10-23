@@ -3,6 +3,7 @@
 namespace App\Support\Import\Reservations;
 
 use App\Enums\ImportDateOrder;
+use App\Enums\ImportDecimalMark;
 use App\Enums\ReservationStatus;
 use App\Models\Hotel;
 use App\Support\Import\DateParser;
@@ -24,7 +25,7 @@ class RowNormalizer
     /**
      * @param  array<string, mixed>  $values  canonical column => raw cell
      */
-    public function normalize(int $rowNumber, array $values, ImportDateOrder $order, Hotel $hotel): NormalizedRow
+    public function normalize(int $rowNumber, array $values, ImportDateOrder $order, Hotel $hotel, ImportDecimalMark $decimalMark = ImportDecimalMark::AUTO): NormalizedRow
     {
         $values = array_map(fn (mixed $value) => is_string($value) ? trim(Digits::ascii($value)) : $value, $values);
 
@@ -42,7 +43,7 @@ class RowNormalizer
         $row->children = $this->wholeNumber($row, $values, 'children', min: 0);
         $row->childrenAges = $this->ages($row, $values);
         $row->specialRequests = $this->text($values, 'special_requests');
-        $row->reservationValue = $this->money($row, $values);
+        $row->reservationValue = $this->money($row, $values, $decimalMark);
         $row->currency = $this->currency($row, $values);
         $row->roomNumber = $this->text($values, 'room_number');
         $row->roomType = $this->text($values, 'room_type');
@@ -177,7 +178,7 @@ class RowNormalizer
     }
 
     /** @param array<string, mixed> $values */
-    private function money(NormalizedRow $row, array $values): ?float
+    private function money(NormalizedRow $row, array $values, ImportDecimalMark $decimalMark): ?float
     {
         $raw = $values['reservation_value'] ?? null;
         if (blank($raw)) {
@@ -188,7 +189,18 @@ class RowNormalizer
             return (float) $raw;
         }
 
-        $value = self::decimalAmount(preg_replace('/[^\d.,\-]/', '', (string) $raw));
+        $amount = preg_replace('/[^\d.,\-]/', '', (string) $raw);
+
+        if ($decimalMark !== ImportDecimalMark::AUTO) {
+            $value = self::markedAmount($amount, $decimalMark);
+            if ($value === null) {
+                $row->error('reservation_value', "reservation_value \"{$raw}\" doesn't match the decimal mark chosen for this file ({$decimalMark->value}).");
+            }
+
+            return $value === null ? null : (float) $value;
+        }
+
+        $value = self::decimalAmount($amount);
 
         if ($value === null) {
             $row->error('reservation_value', "reservation_value \"{$raw}\" can be read more than one way. Write it without thousands separators, like 1200 or 1200.50.");
@@ -240,6 +252,24 @@ class RowNormalizer
         return str_replace($separator, '.', $value);
     }
 
+    /**
+     * An amount read with the decimal mark the admin chose (016, FR-017):
+     * the other mark may only group thousands in threes. Anything else is
+     * null, never read some other way (FR-018).
+     */
+    private static function markedAmount(string $value, ImportDecimalMark $decimalMark): ?string
+    {
+        [$decimal, $thousands] = $decimalMark === ImportDecimalMark::DOT ? ['.', ','] : [',', '.'];
+        $d = preg_quote($decimal, '/');
+        $t = preg_quote($thousands, '/');
+
+        if (! preg_match("/^-?(\d{1,3}({$t}\d{3})+|\d+)({$d}\d+)?$/", $value)) {
+            return null;
+        }
+
+        return str_replace([$thousands, $decimal], ['', '.'], $value);
+    }
+
     /** @param array<string, mixed> $values */
     private function currency(NormalizedRow $row, array $values): ?string
     {
@@ -269,11 +299,12 @@ class RowNormalizer
     {
         $guests = [];
 
-        $columns = ['guest_first_name', 'guest_last_name', 'guest_phone', 'guest_email', 'guest_external_id'];
+        $columns = ['guest_first_name', 'guest_last_name', 'guest_full_name', 'guest_phone', 'guest_email', 'guest_external_id'];
         if (collect($columns)->contains(fn (string $column) => $this->text($values, $column) !== null)) {
+            [$firstName, $lastName] = $this->name($values);
             $guests[] = $this->guest($row, [
-                'first_name' => $this->text($values, 'guest_first_name'),
-                'last_name' => $this->text($values, 'guest_last_name'),
+                'first_name' => $firstName,
+                'last_name' => $lastName,
                 'phone' => $this->text($values, 'guest_phone'),
                 'email' => $this->text($values, 'guest_email'),
                 'external_id' => $this->text($values, 'guest_external_id'),
@@ -311,6 +342,35 @@ class RowNormalizer
         }
 
         return $guests;
+    }
+
+    /**
+     * The row's guest name. Separate first and last name columns win; a
+     * full-name column (016, FR-016) is split otherwise: "Smith, John" puts
+     * the family name first, and "Mohamed Abdel Rahman" keeps a family name
+     * of several words together after the first word.
+     *
+     * @param  array<string, mixed>  $values
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function name(array $values): array
+    {
+        $first = $this->text($values, 'guest_first_name');
+        $last = $this->text($values, 'guest_last_name');
+        $full = $this->text($values, 'guest_full_name');
+
+        if ($first !== null || $last !== null || $full === null) {
+            return [$first, $last];
+        }
+
+        $full = preg_replace('/\s+/u', ' ', $full);
+        if (str_contains($full, ',')) {
+            [$last, $first] = array_map('trim', explode(',', $full, 2));
+        } else {
+            [$first, $last] = array_pad(explode(' ', $full, 2), 2, null);
+        }
+
+        return [$first === '' ? null : $first, $last === '' ? null : $last];
     }
 
     /**

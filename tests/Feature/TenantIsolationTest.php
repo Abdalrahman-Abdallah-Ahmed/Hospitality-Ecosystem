@@ -32,6 +32,8 @@ use App\Models\Reservation;
 use App\Models\ReservationGuest;
 use App\Models\ReservationImport;
 use App\Models\ReservationImportDraft;
+use App\Models\ReservationImportMapping;
+use App\Models\ReservationImportPreview;
 use App\Models\ReservationImportRow;
 use App\Models\ReservationRoom;
 use App\Models\Room;
@@ -138,6 +140,17 @@ function tenantOwnedModelFactories(): array
             'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'running', 'date_order' => 'day_first'])->id,
             'position' => 2,
             'payload' => [],
+        ]),
+        ReservationImportPreview::class => fn (Hotel $hotel) => ReservationImportPreview::create([
+            'hotel_id' => $hotel->id,
+            'file_name' => 'r.csv',
+            'file_path' => "reservation-import-previews/{$hotel->id}/r.csv",
+            'expires_at' => now()->addDay(),
+        ]),
+        ReservationImportMapping::class => fn (Hotel $hotel) => ReservationImportMapping::create([
+            'hotel_id' => $hotel->id,
+            'header_row' => 1,
+            'columns' => ['arrival' => 'arrival_date'],
         ]),
         Room::class => fn (Hotel $hotel) => Room::create([
             'hotel_id' => $hotel->id,
@@ -829,4 +842,40 @@ it('keeps one hotel out of another hotel reservation imports and their data (SPE
     foreach (['', '/rows', '/report'] as $suffix) {
         expect($get("/api/reservation/imports/{$importB->id}{$suffix}")->status())->toBeIn([403, 404]);
     }
+});
+
+it('keeps one hotel out of another hotel import previews (016)', function () {
+    Storage::fake('local');
+    [$adminA] = adminWithHotel();
+    [$adminB] = adminWithHotel();
+    $csv = fn () => imCsv(['guest_phone', 'arrival_date', 'departure_date'], [['555-0100', '2026-09-01', '2026-09-04']]);
+
+    $previewA = imPreview($this, $adminA, $csv())->assertCreated()->json('body.id');
+    $previewB = imPreview($this, $adminB, $csv())->assertCreated()->json('body.id');
+
+    $as = fn () => $this->withHeaders(apiHeaders())->actingAs($adminA, 'sanctum');
+
+    expect(collect($as()->getJson('/api/reservation/import-previews')->assertOk()->json('body.data'))->pluck('id')->all())->toBe([$previewA]);
+    $as()->getJson("/api/reservation/import-previews/{$previewB}")->assertNotFound();
+    $as()->postJson("/api/reservation/import-previews/{$previewB}/confirm", ['header_row' => 1, 'columns' => ['0' => 'guest_phone', '1' => 'arrival_date', '2' => 'departure_date']])->assertNotFound();
+    $as()->deleteJson("/api/reservation/import-previews/{$previewB}")->assertNotFound();
+
+    expect(TenantContext::withoutScope(fn () => ReservationImport::count()))->toBe(0);
+});
+
+it('suggests each hotel only its own saved import mapping (016)', function () {
+    Storage::fake('local');
+    [$adminA] = adminWithHotel();
+    [$adminB] = adminWithHotel();
+    $file = fn () => imCsv(['Ankunft', 'Abreise', 'Handy', 'Notiz'], [['2026-09-01', '2026-09-04', '01001110001', 'x']]);
+
+    $a = imPreview($this, $adminA, $file())->json('body.id');
+    imConfirm($this, $adminA, $a, ['header_row' => 1, 'columns' => ['0' => 'arrival_date', '1' => 'departure_date', '2' => 'guest_phone', '3' => 'special_requests']])->assertStatus(202);
+    $b = imPreview($this, $adminB, $file())->json('body.id');
+    imConfirm($this, $adminB, $b, ['header_row' => 1, 'columns' => ['0' => 'arrival_date', '1' => 'departure_date', '2' => 'guest_external_id', '3' => null]])->assertStatus(202);
+
+    $suggested = fn ($admin) => collect(imPreview($this, $admin, $file())->json('body.columns'))->pluck('suggested_field')->all();
+
+    expect($suggested($adminA))->toBe(['arrival_date', 'departure_date', 'guest_phone', 'special_requests'])
+        ->and($suggested($adminB))->toBe(['arrival_date', 'departure_date', 'guest_external_id', null]);
 });

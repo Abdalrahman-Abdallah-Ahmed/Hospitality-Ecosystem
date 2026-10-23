@@ -84,6 +84,24 @@ it('validates the date order and the file size', function () {
         ->assertUnprocessable()->assertJsonValidationErrors('file');
 });
 
+it('takes a decimal mark on a direct upload, defaulting to auto (016)', function () {
+    [$admin] = imHotel();
+    $file = fn () => imCsv([...IM_HEADER, 'reservation_value'], [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04', '25,200']]);
+
+    $auto = imImport($this, $admin, $file());
+    expect($auto->decimal_mark->value)->toBe('auto')
+        ->and($auto->invalid)->toBe(1);
+
+    [$other] = imHotel();
+    $dot = imImport($this, $other, $file(), ['decimal_mark' => 'dot']);
+    expect($dot->decimal_mark->value)->toBe('dot')
+        ->and($dot->imported)->toBe(1)
+        ->and($dot->column_map)->toBeNull()
+        ->and($dot->header_row)->toBe(1);
+
+    imUpload($this, $admin, $file(), ['decimal_mark' => 'euro'])->assertUnprocessable()->assertJsonValidationErrors('decimal_mark');
+});
+
 it('makes a super admin name the hotel', function () {
     [, $hotel] = adminWithHotel();
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();

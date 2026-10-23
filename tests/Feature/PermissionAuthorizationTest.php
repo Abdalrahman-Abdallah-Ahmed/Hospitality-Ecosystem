@@ -489,3 +489,32 @@ it('lets an employee upload and read reservation imports only with the import pe
     'rows' => ['/api/reservation/imports/{id}/rows'],
     'report' => ['/api/reservation/imports/{id}/report'],
 ]);
+
+it('lets an employee upload, map and discard import previews only with the import permission (016)', function (string $method, string $endpoint, int $grantedStatus) {
+    Storage::fake('local');
+    $hotel = hotelForPermissions();
+    $granted = employeeWithPermissions($hotel, [Permission::RESERVATIONS_IMPORT]);
+    $withoutIt = employeeWithPermissions($hotel, Permission::employeeDefaults());
+    $csv = fn () => imCsv(['guest_phone', 'arrival_date', 'departure_date'], [['555-0100', '2026-09-01', '2026-09-04']]);
+
+    if ($endpoint === 'upload') {
+        imPreview($this, $withoutIt, $csv())->assertForbidden();
+        imPreview($this, $granted, $csv())->assertStatus($grantedStatus);
+
+        return;
+    }
+
+    $previewId = imPreview($this, $granted, $csv())->assertCreated()->json('body.id');
+    $uri = str_replace('{id}', $previewId, $endpoint);
+    $body = ['header_row' => 1, 'columns' => ['0' => 'guest_phone', '1' => 'arrival_date', '2' => 'departure_date']];
+    $call = fn ($user) => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->json($method, $uri, $body);
+
+    $call($withoutIt)->assertForbidden();
+    $call($granted)->assertStatus($grantedStatus);
+})->with([
+    'upload' => ['POST', 'upload', 201],
+    'list' => ['GET', '/api/reservation/import-previews', 200],
+    'show' => ['GET', '/api/reservation/import-previews/{id}', 200],
+    'confirm' => ['POST', '/api/reservation/import-previews/{id}/confirm', 202],
+    'discard' => ['DELETE', '/api/reservation/import-previews/{id}', 200],
+]);
