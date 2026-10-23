@@ -8,6 +8,7 @@ use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\ReservationImport;
 use App\Models\ReservationRoom;
 use App\Models\RoomType;
 use App\Models\StaffRole;
@@ -289,9 +290,10 @@ it('records imported reservations beyond availability as they are, showing up as
     file_put_contents($path, "guest_phone,arrival_date,departure_date,room_type\n555-0101,2027-03-12,2027-03-13,Deluxe\n555-0102,2027-03-12,2027-03-13,Deluxe\n555-0103,2027-03-12,2027-03-13,Deluxe");
 
     $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)])
-        ->assertOk()
-        ->assertJsonPath('body.imported', 3);
+        ->post('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)], ['Accept' => 'application/json'])
+        ->assertStatus(202);
+
+    expect(ReservationImport::where('hotel_id', $hotel->id)->sole()->imported)->toBe(3);
 
     $grid = app(AvailabilityService::class)->forHotel($hotel, '2027-03-12', '2027-03-13');
 

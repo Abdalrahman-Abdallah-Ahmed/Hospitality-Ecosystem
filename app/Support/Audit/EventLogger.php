@@ -10,6 +10,7 @@ use App\Models\EventLog;
 use App\Models\Hotel;
 use App\Models\MeterEvent;
 use App\Models\UsageCounter;
+use App\Models\User;
 use App\Support\Ai\AiRun;
 use BackedEnum;
 use DateTimeInterface;
@@ -203,6 +204,25 @@ class EventLogger
             return $callback();
         } finally {
             [self::$actorKindOverride, self::$onBehalfOf, self::$aiContext] = $previous;
+        }
+    }
+
+    /**
+     * Run a callback with `$user` as the actor of every event it records when
+     * no one is signed in, as a person (actor_kind = user), restoring the
+     * prior setting afterward. For the queued reservation import, which
+     * records its summary event in a job on behalf of the uploader (FR-032).
+     */
+    public static function actingAs(User $user, callable $callback): mixed
+    {
+        $previous = [self::$actorKindOverride, self::$onBehalfOf];
+        self::$actorKindOverride = ActorKind::USER;
+        self::$onBehalfOf = $user;
+
+        try {
+            return $callback();
+        } finally {
+            [self::$actorKindOverride, self::$onBehalfOf] = $previous;
         }
     }
 

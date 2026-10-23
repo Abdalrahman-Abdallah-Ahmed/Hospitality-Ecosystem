@@ -74,6 +74,27 @@ class Stay extends Model
         'last_contacted_at' => 'datetime',
     ];
 
+    /** Off while the reservation import records stays that ended long ago. */
+    private static bool $extractsMemories = true;
+
+    /**
+     * Runs a callback without queueing memory extraction for the stays it
+     * checks out. For the reservation import: a legacy stay recorded as
+     * departed is history, not a check-out, and has no conversation to learn
+     * from (SPEC-100 research R8).
+     */
+    public static function withoutMemoryExtraction(callable $callback): mixed
+    {
+        $previous = self::$extractsMemories;
+        self::$extractsMemories = false;
+
+        try {
+            return $callback();
+        } finally {
+            self::$extractsMemories = $previous;
+        }
+    }
+
     protected static function booted(): void
     {
         // A check-out is when a guest's memories are extracted (SPEC-084).
@@ -82,7 +103,7 @@ class Stay extends Model
         // check-out that rolls back extracts nothing. Forward only: stays
         // that departed before this shipped are never extracted.
         static::updated(function (Stay $stay): void {
-            if ($stay->wasChanged('status') && $stay->status === StayStatus::DEPARTED
+            if (self::$extractsMemories && $stay->wasChanged('status') && $stay->status === StayStatus::DEPARTED
                 && $stay->guest_id !== null && $stay->reservation_id !== null) {
                 ExtractGuestMemoriesJob::dispatch($stay->hotel_id, $stay->guest_id, $stay->reservation_id)->afterCommit();
             }

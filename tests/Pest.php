@@ -10,10 +10,13 @@ use App\Ai\Tools\PitchActivityTool;
 use App\Ai\Tools\UpdateRecommendationTool;
 use App\Enums\BookingOrigin;
 use App\Enums\ChargeModel;
+use App\Enums\ImportStatus;
 use App\Enums\KnowledgeAudience;
 use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Jobs\EvaluateProactiveTriggersJob;
+use App\Jobs\PrepareReservationImportJob;
+use App\Jobs\WriteReservationImportJob;
 use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Guest;
@@ -25,6 +28,8 @@ use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
+use App\Models\ReservationImport;
+use App\Models\ReservationImportRow;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
@@ -1433,4 +1438,91 @@ function toolOfClass(iterable $tools, string $class): ?object
 function toolClasses(iterable $tools): array
 {
     return collect($tools)->map(fn (object $tool) => ($tool instanceof AuditedTool || $tool instanceof GuardedTool ? $tool->inner() : $tool)::class)->values()->all();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Reservation import fixtures (SPEC-100/101)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A CSV upload with any header row. Values containing a comma, quote or
+ * newline are quoted.
+ *
+ * @param  list<string>  $header
+ * @param  list<list<mixed>>  $rows
+ */
+function imCsv(array $header, array $rows, string $name = 'reservations.csv'): UploadedFile
+{
+    $line = fn (array $values) => implode(',', array_map(function (mixed $value): string {
+        $value = (string) $value;
+
+        return preg_match('/[",\n]/', $value) ? '"'.str_replace('"', '""', $value).'"' : $value;
+    }, $values));
+
+    $path = tempnam(sys_get_temp_dir(), 'import').'.csv';
+    file_put_contents($path, implode("\n", [$line($header), ...array_map($line, $rows)]));
+
+    return new UploadedFile($path, $name, 'text/csv', null, true);
+}
+
+/**
+ * An admin and their hotel, with a country code for phone normalization.
+ *
+ * @return array{0: User, 1: Hotel}
+ */
+function imHotel(string $timezone = 'UTC', ?string $countryCode = 'EG'): array
+{
+    [$admin, $hotel] = adminWithHotel();
+    $hotel->update(['timezone' => $timezone, 'country_code' => $countryCode]);
+
+    return [$admin, $hotel->fresh()];
+}
+
+function imUpload($test, User $user, UploadedFile $file, array $fields = []): TestResponse
+{
+    return $test->withHeaders(apiHeaders())
+        ->actingAs($user, 'sanctum')
+        ->post('/api/reservation/import', ['file' => $file, ...$fields], ['Accept' => 'application/json']);
+}
+
+/**
+ * The import after its jobs have run. On the sync queue the upload already
+ * ran them; an import left queued or running (a faked queue) is run here by
+ * calling the jobs' handlers directly, write chunk after write chunk.
+ */
+function imRun(ReservationImport|string $import): ReservationImport
+{
+    $id = $import instanceof ReservationImport ? $import->id : $import;
+    $find = fn () => TenantContext::withoutScope(fn () => ReservationImport::findOrFail($id));
+
+    if ($find()->status === ImportStatus::QUEUED) {
+        app()->call([new PrepareReservationImportJob($id), 'handle']);
+    }
+
+    for ($chunks = 0; $find()->status === ImportStatus::RUNNING && $chunks < 1000; $chunks++) {
+        app()->call([new WriteReservationImportJob($id), 'handle']);
+    }
+
+    return $find();
+}
+
+/** The upload's import, run to its end. */
+function imImport($test, User $user, UploadedFile $file, array $fields = []): ReservationImport
+{
+    $response = imUpload($test, $user, $file, $fields)->assertStatus(202);
+
+    return imRun($response->json('body.id'));
+}
+
+/**
+ * Row results of an import, keyed by row number.
+ *
+ * @return Collection<int, ReservationImportRow>
+ */
+function imRows(ReservationImport $import): Collection
+{
+    return TenantContext::withoutScope(fn () => ReservationImportRow::where('reservation_import_id', $import->id)
+        ->orderBy('row_number')->get()->keyBy('row_number'));
 }

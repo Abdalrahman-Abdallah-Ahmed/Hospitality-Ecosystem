@@ -65,17 +65,21 @@ class BookingService
     public function create(array $data): Booking
     {
         $override = (bool) ($data['capacity_override'] ?? false);
+        // The reservation import records legacy bookings as they were: no date
+        // or availability check, no AI-retry folding, and no recommendation
+        // credit or metering, since a historical booking is not new demand.
+        $fromImport = (bool) ($data['from_import'] ?? false);
         $hotel = Hotel::findOrFail($data['hotel_id']);
         $activity = $this->activity($hotel, $data['activity_id'] ?? null);
         $schedule = $this->schedule($hotel, $activity, $data['scheduled_for'] ?? null, $data['scheduled_date'] ?? null);
 
-        unset($data['capacity_override'], $data['scheduled_for'], $data['scheduled_date'], $data['scheduled_time'], $data['last_date']);
+        unset($data['capacity_override'], $data['from_import'], $data['scheduled_for'], $data['scheduled_date'], $data['scheduled_time'], $data['last_date']);
         $this->requireParty((int) ($data['pax'] ?? 1));
 
-        $booking = DB::transaction(function () use ($data, $activity, $schedule, $override) {
+        $booking = DB::transaction(function () use ($data, $activity, $schedule, $override, $fromImport) {
             $overridden = null;
 
-            if ($activity) {
+            if ($activity && ! $fromImport) {
                 $this->requireDate($activity, $schedule);
                 $this->availability()->lock([$activity->id]);
 
@@ -104,7 +108,7 @@ class BookingService
 
         // A retried AI booking returns the one already recorded: it was
         // credited and counted the first time.
-        if (! $booking->wasRecentlyCreated) {
+        if (! $booking->wasRecentlyCreated || $fromImport) {
             return $booking;
         }
 

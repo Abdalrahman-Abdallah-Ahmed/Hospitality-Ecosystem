@@ -43,6 +43,8 @@ class Guest extends Model
         'is_vip',
         'external_id',
         'channel',
+        // `import` for an old-system guest id from a reservation import.
+        'external_source',
     ];
 
     protected $casts = [

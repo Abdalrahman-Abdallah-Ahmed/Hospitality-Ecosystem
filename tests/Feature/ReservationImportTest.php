@@ -1,327 +1,376 @@
 <?php
 
+use App\Enums\ImportRowOutcome;
+use App\Enums\ImportStatus;
 use App\Enums\UserRole;
-use App\Imports\ReservationsImport;
+use App\Jobs\PrepareReservationImportJob;
+use App\Jobs\WriteReservationImportJob;
+use App\Models\EventLog;
 use App\Models\Guest;
+use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\ReservationImport;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\RoomType;
 use App\Models\User;
+use App\Support\Import\Reservations\ImportReportExport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
+
+/*
+| SPEC-100/101 User Story 1: an upload is queued at once and ends with a
+| reconciliation report (FR-001–FR-005, FR-025–FR-029, FR-031, FR-032).
+*/
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
+    Storage::fake('local');
 });
 
-function importCsv(array $rows): UploadedFile
+const IM_HEADER = ['guest_phone', 'guest_first_name', 'guest_last_name', 'room_number', 'arrival_date', 'departure_date'];
+
+function imGet($test, User $user, string $uri)
 {
-    $header = 'guest_phone,guest_first_name,guest_last_name,room_number,arrival_date,departure_date';
-    $lines = array_map(fn (array $row) => implode(',', $row), $rows);
-    $content = implode("\n", [$header, ...$lines]);
-
-    $path = tempnam(sys_get_temp_dir(), 'reservations').'.csv';
-    file_put_contents($path, $content);
-
-    return new UploadedFile($path, 'reservations.csv', 'text/csv', null, true);
+    return $test->withHeaders(apiHeaders())->actingAs($user, 'sanctum')->getJson($uri);
 }
 
+// --- The queued contract ---------------------------------------------------
+
 it('rejects an unauthenticated import request', function () {
-    $this->withHeaders(apiHeaders())->postJson('/api/reservation/import')
-        ->assertStatus(401);
+    $this->withHeaders(apiHeaders())->postJson('/api/reservation/import')->assertStatus(401);
 });
 
-it('rejects a non-admin user from importing reservations', function () {
-    $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
+it('rejects an employee without the import permission', function () {
+    [, $hotel] = adminWithHotel();
+    $worker = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
 
-    $this->withHeaders(apiHeaders())->actingAs($worker, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => importCsv([['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']])])
-        ->assertStatus(403);
+    imUpload($this, $worker, imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]))->assertStatus(403);
 });
 
-it('imports reservations and creates guests scoped to the admin hotel', function () {
+it('queues the import and answers at once with the import', function () {
+    Queue::fake();
+    [$admin, $hotel] = adminWithHotel();
+
+    $response = imUpload($this, $admin, imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']], 'september.csv'))
+        ->assertStatus(202)
+        ->assertJsonPath('body.status', 'queued')
+        ->assertJsonPath('body.file_name', 'september.csv')
+        ->assertJsonPath('body.date_order', 'day_first')
+        ->assertJsonPath('body.dry_run', false)
+        ->assertJsonPath('body.uploaded_by.id', $admin->id)
+        ->assertJsonPath('body.progress.processed_rows', 0)
+        ->assertJsonPath('body.totals.imported', 0)
+        ->assertJsonPath('body.warnings_count', 0)
+        ->assertJsonStructure(['body' => ['id', 'progress' => ['processed_rows', 'total_rows'], 'totals' => ['imported', 'skipped', 'duplicate', 'invalid', 'unresolved'], 'created_rooms', 'created_room_types', 'unrecognized_columns', 'warnings_count', 'failure_reason', 'created_at', 'started_at', 'finished_at']]);
+
+    Queue::assertPushed(PrepareReservationImportJob::class, fn ($job) => $job->importId === $response->json('body.id'));
+    expect(Reservation::where('hotel_id', $hotel->id)->exists())->toBeFalse();
+});
+
+it('validates the date order and the file size', function () {
+    [$admin] = adminWithHotel();
+
+    imUpload($this, $admin, imCsv(IM_HEADER, []), ['date_order' => 'sideways'])
+        ->assertUnprocessable()->assertJsonValidationErrors('date_order');
+
+    imUpload($this, $admin, UploadedFile::fake()->create('huge.csv', 6000, 'text/csv'))
+        ->assertUnprocessable()->assertJsonValidationErrors('file');
+});
+
+it('makes a super admin name the hotel', function () {
+    [, $hotel] = adminWithHotel();
+    $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $file = fn () => imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]);
+
+    imUpload($this, $super, $file())->assertUnprocessable()->assertJsonValidationErrors('hotel_id');
+
+    $import = imRun(imUpload($this, $super, $file(), ['hotel_id' => $hotel->id])->assertStatus(202)->json('body.id'));
+
+    expect($import->hotel_id)->toBe($hotel->id)
+        ->and($import->imported)->toBe(1);
+});
+
+// --- Running and reporting -------------------------------------------------
+
+it('accounts for every data row, with a reason for each one not imported', function () {
     [$admin, $hotel] = adminWithHotel();
     $room = Room::create(['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel), 'room_number' => '101']);
 
-    $file = importCsv([
+    $import = imImport($this, $admin, imCsv(IM_HEADER, [
         ['555-0100', 'Ann', 'Lee', '101', '2026-09-01', '2026-09-04'],
         ['555-0200', 'Bob', 'Ray', '', '2026-09-02', '2026-09-05'],
-        ['', 'No', 'Phone', '', '2026-09-03', '2026-09-06'],
-    ]);
+        ['555-0300', 'No', 'Arrival', '', '', '2026-09-06'],
+        ['555-0400', 'Bad', 'Date', '', '2026-13-45', '2026-09-06'],
+        ['', '', '', '', '', ''],
+        ['555-0500', 'Back', 'Wards', '', '2026-09-06', '2026-09-03'],
+    ]));
 
-    $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file]);
+    $rows = imRows($import);
 
-    $response->assertOk()
-        ->assertJsonPath('body.imported', 2)
-        ->assertJsonCount(1, 'body.skipped');
+    expect($import->status)->toBe(ImportStatus::COMPLETED)
+        ->and($import->total_rows)->toBe(6)
+        ->and($import->imported + $import->skipped + $import->duplicate + $import->invalid + $import->unresolved)->toBe(6)
+        ->and([$import->imported, $import->invalid, $import->skipped])->toBe([2, 3, 1])
+        ->and($import->processed_rows)->toBe(6)
+        ->and($import->finished_at)->not->toBeNull()
+        ->and($import->file_path)->toBeNull()
+        ->and($rows[4]->outcome)->toBe(ImportRowOutcome::INVALID)
+        ->and($rows[4]->fields)->toBe(['arrival_date'])
+        ->and($rows[5]->fields)->toBe(['arrival_date'])
+        ->and($rows[5]->reason)->toContain('2026-13-45')
+        ->and($rows[6]->outcome)->toBe(ImportRowOutcome::SKIPPED)
+        ->and($rows[7]->reason)->toContain('must be after the arrival');
 
-    expect(Reservation::where('hotel_id', $hotel->id)->count())->toBe(2);
-    expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0100')->exists())->toBeTrue();
-    expect(ReservationRoom::where('room_id', $room->id)->where('room_type_id', $room->room_type_id)->exists())->toBeTrue();
+    foreach ($rows->whereNotIn('outcome', [ImportRowOutcome::IMPORTED]) as $row) {
+        expect($row->reason)->not->toBeEmpty()->not->toMatch('/[A-Z][a-z]+\\\\[A-Z]|Exception|SQLSTATE/');
+    }
+
+    expect(Reservation::where('hotel_id', $hotel->id)->count())->toBe(2)
+        ->and(ReservationRoom::where('room_id', $room->id)->exists())->toBeTrue()
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
 });
 
-it('creates a room when the room_number in the file does not exist yet', function () {
+it('fails a file missing a required column, naming it, and writes nothing', function () {
     [$admin, $hotel] = adminWithHotel();
 
-    $file = importCsv([['555-0300', 'New', 'Room', '204', '2026-09-01', '2026-09-04']]);
+    $import = imImport($this, $admin, imCsv(['guest_phone', 'departure_date'], [['555-0100', '2026-09-04']]));
 
-    $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file]);
-
-    $response->assertOk()->assertJsonPath('body.imported', 1);
-
-    $room = Room::where('hotel_id', $hotel->id)->where('room_number', '204')->first();
-    expect($room)->not->toBeNull();
-    expect(ReservationRoom::where('room_id', $room->id)->where('room_type_id', $room->room_type_id)->exists())->toBeTrue();
-
-    // The file names no room type, and the hotel has none yet: a default is created.
-    expect($room->roomType->name)->toBe(RoomType::DEFAULT_NAME)
-        ->and($room->roomType->hotel_id)->toBe($hotel->id);
+    expect($import->status)->toBe(ImportStatus::FAILED)
+        ->and($import->failure_reason)->toContain('arrival_date')
+        ->and(Reservation::where('hotel_id', $hotel->id)->exists())->toBeFalse();
 });
 
-it('does not duplicate a guest matched by phone number on repeat import', function () {
+it('completes an empty file with nothing to do', function () {
+    [$admin] = adminWithHotel();
+
+    $import = imImport($this, $admin, imCsv(IM_HEADER, []));
+
+    expect($import->status)->toBe(ImportStatus::COMPLETED)
+        ->and($import->total_rows)->toBe(0);
+});
+
+it('does not count blank rows after the data', function () {
+    [$admin] = adminWithHotel();
+
+    $import = imImport($this, $admin, imCsv(IM_HEADER, [
+        ['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04'],
+        ...array_fill(0, 50, ['', '', '', '', '', '']),
+    ]));
+
+    expect($import->total_rows)->toBe(1)
+        ->and($import->imported)->toBe(1);
+});
+
+it('reports progress chunk by chunk', function () {
+    config(['reservation_import.write_chunk_size' => 2]);
+    Queue::fake();
+    [$admin] = adminWithHotel();
+
+    $id = imUpload($this, $admin, imCsv(IM_HEADER, collect(range(1, 5))->map(fn ($i) => ["555-010{$i}", 'Guest', "{$i}", '', '2026-09-01', '2026-09-04'])->all()))->json('body.id');
+
+    app()->call([new PrepareReservationImportJob($id), 'handle']);
+
+    $runChunk = fn () => app()->call([new WriteReservationImportJob($id), 'handle']);
+    $progress = fn () => ReservationImport::find($id)->processed_rows;
+
+    expect($progress())->toBe(0);
+    $runChunk();
+    expect($progress())->toBe(2);
+    $runChunk();
+    expect($progress())->toBe(4);
+    $runChunk();
+    expect($progress())->toBe(5)
+        ->and(ReservationImport::find($id)->status)->toBe(ImportStatus::COMPLETED);
+});
+
+it('lists the hotel imports newest first, and filters rows by outcome', function () {
+    [$admin] = adminWithHotel();
+    $first = imImport($this, $admin, imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']], 'first.csv'));
+    $this->travel(1)->minutes();
+    $second = imImport($this, $admin, imCsv(IM_HEADER, [
+        ['555-0200', 'Bob', 'Ray', '', '2026-09-01', '2026-09-04'],
+        ['555-0300', 'No', 'Date', '', '', '2026-09-04'],
+    ], 'second.csv'));
+
+    imGet($this, $admin, '/api/reservation/imports')
+        ->assertOk()
+        ->assertJsonPath('body.data.0.id', $second->id)
+        ->assertJsonPath('body.data.0.file_name', 'second.csv')
+        ->assertJsonPath('body.data.0.uploaded_by.name', $admin->name)
+        ->assertJsonPath('body.data.0.totals.invalid', 1)
+        ->assertJsonPath('body.data.1.id', $first->id);
+
+    imGet($this, $admin, "/api/reservation/imports/{$second->id}")
+        ->assertOk()->assertJsonPath('body.status', 'completed')->assertJsonPath('body.progress.total_rows', 2);
+
+    imGet($this, $admin, "/api/reservation/imports/{$second->id}/rows?outcome=invalid")
+        ->assertOk()
+        ->assertJsonCount(1, 'body.data')
+        ->assertJsonPath('body.data.0.row_number', 3)
+        ->assertJsonPath('body.data.0.fields', ['arrival_date']);
+});
+
+it('downloads the report of a finished import, and refuses while it runs', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $import = imImport($this, $admin, imCsv(IM_HEADER, [['555-0300', 'No', 'Date', '', '', '2026-09-04']]));
+    Excel::fake();
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->get("/api/reservation/imports/{$import->id}/report")
+        ->assertOk();
+    Excel::assertDownloaded("import-{$import->id}-report.xlsx", fn ($export) => $export->query()->count() === 1);
+
+    $running = ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'x.csv', 'status' => ImportStatus::RUNNING, 'date_order' => 'day_first']);
+    imGet($this, $admin, "/api/reservation/imports/{$running->id}/report")->assertStatus(409);
+});
+
+it('records one audit event per run with the uploader as actor, and none per reservation', function () {
     [$admin, $hotel] = adminWithHotel();
 
-    $file = fn () => importCsv([['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]);
+    $import = imImport($this, $admin, imCsv(IM_HEADER, [
+        ['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04'],
+        ['555-0200', 'Bob', 'Ray', '', '2026-09-01', '2026-09-04'],
+    ]));
 
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file()])->assertOk();
+    $event = EventLog::where('event_type', 'hotel.reservations_imported')->sole();
 
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file()])->assertOk();
-
-    expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0100')->count())->toBe(1);
-    expect(Reservation::where('hotel_id', $hotel->id)->count())->toBe(2);
+    expect($event->actor_id)->toBe($admin->id)
+        ->and($event->changes['reservation_import_id'])->toBe($import->id)
+        ->and($event->changes['imported'])->toBe(2)
+        ->and(EventLog::where('event_type', 'reservation.created')->exists())->toBeFalse();
 });
 
-it('recognizes an existing guest even when the phone number is formatted differently', function () {
+it('finishes the run and records no actor when the uploader is deleted mid-run', function () {
+    Queue::fake();
+    [$admin] = adminWithHotel();
+    $id = imUpload($this, $admin, imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]))->json('body.id');
+
+    $admin->forceDelete();
+    auth()->forgetGuards();
+    $import = imRun($id);
+
+    expect($import->status)->toBe(ImportStatus::COMPLETED)
+        ->and($import->uploaded_by)->toBeNull()
+        ->and(EventLog::where('event_type', 'hotel.reservations_imported')->sole()->actor_id)->toBeNull();
+});
+
+// --- Behaviour kept from the first import ----------------------------------
+
+it('creates a room the file names but the hotel does not have, under the default type', function () {
+    [$admin, $hotel] = adminWithHotel();
+
+    $import = imImport($this, $admin, imCsv(IM_HEADER, [['555-0300', 'New', 'Room', '204', '2026-09-01', '2026-09-04']]));
+
+    $room = Room::where('hotel_id', $hotel->id)->where('room_number', '204')->sole();
+    expect($import->created_rooms)->toBe(['204'])
+        ->and($import->created_room_types)->toBe([RoomType::DEFAULT_NAME])
+        ->and($room->roomType->name)->toBe(RoomType::DEFAULT_NAME)
+        ->and(ReservationRoom::where('room_id', $room->id)->exists())->toBeTrue();
+});
+
+it('recognizes an existing guest whatever the phone formatting', function () {
     [$admin, $hotel] = adminWithHotel();
     $existing = Guest::create(['hotel_id' => $hotel->id, 'phone_number' => '+20 115 179 3758']);
 
-    $file = importCsv([['201151793758', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]);
+    imImport($this, $admin, imCsv(IM_HEADER, [['201151793758', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]));
 
-    $response = $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file]);
-
-    $response->assertOk()->assertJsonPath('body.imported', 1);
-
-    // Same person, differently formatted number — reused, not duplicated.
-    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
-    expect(Reservation::where('hotel_id', $hotel->id)->where('guest_id', $existing->id)->exists())->toBeTrue();
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1)
+        ->and(Reservation::where('hotel_id', $hotel->id)->sole()->guest_id)->toBe($existing->id);
 });
 
-it('skips a row whose reservation id the hotel already uses, writing nothing for it', function () {
-    [$admin, $hotel] = adminWithHotel();
-    reservationFor($hotel, ['reservation_id' => 'RES-DUP00001']);
-
-    $path = tempnam(sys_get_temp_dir(), 'reservations').'.csv';
-    file_put_contents($path, "guest_phone,arrival_date,departure_date,reservation_id\n555-0100,2026-09-01,2026-09-04,RES-DUP00001");
-
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)])
-        ->assertOk()
-        ->assertJsonPath('body.imported', 0)
-        ->assertJsonPath('body.skipped.0.reason', 'Reservation id RES-DUP00001 already exists.');
-
-    expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0100')->exists())->toBeFalse();
-});
-
-// One line per row (reservation rooms)
-
-function importRawCsv(string $content): UploadedFile
-{
-    $path = tempnam(sys_get_temp_dir(), 'reservations').'.csv';
-    file_put_contents($path, $content);
-
-    return new UploadedFile($path, 'reservations.csv', 'text/csv', null, true);
-}
-
-it('files a row with only a room type as one unassigned line of that type', function () {
+it('files a type-only row as one unassigned line of that type', function () {
     [$admin, $hotel] = adminWithHotel();
 
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => importRawCsv(
-            "guest_phone,arrival_date,departure_date,room_type\n555-0100,2026-09-01,2026-09-04,Suite"
-        )])
-        ->assertOk()
-        ->assertJsonPath('body.imported', 1);
+    imImport($this, $admin, imCsv(['guest_phone', 'arrival_date', 'departure_date', 'room_type'], [['555-0100', '2026-09-01', '2026-09-04', 'Suite']]));
 
     $line = ReservationRoom::sole();
-
     expect($line->room_id)->toBeNull()
         ->and($line->roomType->name)->toBe('Suite')
         ->and($line->hotel_id)->toBe($hotel->id);
 });
 
-it('files a row with neither a room nor a type under the hotel default type', function () {
-    [$admin, $hotel] = adminWithHotel();
-
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => importCsv([['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']])])
-        ->assertOk();
-
-    expect(ReservationRoom::sole()->room_type_id)->toBe(RoomType::resolveFor($hotel->id)->id);
-});
-
-it('records legacy parties as they are, without the capacity check', function () {
-    [$admin] = adminWithHotel();
-
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => importRawCsv(
-            "guest_phone,arrival_date,departure_date,adults\n555-0100,2026-09-01,2026-09-04,9"
-        )])
-        ->assertOk()
-        ->assertJsonPath('body.imported', 1);
-
-    expect(Reservation::sole()->adults)->toBe(9)
-        ->and(ReservationRoom::count())->toBe(1);
-});
-
-it('adds no duplicate lines when the same file is imported twice', function () {
-    [$admin] = adminWithHotel();
-    $file = fn () => importRawCsv("guest_phone,arrival_date,departure_date,reservation_id\n555-0100,2026-09-01,2026-09-04,RES-TWICE001");
-
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file()])->assertJsonPath('body.imported', 1);
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => $file()])->assertJsonPath('body.imported', 0);
-
-    expect(Reservation::count())->toBe(1)
-        ->and(ReservationRoom::count())->toBe(1);
-});
-
-it('imports a row whose room type the hotel has since deactivated', function () {
+it('records legacy parties and deactivated room types as they are (FR-010)', function () {
     [$admin, $hotel] = adminWithHotel();
     $retired = RoomType::resolveFor($hotel->id, 'Retired');
     $retired->update(['is_active' => false]);
     Room::create(['hotel_id' => $hotel->id, 'room_type_id' => $retired->id, 'room_number' => '301']);
 
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => importCsv([['555-0100', 'Ann', 'Lee', '301', '2026-09-01', '2026-09-04']])])
-        ->assertOk()
-        ->assertJsonPath('body.imported', 1);
+    imImport($this, $admin, imCsv(['guest_phone', 'arrival_date', 'departure_date', 'adults', 'room_number'], [['555-0100', '2026-09-01', '2026-09-04', 9, '301']]));
 
-    expect(ReservationRoom::sole()->room_type_id)->toBe($retired->id);
+    expect(Reservation::sole()->adults)->toBe(9)
+        ->and(ReservationRoom::sole()->room_type_id)->toBe($retired->id);
 });
 
-it('writes nothing for a row that fails part-way', function () {
-    [$admin, $hotel] = adminWithHotel();
+it('imports a named party with child ages through the shared reservation rules', function () {
+    [$admin] = adminWithHotel();
 
-    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => importRawCsv(
-            "guest_phone,arrival_date,departure_date,room_number,status\n555-0199,2026-09-01,2026-09-04,777,typo"
-        )])
-        ->assertOk()
-        ->assertJsonPath('body.imported', 0)
-        ->assertJsonCount(1, 'body.skipped');
-
-    expect(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0199')->exists())->toBeFalse()
-        ->and(Room::where('hotel_id', $hotel->id)->where('room_number', '777')->exists())->toBeFalse();
-});
-
-it('imports a named party and complete child ages through the shared reservation command', function () {
-    [, $hotel] = adminWithHotel();
-    $import = new ReservationsImport($hotel);
-    $import->collection(collect([new Collection([
-        'guest_phone' => '555-0201',
-        'guest_first_name' => 'Primary',
-        'arrival_date' => '2026-11-01',
-        'departure_date' => '2026-11-04',
-        'adults' => 1,
-        'children' => 2,
-        'children_ages' => '5,8',
-        'guests' => json_encode([
-            ['phone_number' => '555-0201', 'is_primary' => true],
-            ['phone_number' => '555-0202', 'is_primary' => false, 'first_name' => 'Additional'],
-        ]),
-    ])]));
+    imImport($this, $admin, imCsv(['guest_phone', 'guest_first_name', 'arrival_date', 'departure_date', 'adults', 'children', 'children_ages', 'guests'], [[
+        '555-0201', 'Primary', '2026-11-01', '2026-11-04', 1, 2, '5,8',
+        json_encode([['phone_number' => '555-0201', 'is_primary' => true], ['phone_number' => '555-0202', 'first_name' => 'Additional']]),
+    ]]));
 
     $reservation = Reservation::sole();
-
-    expect($import->imported)->toBe(1)
-        ->and($reservation->children_ages)->toBe([5, 8])
+    expect($reservation->children_ages)->toBe([5, 8])
         ->and($reservation->reservationGuests()->count())->toBe(2)
         ->and($reservation->reservationGuests()->where('is_primary', true)->sole()->guest_id)->toBe($reservation->guest_id);
 });
 
-it('skips an import row with malformed supplied child ages without leaving partial records', function () {
-    [, $hotel] = adminWithHotel();
-    $import = new ReservationsImport($hotel);
-    $import->collection(collect([new Collection([
-        'guest_phone' => '555-0203',
-        'arrival_date' => '2026-11-01',
-        'departure_date' => '2026-11-04',
-        'children' => 2,
-        'children_ages' => '5,not-an-age',
-    ])]));
+it('rejects a guest list naming another hotel guest, writing nothing', function () {
+    [$admin, $hotel] = adminWithHotel();
+    [, $other] = adminWithHotel();
+    $foreign = Guest::create(['hotel_id' => $other->id, 'phone_number' => '555-0205']);
 
-    expect($import->imported)->toBe(0)
-        ->and($import->skipped)->toHaveCount(1)
-        ->and(Guest::where('hotel_id', $hotel->id)->where('phone_number', '555-0203')->exists())->toBeFalse()
+    $import = imImport($this, $admin, imCsv(['guest_phone', 'arrival_date', 'departure_date', 'adults', 'guests'], [[
+        '555-0204', '2026-11-01', '2026-11-04', 2, json_encode([['guest_id' => $foreign->id]]),
+    ]]));
+
+    expect($import->invalid)->toBe(1)
+        ->and(Guest::where('hotel_id', $hotel->id)->exists())->toBeFalse()
         ->and(Reservation::where('hotel_id', $hotel->id)->exists())->toBeFalse();
 });
 
-it('skips an imported guest list containing a guest from another hotel', function () {
-    [, $hotel] = adminWithHotel();
-    [, $otherHotel] = adminWithHotel();
-    $foreign = Guest::create(['hotel_id' => $otherHotel->id, 'phone_number' => '555-0205']);
-    $import = new ReservationsImport($hotel);
-    $import->collection(collect([new Collection([
-        'guest_phone' => '555-0204',
-        'arrival_date' => '2026-11-01',
-        'departure_date' => '2026-11-04',
-        'adults' => 2,
-        'guests' => json_encode([
-            ['phone_number' => '555-0204', 'is_primary' => true],
-            ['guest_id' => $foreign->id, 'is_primary' => false],
-        ]),
-    ])]));
+it('writes nothing for a reservation that fails, leaving no stray guest or room', function () {
+    [$admin, $hotel] = adminWithHotel();
 
-    expect($import->imported)->toBe(0)
-        ->and($import->skipped)->toHaveCount(1)
-        ->and(Guest::count())->toBe(1)
-        ->and(Reservation::where('hotel_id', $hotel->id)->exists())->toBeFalse();
+    imImport($this, $admin, imCsv(['guest_phone', 'arrival_date', 'departure_date', 'room_number', 'status'], [['555-0199', '2026-09-01', '2026-09-04', '777', 'typo']]));
+
+    expect(Guest::where('hotel_id', $hotel->id)->exists())->toBeFalse()
+        ->and(Room::where('hotel_id', $hotel->id)->where('room_number', '777')->exists())->toBeFalse();
 });
 
-it('imports children without ages as legacy data, but rejects a wrong number of supplied ages', function () {
-    [, $hotel] = adminWithHotel();
-    $import = new ReservationsImport($hotel);
-    $import->collection(collect([
-        new Collection([
-            'guest_phone' => '555-0206',
-            'arrival_date' => '2026-11-01',
-            'departure_date' => '2026-11-04',
-            'adults' => 2,
-            'children' => 2,
-        ]),
-        new Collection([
-            'guest_phone' => '555-0207',
-            'arrival_date' => '2026-11-01',
-            'departure_date' => '2026-11-04',
-            'adults' => 2,
-            'children' => 2,
-            'children_ages' => '5',
-        ]),
-        new Collection([
-            'guest_phone' => '555-0208',
-            'arrival_date' => '2026-11-01',
-            'departure_date' => '2026-11-04',
-            'adults' => 1,
-            'children' => 1,
-            'children_ages' => '18',
-        ]),
-    ]));
+it('keeps the import within the hotel it was started for', function () {
+    [$admin, $hotel] = adminWithHotel();
+    [, $other] = adminWithHotel();
 
-    $reservation = Reservation::sole();
+    $import = imImport($this, $admin, imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '101', '2026-09-01', '2026-09-04']]));
 
-    expect($import->imported)->toBe(1)
-        ->and($import->skipped)->toHaveCount(2)
-        ->and($reservation->children)->toBe(2)
-        ->and($reservation->children_ages)->toBe([]);
+    expect(Reservation::withoutGlobalScope('hotel')->where('hotel_id', $other->id)->exists())->toBeFalse()
+        ->and(Room::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->count())->toBe(1)
+        ->and($import->hotel_id)->toBe($hotel->id)
+        ->and(Hotel::count())->toBe(2);
+});
+
+it('lists the rows a failed run never wrote in the report', function () {
+    Queue::fake();
+    config(['reservation_import.write_chunk_size' => 1]);
+    [$admin] = adminWithHotel();
+    $id = imUpload($this, $admin, imCsv(IM_HEADER, [
+        ['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04'],
+        ['555-0200', 'Bob', 'Ray', '', '2026-09-01', '2026-09-04'],
+    ]))->json('body.id');
+
+    app()->call([new PrepareReservationImportJob($id), 'handle']);
+    app()->call([new WriteReservationImportJob($id), 'handle']);
+    (new WriteReservationImportJob($id))->failed(new RuntimeException('worker lost'));
+    $import = ReservationImport::find($id);
+
+    expect($import->imported + $import->invalid)->toBe($import->total_rows)
+        ->and((new ImportReportExport($import))->query()->pluck('row_number')->all())->toBe([3]);
 });

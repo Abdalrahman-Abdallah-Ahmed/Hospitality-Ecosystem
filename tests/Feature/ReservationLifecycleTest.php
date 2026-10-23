@@ -2,12 +2,10 @@
 
 use App\Ai\Tools\CancelReservationTool;
 use App\Enums\ReservationStatus;
-use App\Imports\ReservationsImport;
 use App\Models\Reservation;
 use App\Models\Stay;
 use App\Support\Reservations\ReservationLifecycle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Collection;
 use Laravel\Ai\Tools\Request;
 
 uses(RefreshDatabase::class);
@@ -108,13 +106,10 @@ it('lets the AI cancel only what the table allows', function () {
 });
 
 it('lets the import record a past no-show', function () {
-    [, $hotel] = adminWithHotel();
-    (new ReservationsImport($hotel))->collection(collect([new Collection([
-        'guest_phone' => '555-0901',
-        'arrival_date' => now()->subDays(10)->toDateString(),
-        'departure_date' => now()->subDays(8)->toDateString(),
-        'status' => 'no_show',
-    ])]));
+    [$admin, $hotel] = adminWithHotel();
+    imImport($this, $admin, imCsv(['guest_phone', 'arrival_date', 'departure_date', 'status'], [
+        ['555-0901', now()->subDays(10)->toDateString(), now()->subDays(8)->toDateString(), 'no_show'],
+    ]));
 
     $reservation = Reservation::where('hotel_id', $hotel->id)->sole();
 

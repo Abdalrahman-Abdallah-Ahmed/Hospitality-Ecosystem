@@ -29,6 +29,7 @@ use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ProactiveMessageController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\ReservationImportController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomHousekeepingController;
 use App\Http\Controllers\RoomOutOfOrderController;
@@ -71,6 +72,11 @@ Route::middleware('api.key')->group(function () {
         Route::get('/availability', [AvailabilityController::class, 'index']);
         Route::get('/available-channels', [ReservationController::class, 'availableChannels']);
         Route::post('/reservation/import', [ReservationController::class, 'import']);
+        // Before the /reservation resource, so "imports" is never bound as a reservation id.
+        Route::get('/reservation/imports', [ReservationImportController::class, 'index']);
+        Route::get('/reservation/imports/{reservationImport}', [ReservationImportController::class, 'show']);
+        Route::get('/reservation/imports/{reservationImport}/rows', [ReservationImportController::class, 'rows']);
+        Route::get('/reservation/imports/{reservationImport}/report', [ReservationImportController::class, 'report']);
         Route::post('/reservation/{reservation}/check-in', [ReservationController::class, 'checkIn']);
         Route::post('/reservation/{reservation}/check-out', [ReservationController::class, 'checkOut']);
         Route::post('/reservation/{reservation}/no-show', [ReservationController::class, 'noShow']);

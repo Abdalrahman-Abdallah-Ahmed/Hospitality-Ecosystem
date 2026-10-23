@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ImportDateOrder;
+use App\Enums\ImportStatus;
 use App\Enums\ReservationChannels;
 use App\Enums\ReservationStatus;
 use App\Http\Controllers\Concerns\HandlesFrontDeskActions;
@@ -12,22 +14,22 @@ use App\Http\Requests\NoShowRequest;
 use App\Http\Requests\ReservationIndexRequest;
 use App\Http\Requests\StoreReservationRequest;
 use App\Http\Requests\UpdateReservationRequest;
+use App\Http\Resources\ReservationImportResource;
 use App\Http\Resources\ReservationResource;
-use App\Imports\ReservationsImport;
+use App\Jobs\PrepareReservationImportJob;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use App\Models\ReservationImport;
 use App\Models\Stay;
 use App\Services\NoShowService;
 use App\Services\Reservations\ReservationCommands;
 use App\Services\StayLifecycleService;
-use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Maatwebsite\Excel\Facades\Excel;
 
 class ReservationController extends Controller
 {
@@ -311,32 +313,41 @@ class ReservationController extends Controller
     }
 
     /**
-     * Bulk-import reservations (and their guests) from an uploaded
-     * spreadsheet. Always scoped to the uploader's own hotel, never a
-     * hotel_id from the file, same as index()/CreateReservationTool.
+     * Queues a reservation import of an uploaded spreadsheet (SPEC-100/101)
+     * and answers at once with the import, whose progress and report are
+     * read from ReservationImportController. Scoped to the uploader's own
+     * hotel, or the one a super admin names; never a hotel_id from the file.
      */
     public function import(ImportReservationsRequest $request): JsonResponse
     {
         $this->authorize('import', Reservation::class);
 
-        $hotel = $request->user()->hotel;
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
         if (! $hotel) {
-            return apiResponse('You do not belong to any hotel.', 403);
+            throw ValidationException::withMessages(['hotel_id' => 'Name a valid hotel to import into.']);
         }
 
-        $import = new ReservationsImport($hotel);
+        $file = $request->file('file');
+        // Time-ordered, so two uploads in the same second still queue in order.
+        $id = (string) Str::uuid7();
+        $path = $file->storeAs("reservation-imports/{$hotel->id}", "{$id}.".strtolower($file->getClientOriginalExtension() ?: 'csv'), config('reservation_import.disk'));
 
-        // One summary audit event instead of thousands of per-row create events.
-        EventLogger::withoutRecording(fn () => Excel::import($import, $request->file('file')));
+        $import = ReservationImport::create([
+            'id' => $id,
+            'hotel_id' => $hotel->id,
+            'uploaded_by' => $request->user()->id,
+            'file_name' => Str::limit($file->getClientOriginalName(), 250, ''),
+            'file_path' => $path,
+            'dry_run' => $request->boolean('dry_run'),
+            'date_order' => $request->validated('date_order') ?? ImportDateOrder::DAY_FIRST->value,
+            'status' => ImportStatus::QUEUED,
+        ]);
 
-        $summary = [
-            'imported' => $import->imported,
-            'skipped' => $import->skipped,
-        ];
+        // The rows are processed in the background (F11): the upload only
+        // stores the file. A hotel's imports run one at a time, in order.
+        PrepareReservationImportJob::dispatch($import->id)->afterCommit();
 
-        EventLogger::record($hotel, 'reservations_imported', changes: $summary);
-
-        return apiResponse('Reservations imported successfully.', 200, $summary);
+        return apiResponse('Reservation import queued.', 202, new ReservationImportResource($import->refresh()->load('uploader')->setAttribute('warned_rows_count', 0)));
     }
 
     /**

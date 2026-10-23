@@ -144,6 +144,7 @@ it('lets an employee read a resource only when their role grants it', function (
     'knowledge base articles' => ['/api/knowledge-base-articles', Permission::KNOWLEDGE_BASE_ARTICLES_VIEW],
     'recommendations' => ['/api/recommendation', Permission::RECOMMENDATIONS_VIEW],
     'reservations' => ['/api/reservation', Permission::RESERVATIONS_VIEW],
+    'reservation imports' => ['/api/reservation/imports', Permission::RESERVATIONS_IMPORT],
     'rooms' => ['/api/room', Permission::ROOMS_VIEW],
     'room types' => ['/api/room-types', Permission::ROOM_TYPES_VIEW],
     'stays' => ['/api/stays', Permission::STAYS_VIEW],
@@ -461,3 +462,30 @@ it('lets an employee record a guest contact preference only with guests.update',
     rapRequest($this, fdEmployee($hotel, Permission::employeeDefaults()), 'PUT', $uri, ['proactive_opted_out' => true])->assertForbidden();
     rapRequest($this, fdEmployee($hotel, [Permission::GUESTS_UPDATE]), 'PUT', $uri, ['proactive_opted_out' => true])->assertOk();
 });
+
+it('lets an employee upload and read reservation imports only with the import permission', function (string $endpoint) {
+    Storage::fake('local');
+    $hotel = hotelForPermissions();
+    $granted = employeeWithPermissions($hotel, [Permission::RESERVATIONS_IMPORT]);
+    $withoutIt = employeeWithPermissions($hotel, Permission::employeeDefaults());
+    $csv = fn () => imCsv(['guest_phone', 'arrival_date', 'departure_date'], [['555-0100', '2026-09-01', '2026-09-04']]);
+
+    if ($endpoint === 'upload') {
+        imUpload($this, $withoutIt, $csv())->assertForbidden();
+        imUpload($this, $granted, $csv())->assertStatus(202);
+
+        return;
+    }
+
+    $import = imImport($this, $granted, $csv());
+    $uri = str_replace('{id}', $import->id, $endpoint);
+
+    $this->withHeaders(permissionApiHeaders())->actingAs($withoutIt, 'sanctum')->get($uri, ['Accept' => 'application/json'])->assertForbidden();
+    $this->withHeaders(permissionApiHeaders())->actingAs($granted, 'sanctum')->get($uri, ['Accept' => 'application/json'])->assertOk();
+})->with([
+    'upload' => ['upload'],
+    'history' => ['/api/reservation/imports'],
+    'show' => ['/api/reservation/imports/{id}'],
+    'rows' => ['/api/reservation/imports/{id}/rows'],
+    'report' => ['/api/reservation/imports/{id}/report'],
+]);

@@ -168,8 +168,8 @@ it('lets the import record a checked-out stay as history, with no cleaning task'
     file_put_contents($path, "guest_phone,arrival_date,departure_date,room_type,status\n555-0101,2026-01-10,2026-01-12,Deluxe,checked_out");
 
     $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
-        ->postJson('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)])
-        ->assertOk();
+        ->post('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)], ['Accept' => 'application/json'])
+        ->assertStatus(202);
 
     $stay = Stay::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->sole();
     expect($stay->status)->toBe(StayStatus::DEPARTED)

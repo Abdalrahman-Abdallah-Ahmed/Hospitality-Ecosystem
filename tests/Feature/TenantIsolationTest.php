@@ -30,6 +30,9 @@ use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
 use App\Models\ReservationGuest;
+use App\Models\ReservationImport;
+use App\Models\ReservationImportDraft;
+use App\Models\ReservationImportRow;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
@@ -45,6 +48,7 @@ use App\Services\HousekeepingService;
 use App\Services\RecommendationOutcomeService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Tools\Request;
 use Laravel\Ai\Tools\Request as ToolRequest;
 
@@ -116,6 +120,25 @@ function tenantOwnedModelFactories(): array
         },
         ReservationRoom::class => fn (Hotel $hotel) => createReservationWithRooms($hotel, [[]])
             ->reservationRooms()->first(),
+        ReservationImport::class => fn (Hotel $hotel) => ReservationImport::create([
+            'hotel_id' => $hotel->id,
+            'file_name' => 'reservations.csv',
+            'status' => 'completed',
+            'date_order' => 'day_first',
+        ]),
+        ReservationImportRow::class => fn (Hotel $hotel) => ReservationImportRow::create([
+            'hotel_id' => $hotel->id,
+            'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'completed', 'date_order' => 'day_first'])->id,
+            'row_number' => 2,
+            'outcome' => 'invalid',
+            'stage' => 'validate',
+        ]),
+        ReservationImportDraft::class => fn (Hotel $hotel) => ReservationImportDraft::create([
+            'hotel_id' => $hotel->id,
+            'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'running', 'date_order' => 'day_first'])->id,
+            'position' => 2,
+            'payload' => [],
+        ]),
         Room::class => fn (Hotel $hotel) => Room::create([
             'hotel_id' => $hotel->id,
             'room_type_id' => roomTypeIdFor($hotel),
@@ -777,4 +800,33 @@ it('never lets another hotel mark or undo a no-show (SPEC-012)', function () {
     expect($result)->toBe('This hotel has no reservation with that code.')
         ->and($reservationB->fresh()->status->value)->toBe('confirmed')
         ->and($stayB->fresh()->status->value)->toBe('expected');
+});
+
+it('keeps one hotel out of another hotel reservation imports and their data (SPEC-100/101)', function () {
+    Storage::fake('local');
+    [$adminA, $hotelA] = adminWithHotel();
+    [$adminB, $hotelB] = adminWithHotel();
+    $guestB = Guest::create(['hotel_id' => $hotelB->id, 'phone_number' => '201001234567']);
+    $reservationB = createReservationWithRooms($hotelB, [[]], ['reservation_id' => 'SHARED-1', 'guest_id' => $guestB->id]);
+    $roomB = Room::create(['hotel_id' => $hotelB->id, 'room_type_id' => roomTypeIdFor($hotelB), 'room_number' => '301']);
+
+    $importB = imImport($this, $adminB, imCsv(['guest_phone', 'arrival_date', 'departure_date'], [['555-0100', '2026-09-01', '2026-09-04']]));
+
+    // Hotel A's import names hotel B's reference, guest phone and room number.
+    $importA = imImport($this, $adminA, imCsv(['reservation_reference', 'guest_phone', 'room_number', 'arrival_date', 'departure_date'], [
+        ['SHARED-1', '201001234567', '301', now()->toDateString(), now()->addDays(2)->toDateString()],
+    ]));
+
+    $reservationA = Reservation::withoutGlobalScope('hotel')->where('hotel_id', $hotelA->id)->sole();
+    expect($importA->imported)->toBe(1)
+        ->and($reservationA->guest_id)->not->toBe($guestB->id)
+        ->and($reservationA->reservationRooms()->withoutGlobalScope('hotel')->sole()->room_id)->not->toBe($roomB->id)
+        ->and($reservationB->fresh()->hotel_id)->toBe($hotelB->id);
+
+    $get = fn (string $uri) => $this->withHeaders(apiHeaders())->actingAs($adminA, 'sanctum')->get($uri, ['Accept' => 'application/json']);
+
+    expect(collect($get('/api/reservation/imports')->assertOk()->json('body.data'))->pluck('id')->all())->toBe([$importA->id]);
+    foreach (['', '/rows', '/report'] as $suffix) {
+        expect($get("/api/reservation/imports/{$importB->id}{$suffix}")->status())->toBeIn([403, 404]);
+    }
 });

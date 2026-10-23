@@ -22,6 +22,8 @@ use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeDocument;
 use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
+use App\Models\ReservationImport;
+use App\Models\ReservationImportRow;
 use App\Models\StaffRole;
 use App\Models\Task;
 use App\Models\TaskCategory;
@@ -180,6 +182,24 @@ function cvSeed(): array
         'occurred_at' => now(),
     ]);
 
+    $import = ReservationImport::create([
+        'hotel_id' => $hotel->id,
+        'uploaded_by' => $admin->id,
+        'file_name' => 'reservations.csv',
+        'status' => 'completed',
+        'date_order' => 'day_first',
+        'total_rows' => 1,
+        'invalid' => 1,
+    ]);
+    ReservationImportRow::create([
+        'hotel_id' => $hotel->id,
+        'reservation_import_id' => $import->id,
+        'row_number' => 2,
+        'outcome' => 'invalid',
+        'stage' => 'validate',
+        'reason' => 'arrival_date is empty.',
+    ]);
+
     return [
         'hotel' => $hotel->fresh(),
         'admin' => $admin,
@@ -198,6 +218,7 @@ function cvSeed(): array
             'proactiveMessage' => $proactive->id,
             'recommendation' => $recommendation->id,
             'reservation' => $reservation->id,
+            'reservationImport' => $import->id,
             'room' => $room->id,
             'room_type' => $type->id,
             'staff_role' => StaffRole::query()->where('hotel_id', $hotel->id)->value('id'),

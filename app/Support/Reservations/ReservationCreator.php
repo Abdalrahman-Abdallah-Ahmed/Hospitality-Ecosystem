@@ -25,9 +25,10 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The one domain operation that writes reservations and their room lines,
- * used by ReservationController, CreateReservationTool and
- * ReservationsImport, so the line rules (ReservationRoomSync), the
- * soft-delete-restore and the room-occupancy rules stay in one place.
+ * used by ReservationController, CreateReservationTool and the
+ * reservation import (ReservationImportWriter), so the line rules
+ * (ReservationRoomSync), the soft-delete-restore and the room-occupancy
+ * rules stay in one place.
  */
 class ReservationCreator
 {
