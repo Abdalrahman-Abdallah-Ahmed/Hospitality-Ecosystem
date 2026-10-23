@@ -73,6 +73,36 @@ import run.
   hotel; a new upload waits as "queued" until the current one finishes. Different hotels
   run in parallel.
 
+### Session 2026-10-23
+
+- Q: If a row says a guest is "checked in" but their departure date has already passed,
+  what should the import do? → A: Import it as checked-out, with a "status corrected:
+  departure has passed" warning.
+- Q: When several rows of one reservation have no room number, how is a row for an extra
+  room told apart from a row that only adds a guest? → A: An unnumbered row adds a room
+  only the first time its room type appears among the reservation's unnumbered rows;
+  later unnumbered rows of that type only add guests. A `room_count` column, when
+  present, sets the number of unnumbered rooms of that type instead.
+- Q: What status should imported activity bookings get? → A: Follow the reservation:
+  cancelled if the reservation is cancelled or a no-show; realised if the activity date
+  has passed and the reservation is checked in or checked out; otherwise confirmed.
+
+### Alignment with SPEC-011 and SPEC-012 (2026-10-23)
+
+This spec was paused on 2026-10-12 until its prerequisites existed. Both now do:
+SPEC-011 Reservation Guests & Party (`specs/014-reservation-guests-party`, merged) and
+SPEC-012 Reservation Lifecycle (`specs/015-reservation-lifecycle`). The following were
+added so the import obeys their rules instead of restating them:
+
+- Guest lists and ages follow SPEC-011: at most adults + children guests per reservation,
+  exactly one primary, and the import-only exception that children may be saved without
+  ages (FR-009, FR-013a, FR-014).
+- Statuses follow SPEC-012's lifecycle table, including its "import only" row:
+  `checked_out` and `no_show` are recorded directly, but only for reservations whose dates
+  make them possible (FR-017b, FR-017c).
+- A missing party now defaults to one adult per named guest rather than always one adult,
+  so a multi-guest row is not rejected for exceeding a party the file never stated.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Upload a legacy export and get a reconciliation report (Priority: P1)
@@ -151,8 +181,18 @@ dates, phone numbers and status.
    invalid with the conflicting fields named, and none of its rows are written.
 7. **Given** a row with an activity booking whose activity matches one of the hotel's
    activities, **When** imported, **Then** the booking is attached to the reservation;
-   when the activity cannot be identified, the reservation is still imported and the
-   booking is reported as unresolved.
+   when the activity cannot be identified, the reservation is still imported (its rows
+   count as imported) and the booking is listed as an unresolved booking warning.
+8. **Given** a row for 1 adult and 0 children that names three guests, **When** imported,
+   **Then** the reservation is invalid, naming the party and the guest count; **given** the
+   same row with no party columns, **Then** it is imported with 3 adults.
+9. **Given** a reservation labelled "No Show" whose arrival has passed, **When** imported,
+   **Then** it is stored as no-show, holds no room for its nights, and its stays are
+   no-show; **given** the same label with a future arrival, **Then** it is invalid.
+10. **Given** three rows of one reservation, all "Deluxe" with no room number and each
+    naming a different guest, **When** imported, **Then** the reservation has one Deluxe
+    line and three guests; **given** the same rows with `room_count` 2, **Then** it has
+    two Deluxe lines.
 
 ---
 
@@ -263,7 +303,17 @@ booking was created by the dry run.
 - **Guest without a phone**: imported when an email or old-system guest id is present, and
   flagged as a warning in the report; a guest with no phone, email or guest id makes the
   reservation invalid.
-- **Party missing**: defaults to one adult, zero children, as today.
+- **Party missing**: defaults to one adult per named guest (at least one), zero children.
+- **More named guests than adults + children**: invalid, naming the party fields and the
+  guest count.
+- **No-show with an arrival still in the future**, or **checked-out with a departure still
+  in the future**: invalid — neither status can be true yet.
+- **Stale "checked in"** (departure already passed, a common leftover in old systems):
+  imported as checked-out with a "status corrected" warning, so no room is marked
+  occupied by a guest who has left.
+- **Imported no-show**: its rooms hold no inventory, its stays are recorded as no-show,
+  room assignments are kept as history, and no cleaning task or guest memory extraction
+  runs.
 - **Imported reservation marked checked-in or checked-out**: stays are recorded to match
   the status, without notifications or housekeeping tasks. Past departures leave room
   status alone; guests in-house now make their assigned rooms occupied.
@@ -325,6 +375,8 @@ booking was created by the dry run.
   in its report.
 - **FR-009**: The system MUST reject a reservation whose departure is not after its
   arrival, or whose children's ages do not match the children count when ages are given.
+  Each age MUST be a whole number from 0 to 17. A reservation with children and no ages
+  at all MUST be imported with an empty ages list (SPEC-011's import exception).
 - **FR-010**: Validation MUST NOT reject legacy data for capacity, availability or a
   deactivated room type (kept from today's import).
 
@@ -334,7 +386,16 @@ booking was created by the dry run.
   reservation; rows of one reservation that disagree on reservation-level fields MUST make
   the whole reservation invalid.
 - **FR-012**: Each room unit on a reservation's rows MUST become one room-type line; a
-  room number, when given, MUST assign that room to the line.
+  room number, when given, MUST assign that room to the line. Room units are counted as
+  follows:
+  - each distinct room number is one unit, however many rows repeat it;
+  - rows with a room type and no room number add one unit of that type the first time
+    the type appears among the reservation's unnumbered rows, and later unnumbered rows
+    of the same type only add guests;
+  - when a `room_count` is given for a type, it sets the number of unnumbered units of
+    that type instead (rows disagreeing on it make the reservation invalid);
+  - rows with no room columns only add guests; a reservation with no units at all gets
+    one unit of the hotel's default room type.
 - **FR-012a**: The import MUST NOT assign a physical room for nights it is already assigned
   to another live reservation, whether that reservation is already at the hotel or earlier
   in the same file (cancelled and no-show reservations hold no room). The clashing line
@@ -343,11 +404,20 @@ booking was created by the dry run.
   data the same as for any other entry point.
 - **FR-013**: All guests named on a reservation's rows MUST be linked to it, with exactly
   one primary (flagged in the file, otherwise the first listed).
+- **FR-013a**: The number of guests linked to a reservation MUST NOT exceed its adults +
+  children; a reservation that breaks this MUST be reported invalid. When the file gives no
+  party, adults MUST default to the number of named guests (at least one) and children to
+  zero.
 - **FR-014**: Adults, children and children's ages MUST be recorded on the reservation as
-  totals across its rooms.
+  totals across its rooms, through the same reservation operation and rules as the staff
+  API and Admin AI (SPEC-011 FR-014).
 - **FR-015**: Rows that name an activity booking MUST attach it to the reservation when the
   activity matches one of the hotel's activities by name; otherwise the reservation is
-  imported and the booking reported as unresolved.
+  imported, its rows count as imported, and the booking is listed in the report as an
+  unresolved booking (a warning, not a row outcome). An attached booking's status MUST
+  follow its reservation: cancelled when the reservation is cancelled or a no-show;
+  realised when the activity date has passed (hotel local time) and the reservation is
+  checked in or checked out; confirmed otherwise.
 - **FR-016**: Rooms and room types named in the file but missing at the hotel MUST be
   created (kept from today's import) and listed in the report.
 - **FR-017**: Reservations imported as checked-in or checked-out MUST get stays consistent
@@ -357,6 +427,17 @@ booking was created by the dry run.
   (in-house) MUST mark each assigned room occupied, the same as a front-desk check-in but
   without notifications or tasks. An in-house room line with no room number MUST be
   imported unassigned and listed in the report as a "no room assigned" warning.
+- **FR-017b**: Imported statuses MUST follow the reservation lifecycle (SPEC-012): a new
+  reservation is created as pending, confirmed, cancelled, checked-in, checked-out or
+  no-show. Checked-out and no-show are allowed only through the import, and only when the
+  departure (checked-out) or arrival (no-show) date has been reached in the hotel's local
+  time; otherwise the reservation is invalid with the status and date named. A
+  reservation labelled checked-in whose departure date has already passed MUST be
+  imported as checked-out, with a "status corrected: departure has passed" warning; a
+  checked-in reservation whose arrival is still in the future is invalid.
+- **FR-017c**: A reservation imported as no-show MUST hold no inventory, record its stays
+  as no-show, keep any room assignment as history, and create no cleaning task, guest
+  notification or memory extraction — the same end state as staff marking it a no-show.
 
 **Guest matching**
 
@@ -364,7 +445,9 @@ booking was created by the dry run.
   digits, by normalized email, or by external guest id from the source system.
 - **FR-019**: When different signals point to different existing guests, the system MUST
   NOT merge or create a guest; the reservation MUST be reported as unresolved, naming the
-  candidate guests, and nothing from it written.
+  candidate guests, and nothing from it written. The same applies inside the file: when a
+  guest's phone, email or old-system id points to one person named earlier in the file and
+  another of them points to a different person, that reservation is unresolved.
 - **FR-019a**: Every guest on a reservation MUST have at least one identifier: a phone, an
   email or an old-system guest id. A guest with none makes the reservation invalid. A guest
   imported without a phone MUST be listed in the report as a warning ("no phone — cannot be
@@ -393,12 +476,13 @@ booking was created by the dry run.
 
 - **FR-025**: Every finished import MUST produce a report with totals for imported,
   skipped, duplicate, invalid and unresolved, which together MUST equal the number of data
-  rows in the file.
+  rows in the file. A `skipped` row is a data row with no values at all; blank rows after
+  the last row with data are not counted as data rows.
 - **FR-026**: Each non-imported row MUST appear in the report with its row number, external
   reference (if any), outcome, the field(s) involved and a human-readable reason.
 - **FR-027**: The report MUST also list rooms and room types created, unrecognized columns,
   unresolved bookings, and warnings (such as guests imported without a phone, or in-house
-  lines with no room assigned, or room clashes).
+  lines with no room assigned, room clashes, or statuses corrected).
 - **FR-028**: Staff MUST be able to download a finished report as a spreadsheet of the
   non-imported rows with their outcome and reason, so they can fix the file and re-import.
 - **FR-029**: Reports MUST be retained with the import record and remain viewable after the
@@ -484,6 +568,11 @@ booking was created by the dry run.
   activities are never created by the import.
 - The frontend slice (upload, progress, history, report) is delivered in
   `ecosystem-frontend` per D13 and described in this feature's frontend-changes document.
+- Status is reservation-level in the file. A past reservation where some rooms checked out
+  and others were no-shows is imported as checked-out with all its stays checked out;
+  per-room no-show history from the old system is not reconstructed.
+- Depends on SPEC-011 (`specs/014-reservation-guests-party`, merged) and SPEC-012
+  (`specs/015-reservation-lifecycle`, which must be merged before this feature ships).
 - Out of scope: importing from other PMS systems through live connections or APIs,
   transactions import (behind the finance flag), editing rows inside the app, undoing an
   import, and per-hotel custom column mappings.

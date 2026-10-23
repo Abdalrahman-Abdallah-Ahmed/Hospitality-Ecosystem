@@ -18,6 +18,7 @@ Examples:
 - `PUT /api/reservation/{id}`
 - `DELETE /api/reservation/{id}`
 - `POST /api/reservation/import` (bulk upload — see [§6](#6-import-reservations-bulk-upload))
+- `GET /api/reservation/imports`, `GET /api/reservation/imports/{id}`, `GET /api/reservation/imports/{id}/rows`, `GET /api/reservation/imports/{id}/report`
 
 ## Required Headers
 
@@ -47,7 +48,7 @@ Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-
 | `index` (list) | The logged-in user's `role` must be `admin`. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user must be `admin`, **and** the reservation's `hotel_id` must equal the hotel the user owns. |
-| `import` (bulk upload) | `role` must be `admin` (or an employee with `reservations.import`). **Unlike every other write endpoint, a super admin cannot target an arbitrary hotel here** — see [§6](#6-import-reservations-bulk-upload). |
+| `import` (bulk upload), import history and reports | `role` must be `admin` (or an employee with `reservations.import`). A super admin passes `hotel_id` — see [§6](#6-import-reservations-bulk-upload). |
 
 Practical implications for the UI:
 
@@ -664,105 +665,260 @@ Same as [show](#3-get-a-single-reservation): `404` if the id doesn't exist, `403
 
 ## 6. Import Reservations (Bulk Upload)
 
-### Endpoint
+> **Changed 2026-10-23 (SPEC-100/101, breaking):** the upload is queued and returns `202`
+> with an import record. Progress and the reconciliation report are read from the
+> `/api/reservation/imports` endpoints below. The old `200 { imported, skipped }` response
+> is gone. See `docs/latest-changes-2026-10-23.md`.
 
-`POST /api/reservation/import`
+An import moves a hotel's reservations from its previous PMS. Every file goes through the
+same stages, and every data row ends with one outcome and a reason:
 
-Bulk-creates reservations (and any guests/rooms they reference) from an uploaded spreadsheet, all scoped to the logged-in admin's own hotel. Controller: `App\Http\Controllers\ReservationController::import`, backed by `App\Imports\ReservationsImport`.
+```
+parse → normalize → validate → map → import → report
+```
 
-### Request
+Controller: `ReservationController::import` (upload) and `ReservationImportController`
+(history, status, rows, report). The pipeline lives in `app/Support/Import/Reservations`
+and runs in `PrepareReservationImportJob` and `WriteReservationImportJob`.
 
-`multipart/form-data` with a single field:
+### Endpoints
+
+All need `reservations.import` and the same-hotel check. Another hotel's import returns
+`404` or `403`.
+
+| Method | Path | Does |
+| --- | --- | --- |
+| `POST` | `/api/reservation/import` | Upload a file; queue an import or a dry run |
+| `GET` | `/api/reservation/imports` | The hotel's imports, newest first, paginated |
+| `GET` | `/api/reservation/imports/{id}` | One import: status, progress, totals, report summary |
+| `GET` | `/api/reservation/imports/{id}/rows` | Row results, in row order, paginated |
+| `GET` | `/api/reservation/imports/{id}/report` | Download the non-imported rows and warnings as `.xlsx` |
+
+### Upload
+
+`multipart/form-data`. Don't set `Content-Type: application/json`.
 
 | Field | Rules |
 | --- | --- |
-| `file` | **required**, a file, one of `xlsx` / `xls` / `csv` / `txt`, max 5120 KB (5 MB). |
+| `file` | **required**; `xlsx` / `xls` / `csv` / `txt`; max 5 MB |
+| `date_order` | `day_first` (default) or `month_first`: how `12/09/2025` is read for the whole file |
+| `dry_run` | boolean, default `false`. Runs every stage except writing |
+| `hotel_id` | **required for a super admin**; ignored for everyone else |
 
 ```bash
 curl -X POST http://your-domain.com/api/reservation/import \
-  -H "Accept: application/json" \
-  -H "X-API-KEY: YOUR_API_KEY" \
+  -H "Accept: application/json" -H "X-API-KEY: YOUR_API_KEY" \
   -H "Authorization: Bearer USER_LOGIN_TOKEN" \
-  -F "file=@reservations.csv"
+  -F "file=@reservations.xlsx" -F "date_order=day_first" -F "dry_run=1"
 ```
 
-Do **not** set `Content-Type: application/json` on this request — let the HTTP client set the `multipart/form-data` boundary itself (e.g. use `FormData` in the browser, not a JSON body).
+**`202 Accepted`**: `body` is the import with `status: "queued"`. Poll
+`GET /api/reservation/imports/{id}` until `status` is `completed` or `failed`.
 
-### Expected Columns
+Errors: `422` on `file`, `date_order` or `hotel_id`; `403` without the permission.
+Missing columns aren't checked at upload: the import fails in the background and
+`failure_reason` names them.
 
-The **first row must be a header row** naming these columns (order doesn't matter; unrecognized columns are ignored). Column names are matched case-insensitively and with spaces/punctuation folded to underscores (e.g. a header of `Guest Phone` is read the same as `guest_phone`) — matching Maatwebsite Excel's default heading normalization:
+A hotel runs **one import at a time**. A newer upload waits as `queued` and runs after the
+current one, in upload order. Different hotels run in parallel.
 
-| Column | Required? | Notes |
-| --- | --- | --- |
-| `guest_phone` | **Required.** Row is skipped without it. | Guests are matched/deduped by phone number within the hotel — re-importing the same phone number reuses the existing guest instead of creating a duplicate. |
-| `arrival_date` | **Required.** Row is skipped without it. | Any string `Carbon`/the DB can parse as a date. |
-| `departure_date` | **Required.** Row is skipped without it. | Same as above. **Not validated against `arrival_date`** — a departure before arrival is not rejected. |
-| `guest_first_name` | optional | |
-| `guest_last_name` | optional | |
-| `guest_email` | optional | |
-| `guests` | optional | JSON array of guest objects using the reservation API's `guest_id` or contact fields and `is_primary`. Supply the complete list, including the primary guest. A phone match is preferred; an email match is reused only when unambiguous at this hotel. |
-| `room_number` | optional | If set and no room with that number exists yet for the hotel, **a new room is created automatically** (see below) rather than the row being rejected. The reservation gets one line of that room's type, on that room. |
-| `room_type` | optional | A room type name, matched case-insensitively and **created when missing**. Used for a new room created from `room_number`, and — when there is no `room_number` — as the type of the reservation's single, unassigned line. With neither column, the line uses the hotel's default room type. |
-| `floor` | optional | Same as `room_type` — only used if a new room is created. |
-| `reservation_id` | optional | If omitted, one is auto-generated (`RES-XXXXXXXX`). If provided and it collides with an existing reservation for a *different* row already processed, that row is skipped (see below). |
-| `status` | optional | Defaults to `pending`. **Any value other than the five real statuses (`pending`, `confirmed`, `checked_in`, `checked_out`, `cancelled`) causes that row to be skipped** — with a raw PHP error string as the reason (e.g. `"typo" is not a valid backing value for enum App\Enums\ReservationStatus`), not a friendly message. Show `skipped[].reason` as-is, or map known enum-error patterns to a nicer message client-side. |
-| `adults` | optional | Cast to integer; defaults to `1` (falls back to `1` if the value is `0` or non-numeric, since the code uses `(int) ... ?: 1`). |
-| `children` | optional | Cast to integer; defaults to `0`. |
-| `children_ages` | optional | Comma-separated whole-number ages from `0` through `17` (for example `5,8`). When supplied, the count must equal `children`. Omit this column to preserve legacy imports that have children but no ages. |
-| `source` | optional | Free text; defaults to `"import"`. |
-| `special_requests` | optional | Free text. |
-| `reservation_value` | optional | Cast to float; defaults to `0`. |
-| `currency` | optional | Defaults to the hotel's own `currency`. |
-
-### Behavior Notes
-
-- **This endpoint does not use the same validation as manual create** (`POST /api/reservation`) — it bypasses `GenericStoreRequest`/enum casting for everything except `status` (which still throws because `Reservation.status` is a native PHP enum cast) and the numeric fields listed above. Garbage `currency`/`source`/`special_requests` values are written to the database as-is.
-- Every imported reservation gets exactly **one room line** (see `room_number`/`room_type` above). The party-capacity check and the availability check are **not** run on imports, and a room type the hotel has since deactivated is accepted: legacy data is recorded as it is. Rows beyond availability are saved and show up as overbooked nights in `GET /api/availability`. Each row is written in its own transaction, so a row that fails part-way (e.g. an invalid `status`) leaves no guest, room or reservation behind.
-- A row is processed **independently** — one bad row (missing phone, invalid status, duplicate `reservation_id`, etc.) is caught and skipped; it does not fail the whole import.
-- `room_number` with no existing match **creates the room** rather than rejecting the row. If your UI wants to warn the user before this happens, you'd need to cross-check `room_number` values against `GET /api/room` client-side before upload — the API gives no dry-run/preview mode.
-- Guests are matched by phone first, then by an unambiguous email, scoped to the hotel; a soft-deleted guest with a matching identity is restored rather than duplicated. Supplied child ages are strictly parsed and validated; a malformed or incomplete list skips the row.
-- **Super admins cannot target a different hotel with this endpoint.** Every other write endpoint in this API resolves the target hotel via a shared helper that lets a super admin pass an explicit `hotel_id` (since they have no hotel of their own). Import does not — it always uses `$request->user()->hotel`, so a super admin gets `403 You do not belong to any hotel.` calling this endpoint at all. If bulk-import needs to be super-admin-capable later, that's a backend gap, not something the frontend can work around.
-
-### Success Response
-
-HTTP `200 OK` — note the response shape here is **not** the paginator format used by list endpoints, and is **not** the imported reservation objects either, just counts:
+### The import record
 
 ```json
 {
-  "message": "Reservations imported successfully.",
-  "code": 200,
-  "body": {
-    "imported": 42,
-    "skipped": [
-      { "row": 7, "reason": "Missing required field(s): guest_phone, arrival_date, or departure_date." },
-      { "row": 15, "reason": "\"typo\" is not a valid backing value for enum App\\Enums\\ReservationStatus" }
-    ]
-  }
+  "id": "9f1c…", "hotel_id": "3b2a…", "file_name": "reservations-sept-2025.xlsx",
+  "uploaded_by": { "id": "…", "name": "Sara Ali" },
+  "dry_run": false, "date_order": "day_first",
+  "status": "running", "stage": "import",
+  "progress": { "processed_rows": 1200, "total_rows": 5000 },
+  "totals": { "imported": 1100, "skipped": 0, "duplicate": 60, "invalid": 30, "unresolved": 10 },
+  "created_rooms": ["214"], "created_room_types": ["Dbl Deluxe"],
+  "unrecognized_columns": ["Fax"], "warnings_count": 42,
+  "failure_reason": null,
+  "created_at": "…", "started_at": "…", "finished_at": null
 }
 ```
 
-- `body.imported`: count of reservations successfully created.
-- `body.skipped`: one entry per skipped row, `row` is **1-indexed and counts the header row** (so the first data row is `row: 2`), `reason` is a free-text string — sometimes a friendly message, sometimes a raw PHP exception message (see the `status` note above). Treat it as opaque text for display, not something to pattern-match on.
-- To see the actual created reservations, re-fetch the list via `GET /api/reservation` — this endpoint doesn't return them.
+- `status`: `queued` → `running` → `completed` or `failed`. Both final states keep the
+  totals reached. When a run fails, rows it never reached are `invalid` with "Not
+  imported: the import stopped before this row was written", so they appear in the report. To retry, upload the file again; reservations already imported come back
+  as `duplicate`.
+- `totals` add up to `total_rows` once completed. Blank rows after the last data row aren't
+  counted.
+- On a dry run, `imported` means "would be imported", and `created_rooms` /
+  `created_room_types` mean "would be created".
+- `uploaded_by` is `null` if the uploader's account was deleted.
 
-### Error: Not Authenticated / Not Admin
+### Rows
 
-`401` with no bearer token; `403` (custom wrapper, `message/code/body`) if the caller isn't an admin.
-
-### Error: Missing/Invalid File
-
-HTTP `422`, Laravel's default validation shape (not the custom wrapper):
+`GET /api/reservation/imports/{id}/rows?outcome=invalid&has_warnings=1&per_page=50`
 
 ```json
-{
-  "message": "The given data was invalid.",
-  "errors": {
-    "file": ["The file field is required."]
-  }
-}
+{ "row_number": 418, "external_reference": "BK-77812", "outcome": "unresolved", "stage": "map",
+  "fields": ["guest_phone", "guest_email", "guest_external_id"],
+  "reason": "The guest on row 418 matches more than one existing guest (Ahmed Saleh and Mona Saleh)…",
+  "warnings": [], "reservation_id": null }
 ```
 
-Same shape for a wrong file type or a file over 5 MB, with a message specific to that rule.
+| Outcome | Meaning |
+| --- | --- |
+| `imported` | Written (on a dry run, would be). `reservation_id` is set |
+| `skipped` | A data row with no values at all |
+| `duplicate` | The reservation already exists at the hotel. `reservation_id` is the existing one |
+| `invalid` | A rule is broken; `fields` and `reason` say which |
+| `unresolved` | The guest couldn't be identified safely. Staff decide, fix the file and import again |
+
+All rows of one reservation share its outcome. Warnings never change the outcome:
+
+| Warning | Meaning |
+| --- | --- |
+| `no_phone` | A guest has no phone, so they can't be recognized on WhatsApp until staff add one |
+| `phone_country_unknown` | A national number at a hotel with no country code; kept as written |
+| `phone_unrecognized` | Not a valid number for the hotel's country (likely a typo); kept as written |
+| `no_room_assigned` | A guest in house now has a line with no room; assign one at the desk |
+| `room_clash` | The room is booked on overlapping nights; this line was imported without it |
+| `status_corrected` | "Checked in" with a past departure was imported as checked out |
+| `data_differs` | A duplicate whose stored data differs from the file; the stored reservation is unchanged |
+| `restored` | A deleted reservation with the reference was restored with the file's data |
+| `booking_unresolved` | A booking's activity name matched no activity (or two); the booking was left out |
+
+### Report download
+
+`GET /api/reservation/imports/{id}/report` returns `import-{id}-report.xlsx`, with one line
+per non-imported row and one per warning (`row_number`, `external_reference`, `outcome`,
+`fields`, `reason`, `warning`). It returns `409` while the import is still running. This is
+the only response here that isn't an `apiResponse()` envelope.
+
+### Columns
+
+The first row is the header. Headers ignore case, spaces and punctuation, and go through a
+synonym table (`config/reservation_import.php`), so `Res No.`, `Booking Ref` and
+`reservation_id` all mean `reservation_reference`. Unknown columns are ignored and listed
+once in `unrecognized_columns`.
+
+**Terminology:** the file's `reservation_reference` (old column name `reservation_id`) is
+stored as the reservation's code, which the reservation API calls `reservation_id`. Import
+reports show it as `external_reference`.
+
+| Column | Notes |
+| --- | --- |
+| `arrival_date`, `departure_date` | **Required columns.** Departure must be after arrival |
+| `guest_phone`, `guest_email`, `guest_external_id` | **At least one of these columns is required.** Each guest needs at least one value |
+| `reservation_reference` | Groups rows into one reservation, and is the idempotency key. Optional: without it, a `RES-XXXXXXXX` code is generated |
+| `guest_first_name`, `guest_last_name`, `is_primary` | One guest per row. `is_primary`: `yes`/`no`, `1`/`0` or `true`/`false` |
+| `guests` | Still accepted: a JSON list of guests (`guest_id` or contact fields, plus `is_primary`) |
+| `room_number`, `room_type`, `floor`, `room_count` | See "How rows become reservations" below |
+| `status` | See "Statuses" below. Empty means `pending` |
+| `adults`, `children`, `children_ages` | Whole numbers; ages as a comma list, each 0–17. With ages and no `children`, the count is the number of ages |
+| `source`, `special_requests`, `reservation_value`, `currency` | `source` defaults to `import` and `currency` to the hotel's. Amounts accept `1,200.50`, `1.200,50` and `99,50`; `1,200` or `1.200` alone is ambiguous (1200 or 1.2) and is rejected |
+| `activity_name`, `activity_date`, `activity_time`, `activity_pax` | One activity booking per row |
+
+**Dates** can be written as:
+
+- `2025-09-12`;
+- `12/09/2025`, `12-09-25` or `12.09.2025`, read using `date_order`;
+- `12 Sep 2025`, `12-Sep-2025` or `Sep 12, 2025`;
+- spreadsheet date cells.
+
+A time part is ignored, and two-digit years are read as 20yy. Anything else, including
+impossible dates like `31/02/2025`, makes the row invalid; nothing is guessed. Arabic-Indic
+digits are read as digits.
+
+**Phones** are stored as digits with the country code. Numbers written without one use
+the hotel's `country_code`, so `0020 100 123 4567`, `+20 100 123 4567` and, at an Egyptian
+hotel, `01001234567` are the same number. A guest stored earlier without the country code
+(`01001234567`) is still matched.
+
+**Statuses** map legacy labels (case and spacing are ignored):
+
+| Status | Labels |
+| --- | --- |
+| `confirmed` | confirmed, conf, guaranteed, definite, booked, reserved |
+| `pending` | pending, tentative, provisional, option, unconfirmed |
+| `cancelled` | cancelled, canceled, cxl, cancel, cnl |
+| `checked_in` | checked in, in house, inhouse, arrived, ci |
+| `checked_out` | checked out, departed, co |
+| `no_show` | no show, noshow, ns |
+
+Statuses are checked against the dates, in the hotel's local time:
+
+- `checked_out` needs the departure date to have been reached.
+- `no_show` needs the arrival date to have been reached.
+- `checked_in` with a future arrival is invalid.
+- `checked_in` whose departure has passed is imported as `checked_out`, with
+  `status_corrected`.
+
+What the import records for these statuses:
+
+- Guests in house now get their stays checked in, and their assigned rooms are marked
+  occupied.
+- A no-show holds no rooms, and its stays are no-show.
+- Imported history creates no cleaning tasks, notifications, memory extraction or ledger
+  rows.
+
+### How rows become reservations
+
+- **Grouping**: rows with the same reference (case-insensitive) are one reservation, and
+  must agree on its dates, status, party, value and other reservation fields. An empty
+  cell is not a disagreement; a real conflict makes the whole reservation invalid.
+- **Rooms**:
+  - Each distinct `room_number` is one line, on that room.
+  - Rows with a `room_type` and no number add one line of that type the first time the
+    type appears; later ones only add guests.
+  - `room_count` sets the number of unnumbered lines of a type instead.
+  - Rows with no room columns only add guests. A reservation with no room columns at all
+    gets one line of the hotel's default type.
+  - Missing rooms and room types are created and listed.
+- **Guests**: every guest named on the rows is linked, once each. The primary is the one
+  flagged `is_primary`, otherwise the first. More guests than `adults + children` is
+  invalid. With no party columns, adults default to the number of guests.
+- **Capacity and availability**: neither is checked, because legacy data is recorded as it
+  is. But a physical room is never put on two live reservations for the same night: the
+  later line is imported without its room, with `room_clash`.
+- **Bookings** attach, with origin `import`, when `activity_name` matches exactly one of
+  the hotel's activities. Their status follows the reservation:
+  - `cancelled` for a cancelled or no-show reservation;
+  - `realised` for a past date on a checked-in or checked-out reservation;
+  - otherwise `confirmed`.
+
+  They are charged to the folio when the activity has a price, otherwise included.
+
+### Guest matching
+
+A guest is reused only on a confident match at this hotel:
+
+- the same phone digits;
+- the same email (case-insensitive);
+- the same old-system guest id (`guest_external_id`).
+
+Names never match anyone. If the details point at two different guests, or at two
+different people named earlier in the file, the reservation is `unresolved` and nothing
+from it is written. A matched guest's stored details are never overwritten; empty ones are
+filled in.
+
+### Re-importing
+
+Importing a file again never creates a reservation, guest or booking twice:
+
+- A reference the hotel already has is a `duplicate`, and the stored reservation is left
+  as it is. `data_differs` says when the file disagrees.
+- A reservation without a reference that matches an existing one (same primary guest,
+  dates and room types) is a `duplicate`.
+- References are unique per hotel, and matched ignoring case (`RES-001` = `res-001`).
+
+If an import crashes, uploading the file again finishes the rest.
+
+### Dry run
+
+`dry_run=1` runs every stage except writing and produces the same report. One limit: if a
+booking made between a dry run and the real import takes a room, that clash only shows up
+in the real import.
+
+### Audit
+
+Each run writes one `hotel.reservations_imported` event on behalf of the uploader. It
+records the import id, file name, dry-run flag, status and totals. No per-reservation
+events are written.
 
 ## Validation Errors
 
@@ -846,4 +1002,4 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - Don't use this document for the WhatsApp reservation-creation flow — that's `POST /api/whatsapp-reservation`, unauthenticated (API-key only), and out of scope here.
 - Room status follows who is actually in the room: occupied while any checked-in reservation has it on a live line (every room of a multi-room reservation), freed back to `available` once none does, and `maintenance` left alone. A future booking never frees an occupied room. See [Status Values](#status-values).
 - `reservation_id` is unique per hotel, not across the platform. A row in an import whose code the hotel already uses is skipped with `Reservation id … already exists.`
-- `POST /api/reservation/import` bulk-creates reservations from an uploaded `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB). It returns only `{ imported, skipped }` counts, not the created records — refresh the list separately. It skips bad rows instead of failing the whole file, and unlike every other write endpoint here, a super admin **cannot** target another hotel with it. See [§6](#6-import-reservations-bulk-upload).
+- `POST /api/reservation/import` queues an import of an `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB) and returns `202` with an import record. Poll `GET /api/reservation/imports/{id}` until it completes, then read `/rows` or download `/report`. Every row gets an outcome and a reason, re-imports are safe, and `dry_run=1` previews without writing. A super admin passes `hotel_id`. See [§6](#6-import-reservations-bulk-upload).

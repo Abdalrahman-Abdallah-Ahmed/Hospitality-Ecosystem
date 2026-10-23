@@ -96,7 +96,7 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `reservations.create` | `POST /api/reservation` |
 | `reservations.update` | `PUT /api/reservation/{id}` |
 | `reservations.delete` | `DELETE /api/reservation/{id}` |
-| `reservations.import` | `POST /api/reservation/import` |
+| `reservations.import` | `POST /api/reservation/import`, `GET /api/reservation/imports`, `GET /api/reservation/imports/{id}`, `GET /api/reservation/imports/{id}/rows`, `GET /api/reservation/imports/{id}/report` |
 | `reservations.overbook` | `overbook_override: true` on `POST /api/reservation` and `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
 | `reservations.no_show` | `POST /api/reservation/{id}/no-show`, `POST /api/reservation/{id}/undo-no-show`, `POST /api/stays/{id}/no-show`, `POST /api/stays/{id}/undo-no-show`, and the Admin AI no-show tool (not a default) |
 | `rooms.view` | `GET /api/room`, `GET /api/room/{id}`, `GET /api/housekeeping/board` |

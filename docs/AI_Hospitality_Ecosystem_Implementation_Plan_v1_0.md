@@ -531,6 +531,9 @@ Retrieval, SPEC-083 AI Audit Consistency.
 
 **Specs:** SPEC-100 Reservation Import v2, SPEC-101 Import Reconciliation.
 
+**Delivered (2026-10-23):** `specs/013-reservation-import-v2`. The queued-imports part of F11
+is closed; dashboard caching and error tracking remain with Phase 14.
+
 ### Phase 14 — Hardening + Production Readiness
 
 1. **Security:** tenant-isolation audit across HTTP, jobs, webhooks and AI tools; AI

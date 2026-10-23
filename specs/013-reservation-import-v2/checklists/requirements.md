@@ -36,3 +36,6 @@
 - The permission name `reservations.import` and the HTTP 403 are kept deliberately: they
   are existing project contracts that every spec in this repo references, not new design.
 - No new permission is introduced; viewing imports reuses `reservations.import`.
+- Re-validated 2026-10-23 after aligning with SPEC-011/012 (FR-009, FR-013a, FR-014,
+  FR-017b, FR-017c, US2 scenarios 8–9, new edge cases and assumptions). All items still
+  pass; no clarification markers were added.
