@@ -78,3 +78,27 @@ the project owner:
    - no row's reason is a raw exception;
    - `unrecognized_columns` holds nothing that should have been mapped.
 2. Run it for real, then run it again. The second run must be all `duplicate`.
+
+### Synthetic stand-in run (2026-10-23)
+
+The owner's file isn't available yet, so T059 was rehearsed on a generated export in the
+shape of a legacy PMS report: 442 data rows, 309 references, Opera-style headers
+(`Conf. No.`, `Arr. Date`, `Rms`, `Profile No.`), mixed date cells and text dates, Egyptian
+and UK phones in seven spellings (including Arabic-Indic digits), multi-row reservations,
+returning guests, a blank row, a totals footer and nine planted defects. It ran on a
+separate `Hospitality_Ecosystem_staging` database with a real `queue:work` worker.
+
+| Run | Seconds | Outcome |
+| --- | --- | --- |
+| First dry run | — | `failed`: `Arr. Date`/`Dep. Date` unknown. Synonyms added |
+| Second dry run | 1 | 278 imported, 164 invalid: `C/O`, `Due Out`, `Waitlist` unknown. Labels added |
+| Third dry run | 1 | 343 imported, 99 invalid, 2 skipped; totals = 444 rows |
+| Real run | 15 | Same outcomes; 243 reservations, 46 rooms, 5 room types, 18 bookings |
+| Real run, again | 2 | 343 `duplicate`; no counts changed (SC-002) |
+
+No reference is stored twice, no room is on two live lines on the same night (SC-008), and
+no reason is a raw error. The 99 invalid rows are the planted defects, guests with no
+contact at all, and amounts written `EGP 25,200`, which FR-008 rejects as ambiguous.
+
+This proves the pipeline, not the owner's file: T059 stays open until the real export has
+been run the same way.

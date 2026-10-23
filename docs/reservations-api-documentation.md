@@ -693,6 +693,18 @@ All need `reservations.import` and the same-hotel check. Another hotel's import 
 | `GET` | `/api/reservation/imports/{id}` | One import: status, progress, totals, report summary |
 | `GET` | `/api/reservation/imports/{id}/rows` | Row results, in row order, paginated |
 | `GET` | `/api/reservation/imports/{id}/report` | Download the non-imported rows and warnings as `.xlsx` |
+| `POST` | `/api/reservation/import-previews` | Upload a file to map its columns first (see "Column mapping" below) |
+| `GET` | `/api/reservation/import-previews` | The hotel's uploads waiting to be mapped |
+| `GET` | `/api/reservation/import-previews/{id}` | One upload's mapping screen, for a header row |
+| `POST` | `/api/reservation/import-previews/{id}/confirm` | Confirm a mapping and queue the import |
+| `DELETE` | `/api/reservation/import-previews/{id}` | Discard an upload and its file |
+
+Two ways to start an import:
+
+- **Direct upload** (`POST /api/reservation/import`): headers are matched by name through
+  the synonym table, and row 1 is the header.
+- **Column mapping** (016): upload a preview, let the admin choose the header row and map
+  each column, then confirm. Use this for exports whose headers the system doesn't know.
 
 ### Upload
 
@@ -702,6 +714,7 @@ All need `reservations.import` and the same-hotel check. Another hotel's import 
 | --- | --- |
 | `file` | **required**; `xlsx` / `xls` / `csv` / `txt`; max 5 MB |
 | `date_order` | `day_first` (default) or `month_first`: how `12/09/2025` is read for the whole file |
+| `decimal_mark` | `auto` (default), `dot` or `comma`: how amounts like `25,200` are read (see "Columns") |
 | `dry_run` | boolean, default `false`. Runs every stage except writing |
 | `hotel_id` | **required for a super admin**; ignored for everyone else |
 
@@ -729,6 +742,9 @@ current one, in upload order. Different hotels run in parallel.
   "id": "9f1c…", "hotel_id": "3b2a…", "file_name": "reservations-sept-2025.xlsx",
   "uploaded_by": { "id": "…", "name": "Sara Ali" },
   "dry_run": false, "date_order": "day_first",
+  "preview_id": "01a1…", "header_row": 4,
+  "column_map": { "0": "reservation_reference", "1": "guest_full_name", "5": null },
+  "decimal_mark": "dot",
   "status": "running", "stage": "import",
   "progress": { "processed_rows": 1200, "total_rows": 5000 },
   "totals": { "imported": 1100, "skipped": 0, "duplicate": 60, "invalid": 30, "unresolved": 10 },
@@ -748,6 +764,10 @@ current one, in upload order. Different hotels run in parallel.
 - On a dry run, `imported` means "would be imported", and `created_rooms` /
   `created_room_types` mean "would be created".
 - `uploaded_by` is `null` if the uploader's account was deleted.
+- `preview_id`, `header_row`, `column_map` and `decimal_mark` say how the file was read.
+  For a direct upload, `preview_id` and `column_map` are `null` and `header_row` is `1`.
+  `preview_id` also becomes `null` once its upload is discarded or expires; the import and
+  its report stay.
 
 ### Rows
 
@@ -792,8 +812,9 @@ the only response here that isn't an `apiResponse()` envelope.
 ### Columns
 
 The first row is the header. Headers ignore case, spaces and punctuation, and go through a
-synonym table (`config/reservation_import.php`), so `Res No.`, `Booking Ref` and
-`reservation_id` all mean `reservation_reference`. Unknown columns are ignored and listed
+synonym table (`config/reservation_import.php`), so `Res No.`, `Conf. No.`, `Booking Ref` and
+`reservation_id` all mean `reservation_reference`. Common PMS abbreviations are included:
+`Arr. Date`/`Dep. Date`, `Rms` (room count) and `Profile No.` (guest external id). Unknown columns are ignored and listed
 once in `unrecognized_columns`.
 
 **Terminology:** the file's `reservation_reference` (old column name `reservation_id`) is
@@ -806,12 +827,28 @@ reports show it as `external_reference`.
 | `guest_phone`, `guest_email`, `guest_external_id` | **At least one of these columns is required.** Each guest needs at least one value |
 | `reservation_reference` | Groups rows into one reservation, and is the idempotency key. Optional: without it, a `RES-XXXXXXXX` code is generated |
 | `guest_first_name`, `guest_last_name`, `is_primary` | One guest per row. `is_primary`: `yes`/`no`, `1`/`0` or `true`/`false` |
+| `guest_full_name` | The whole name in one column (headers `Guest Name`, `Name`, `Full Name`). `Smith, John` → John / Smith; otherwise the first word is the first name and the rest the last name (`Mohamed Abdel Rahman` → Mohamed / Abdel Rahman). Ignored on a row that also has `guest_first_name` or `guest_last_name` |
 | `guests` | Still accepted: a JSON list of guests (`guest_id` or contact fields, plus `is_primary`) |
 | `room_number`, `room_type`, `floor`, `room_count` | See "How rows become reservations" below |
 | `status` | See "Statuses" below. Empty means `pending` |
 | `adults`, `children`, `children_ages` | Whole numbers; ages as a comma list, each 0–17. With ages and no `children`, the count is the number of ages |
-| `source`, `special_requests`, `reservation_value`, `currency` | `source` defaults to `import` and `currency` to the hotel's. Amounts accept `1,200.50`, `1.200,50` and `99,50`; `1,200` or `1.200` alone is ambiguous (1200 or 1.2) and is rejected |
+| `source`, `special_requests`, `reservation_value`, `currency` | `source` defaults to `import` and `currency` to the hotel's. Amounts are read by `decimal_mark` (below) |
 | `activity_name`, `activity_date`, `activity_time`, `activity_pax` | One activity booking per row |
+
+**Amounts** ignore currency text (`EGP 3,600` is `3,600`). Numeric cells are read as they
+are. Text amounts follow the import's `decimal_mark`:
+
+| Amount | `auto` (default) | `dot` | `comma` |
+| --- | --- | --- | --- |
+| `25,200` | invalid: 25200 or 25.2? | 25200 | invalid |
+| `1,260.50` | 1260.50 | 1260.50 | invalid |
+| `25.200` | invalid: 25200 or 25.2? | invalid | 25200 |
+| `1.260,50` | 1260.50 | invalid | 1260.50 |
+| `99,50` | 99.50 | invalid | 99.50 |
+
+Under `dot` or `comma`, the other mark may only group thousands in threes. An amount that
+doesn't fit makes the reservation invalid, naming the amount; it is never read some other
+way.
 
 **Dates** can be written as:
 
@@ -834,10 +871,10 @@ hotel, `01001234567` are the same number. A guest stored earlier without the cou
 | Status | Labels |
 | --- | --- |
 | `confirmed` | confirmed, conf, guaranteed, definite, booked, reserved |
-| `pending` | pending, tentative, provisional, option, unconfirmed |
+| `pending` | pending, tentative, provisional, option, unconfirmed, waitlist |
 | `cancelled` | cancelled, canceled, cxl, cancel, cnl |
-| `checked_in` | checked in, in house, inhouse, arrived, ci |
-| `checked_out` | checked out, departed, co |
+| `checked_in` | checked in, in house, inhouse, arrived, ci, c/i, due out |
+| `checked_out` | checked out, departed, co, c/o |
 | `no_show` | no show, noshow, ns |
 
 Statuses are checked against the dates, in the hotel's local time:
@@ -913,6 +950,101 @@ If an import crashes, uploading the file again finishes the rest.
 `dry_run=1` runs every stage except writing and produces the same report. One limit: if a
 booking made between a dry run and the real import takes a room, that clash only shows up
 in the real import.
+
+### Column mapping (preview)
+
+> **Added 2026-10-24 (016, additive).** Nothing above changed.
+
+For files whose headers the system doesn't know, or whose header isn't on row 1, the admin
+maps the columns before importing. The file is uploaded once and read only by the server.
+
+**1. Upload**: `POST /api/reservation/import-previews`, `multipart/form-data` with `file`
+(same rules as the direct upload) and, for a super admin, `hotel_id`. **`201`** with the
+preview below. An unreadable file is a `422` on `file`, and nothing is stored.
+
+```json
+{
+  "id": "01a1…", "hotel_id": "3b2a…", "file_name": "reservations-sept-2025.xlsx",
+  "uploaded_by": { "id": "…", "name": "Sara Ali" },
+  "created_at": "…", "expires_at": "…",
+  "suggested_header_row": 1, "header_row": 4, "data_rows": 438,
+  "rows": [["Grand Harbor Hotel"], ["Reservations report"], ["01/09/2025 - 30/09/2025"],
+           ["Conf. No.", "Guest Name", "Mob.", "Arr. Date", "Dep. Date", "Nationality"]],
+  "columns": [
+    { "position": 0, "letter": "A", "header": "Conf. No.", "samples": ["GHH-784108"], "suggested_field": "reservation_reference" },
+    { "position": 2, "letter": "C", "header": "Mob.", "samples": ["+20 100 123 4567"], "suggested_field": null }
+  ],
+  "fields": [
+    { "key": "arrival_date", "label": "Arrival date", "required": true, "guest_identifier": false },
+    { "key": "guest_phone", "label": "Guest phone", "required": false, "guest_identifier": true }
+  ],
+  "imports": [{ "id": "…", "dry_run": true, "status": "completed", "created_at": "…" }]
+}
+```
+
+- `rows`: the first 10 rows as shown in the spreadsheet (dates formatted), for choosing
+  the header row.
+- `columns`: built from `header_row`. A blank header shows as `Column F`. `samples` holds
+  up to 5 non-empty values from the rows below the header. Columns are identified by
+  `position`, so two columns with the same header are mapped separately.
+- `suggested_field`: the hotel's last confirmed mapping first (including columns it left
+  unmapped on purpose, which come back `null`), then the synonym table, then a header
+  already named like a field. A field is suggested to only one column.
+- `suggested_header_row`: the header row the hotel used last, or 1.
+- `fields`: everything a column can be mapped to. Translate `label` by `key`. At least one
+  `guest_identifier` field must be mapped.
+- `imports`: the imports already started from this upload, newest first.
+
+**2. Choose the header row**:
+`GET /api/reservation/import-previews/{id}?header_row=4` rebuilds `columns`, `data_rows`
+and the suggestions from row 4. It doesn't re-read the file. `header_row` is 1–10, and a
+row past the end of the file is a `422`: "The file has only N rows."
+
+**3. Confirm**: `POST /api/reservation/import-previews/{id}/confirm`, JSON:
+
+```json
+{
+  "header_row": 4,
+  "columns": { "0": "reservation_reference", "1": "guest_full_name", "2": "guest_phone",
+               "3": "arrival_date", "4": "departure_date", "5": null },
+  "date_order": "day_first", "decimal_mark": "dot", "dry_run": true
+}
+```
+
+`columns` maps a sheet position to a field key, or `null` to ignore it. Positions left out
+are ignored too. The mapping is the only thing that decides what a column means: the
+synonym table isn't used, and every unmapped column with a header is listed in the
+import's `unrecognized_columns`.
+
+**`202`**: the import record, exactly as from a direct upload. Its rows start at the
+file's own row numbers (row 5 above). The hotel's saved mapping becomes this one, so the
+next file from the same system arrives mapped.
+
+`422` on `columns`, one message per problem, all in one response. Nothing is created and
+the saved mapping is unchanged:
+
+- `Map a column to Arrival date.` / `Map a column to Departure date.`
+- `Map a column to at least one of Guest phone, Guest email, Guest id (old system).`
+- `Guest phone is mapped to more than one column.`
+- `The file has no column at position 9.`
+- `"fax" is not a field this import reads.`
+- `Map either Guest full name or Guest first name / Guest last name, not both.`
+
+There is also a `422` on `header_row`, `date_order` or `decimal_mark` for an invalid value.
+
+The same upload can be confirmed again, for example a dry run and then the real run. Each
+confirm creates its own import.
+
+**4. List, reopen, discard**: `GET /api/reservation/import-previews` lists the hotel's
+unexpired uploads, newest first, without `rows`, `columns` or `fields`. Reopen one with
+`GET …/{id}`. `DELETE …/{id}` deletes it and its file at once ("Upload discarded.").
+Imports already started from it are unaffected.
+
+**Expiry**: an upload expires 24 hours after it is uploaded. Reading or confirming it then
+returns **`410`** ("This upload has expired. Upload the file again."). An hourly job
+deletes expired uploads and their files, after which they return `404`.
+
+Another hotel's upload returns `404`. Every endpoint needs `reservations.import`.
 
 ### Audit
 

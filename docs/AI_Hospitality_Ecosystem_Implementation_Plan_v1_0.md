@@ -534,6 +534,11 @@ Retrieval, SPEC-083 AI Audit Consistency.
 **Delivered (2026-10-23):** `specs/013-reservation-import-v2`. The queued-imports part of F11
 is closed; dashboard caching and error tracking remain with Phase 14.
 
+**Extended (2026-10-24):** `specs/016-import-column-mapping` adds a column-mapping step
+(upload a preview, choose the header row, map columns, confirm), a remembered mapping per
+hotel, a full-name column and a per-file decimal mark. It came out of the T059 rehearsal on
+a synthetic export. T059 itself still waits on the owner's September 2025 file.
+
 ### Phase 14 — Hardening + Production Readiness
 
 1. **Security:** tenant-isolation audit across HTTP, jobs, webhooks and AI tools; AI
