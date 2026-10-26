@@ -2,7 +2,14 @@
 
 This document describes the dashboard summary endpoint, defined by `App\Http\Controllers\DashboardController`.
 
-There is **no policy/authorization check beyond being an authenticated user with a hotel** — unlike most other resources in this app, there's no `admin`-only gate here. Any authenticated user (including `employee`) who belongs to a hotel can call this.
+The caller needs the `dashboard.view` permission and must belong to a hotel; otherwise the
+answer is `403`.
+
+**Caching (spec 017, FR-023):** the response is reused for 60 seconds per set of
+hotels the caller can see, per server day and per `date`. Calls within that window return
+the same figures; a caller who can see a different set of hotels (a group admin, a super
+admin, a single-hotel employee), or a call for another `date`, is computed separately. The permission check runs on every call, before the cache
+is read.
 
 ## Base URL
 

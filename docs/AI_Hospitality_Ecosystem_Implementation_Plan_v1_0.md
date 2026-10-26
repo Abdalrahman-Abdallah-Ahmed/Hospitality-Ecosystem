@@ -563,6 +563,12 @@ a synthetic export. T059 itself still waits on the owner's September 2025 file.
 **Specs:** SPEC-102 Tenant Isolation Audit, SPEC-103 AI Authorization Audit, SPEC-104
 Performance & Queues, SPEC-105 Production Readiness.
 
+**Built (2026-10-25):** `specs/017-hardening-production-readiness`; the staging rehearsals
+and go-live sign-off in `docs/production-readiness-checklist.md` remain. For the MVP the
+queue lanes stay on PostgreSQL (Redis + Horizon post-MVP), the deploy stays in place with a
+final health check (atomic releases post-MVP), and backups are post-MVP. The isolation audit
+made route-model binding tenant-scoped: another hotel's record is now `404`, not `403`.
+
 ---
 
 ## 4. Dependencies
