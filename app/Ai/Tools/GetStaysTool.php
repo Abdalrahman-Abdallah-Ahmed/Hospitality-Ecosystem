@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Admin\ListResult;
 use App\Ai\Tools\Contracts\ReadsData;
 use App\Enums\Permission;
 use App\Models\Hotel;
@@ -56,7 +57,7 @@ class GetStaysTool implements ReadsData, Tool
             return 'The date must be YYYY-MM-DD.';
         }
 
-        $rows = FrontDeskLists::get($this->hotel, $list, $day)->map(fn (Stay $stay) => [
+        $map = fn (Stay $stay) => [
             'reservation' => $stay->reservation?->reservation_id,
             'guest' => trim(($stay->guest?->first_name ?? '').' '.($stay->guest?->last_name ?? '')) ?: $stay->guest?->phone_number,
             'room_type' => $stay->reservationRoom?->roomType?->name,
@@ -66,9 +67,21 @@ class GetStaysTool implements ReadsData, Tool
             'status' => $stay->status->value,
             'late' => $list === 'arrivals' && $stay->planned_arrival_date->toDateString() < $day,
             'overdue' => $list !== 'arrivals' && $stay->planned_departure_date->toDateString() < $day,
-        ]);
+        ];
 
-        return json_encode(['list' => $list, 'date' => $day, 'stays' => $rows->values()->all()]);
+        // A day's list can run to hundreds of stays: bounded, with the count
+        // so the model never presents part of a list as all of it (FR-019).
+        // Only the rows returned are mapped.
+        $page = ListResult::collectionPayload(FrontDeskLists::get($this->hotel, $list, $day), ListResult::MAX, $map);
+
+        return json_encode([
+            'list' => $list,
+            'date' => $day,
+            'stays' => $page['items'],
+            'total' => $page['total'],
+            'returned' => $page['returned'],
+            'partial' => $page['partial'],
+        ]);
     }
 
     public function schema(JsonSchema $schema): array

@@ -162,8 +162,8 @@ it('forbids touching another hotel booking', function () {
     [, $otherHotel] = wp5AdminWithHotel();
     $theirs = wp5Booking($otherHotel, ['guest_id' => wp5Recommendation($otherHotel)[1]->id]);
 
-    bookingApi($admin, 'GET', "/api/booking/{$theirs->id}")->assertStatus(403);
-    bookingApi($admin, 'POST', "/api/booking/{$theirs->id}/status", ['status' => 'confirmed'])->assertStatus(403);
+    bookingApi($admin, 'GET', "/api/booking/{$theirs->id}")->assertStatus(404);
+    bookingApi($admin, 'POST', "/api/booking/{$theirs->id}/status", ['status' => 'confirmed'])->assertStatus(404);
 });
 
 it('has no PUT or delete route', function () {

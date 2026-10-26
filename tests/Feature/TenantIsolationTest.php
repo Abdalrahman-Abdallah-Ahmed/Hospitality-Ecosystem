@@ -6,50 +6,27 @@ use App\Ai\Tools\GetAvailabilityTool;
 use App\Ai\Tools\GetGuestAvailabilityTool;
 use App\Ai\Tools\GetStaysTool;
 use App\Ai\Tools\RequestRoomChangeTool;
-use App\Enums\AttributionMethod;
-use App\Enums\OutcomeType;
 use App\Enums\UserRole;
-use App\Models\Activity;
-use App\Models\ActivityCategory;
+use App\Jobs\CreateAiInsightsJob;
 use App\Models\AiActivity;
-use App\Models\AiInsights;
 use App\Models\Booking;
-use App\Models\EventLog;
 use App\Models\Guest;
-use App\Models\GuestMemory;
-use App\Models\GuestMemoryExtraction;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
-use App\Models\HotelPolicy;
-use App\Models\KnowledgeBaseArticle;
-use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeDocument;
-use App\Models\PitchDecision;
-use App\Models\ProactiveMessage;
-use App\Models\Recommendation;
-use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
 use App\Models\ReservationGuest;
 use App\Models\ReservationImport;
-use App\Models\ReservationImportDraft;
-use App\Models\ReservationImportMapping;
-use App\Models\ReservationImportPreview;
-use App\Models\ReservationImportRow;
 use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
 use App\Models\Task;
-use App\Models\TaskCategory;
-use App\Models\Team;
-use App\Models\Transaction;
 use App\Models\User;
-use App\Models\WhatsAppDevice;
 use App\Services\BookingCancellationService;
-use App\Services\BookingService;
 use App\Services\HousekeepingService;
-use App\Services\RecommendationOutcomeService;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Tools\Request;
 use Laravel\Ai\Tools\Request as ToolRequest;
@@ -60,301 +37,6 @@ beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
 });
-
-function makeHotel(): Hotel
-{
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create([
-        'owner_id' => $owner->id,
-        'name' => 'Hotel '.uniqid(),
-        'slug' => 'hotel-'.uniqid(),
-        'currency' => 'USD',
-    ]);
-    $owner->update(['hotel_id' => $hotel->id]);
-
-    return $hotel;
-}
-
-/**
- * One row-factory per tenant-owned model, each producing a row that belongs
- * to the given hotel. Covers every model using the BelongsToHotel trait —
- * not just the eight the plan named explicitly, since Team, ActivityCategory,
- * TaskCategory, Recommendation, KnowledgeChunk, and WhatsAppDevice also carry
- * a hotel_id and are just as exposed to cross-tenant leakage if unscoped.
- */
-function tenantOwnedModelFactories(): array
-{
-    return [
-        Guest::class => fn (Hotel $hotel) => Guest::create([
-            'hotel_id' => $hotel->id,
-            'external_id' => 'ext-'.uniqid(),
-            'channel' => 'booking_com',
-        ]),
-        Reservation::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return Reservation::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'reservation_id' => 'RES-'.uniqid(),
-                'arrival_date' => '2026-09-01',
-                'departure_date' => '2026-09-04',
-                'status' => 'confirmed',
-            ]);
-        },
-        ReservationGuest::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-            $reservation = Reservation::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'reservation_id' => 'RES-'.uniqid(),
-                'arrival_date' => '2026-09-01',
-                'departure_date' => '2026-09-04',
-                'status' => 'confirmed',
-            ]);
-
-            return ReservationGuest::create([
-                'hotel_id' => $hotel->id,
-                'reservation_id' => $reservation->id,
-                'guest_id' => $guest->id,
-                'is_primary' => true,
-            ]);
-        },
-        ReservationRoom::class => fn (Hotel $hotel) => createReservationWithRooms($hotel, [[]])
-            ->reservationRooms()->first(),
-        ReservationImport::class => fn (Hotel $hotel) => ReservationImport::create([
-            'hotel_id' => $hotel->id,
-            'file_name' => 'reservations.csv',
-            'status' => 'completed',
-            'date_order' => 'day_first',
-        ]),
-        ReservationImportRow::class => fn (Hotel $hotel) => ReservationImportRow::create([
-            'hotel_id' => $hotel->id,
-            'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'completed', 'date_order' => 'day_first'])->id,
-            'row_number' => 2,
-            'outcome' => 'invalid',
-            'stage' => 'validate',
-        ]),
-        ReservationImportDraft::class => fn (Hotel $hotel) => ReservationImportDraft::create([
-            'hotel_id' => $hotel->id,
-            'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'running', 'date_order' => 'day_first'])->id,
-            'position' => 2,
-            'payload' => [],
-        ]),
-        ReservationImportPreview::class => fn (Hotel $hotel) => ReservationImportPreview::create([
-            'hotel_id' => $hotel->id,
-            'file_name' => 'r.csv',
-            'file_path' => "reservation-import-previews/{$hotel->id}/r.csv",
-            'expires_at' => now()->addDay(),
-        ]),
-        ReservationImportMapping::class => fn (Hotel $hotel) => ReservationImportMapping::create([
-            'hotel_id' => $hotel->id,
-            'header_row' => 1,
-            'columns' => ['arrival' => 'arrival_date'],
-        ]),
-        Room::class => fn (Hotel $hotel) => Room::create([
-            'hotel_id' => $hotel->id,
-            'room_type_id' => roomTypeIdFor($hotel),
-            'room_number' => '101',
-        ]),
-        Stay::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return Stay::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'planned_arrival_date' => '2026-09-01',
-                'planned_departure_date' => '2026-09-04',
-            ]);
-        },
-        // Pitch decisions quote the guest's own words, so another hotel
-        // seeing them is a privacy leak as well as a tenancy one.
-        PitchDecision::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return PitchDecision::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'eligible' => false,
-                'gates' => [],
-                'opening_quote' => 'what can we do tonight',
-                'rules_version' => '1.0',
-                'decided_at' => now(),
-            ]);
-        },
-        ActivityCategory::class => fn (Hotel $hotel) => ActivityCategory::create([
-            'hotel_id' => $hotel->id,
-            'name' => 'Category',
-        ]),
-        Activity::class => fn (Hotel $hotel) => Activity::create([
-            'hotel_id' => $hotel->id,
-            'name' => 'Diving',
-            'price' => 10,
-        ]),
-        Task::class => fn (Hotel $hotel) => Task::create([
-            'hotel_id' => $hotel->id,
-            'title' => 'Clean room',
-        ]),
-        AiInsights::class => fn (Hotel $hotel) => AiInsights::create([
-            'hotel_id' => $hotel->id,
-            'title' => 'Insight',
-            'description' => 'Description',
-            'category' => 'general',
-            'insight_type' => 'general',
-        ]),
-        KnowledgeBaseArticle::class => fn (Hotel $hotel) => KnowledgeBaseArticle::create([
-            'hotel_id' => $hotel->id,
-            'title' => 'Article',
-            'content' => 'Content',
-        ]),
-        HotelPolicy::class => fn (Hotel $hotel) => HotelPolicy::create([
-            'hotel_id' => $hotel->id,
-            'title' => 'Policy',
-            'content' => 'Content',
-        ]),
-        TaskCategory::class => fn (Hotel $hotel) => TaskCategory::create([
-            'hotel_id' => $hotel->id,
-            'name' => 'Housekeeping',
-        ]),
-        Team::class => fn (Hotel $hotel) => Team::create([
-            'hotel_id' => $hotel->id,
-            'name' => 'Team '.uniqid(),
-        ]),
-        Recommendation::class => function (Hotel $hotel) {
-            $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10]);
-
-            return Recommendation::create([
-                'hotel_id' => $hotel->id,
-                'activity_id' => $activity->id,
-            ]);
-        },
-        Transaction::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return Transaction::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'item_name' => 'Dive trip',
-                'line_total' => 120,
-                'currency' => 'USD',
-                'transacted_at' => '2026-09-01 12:00:00',
-                'business_date' => '2026-09-01',
-                'source_system' => 'import',
-                'external_reference' => 'ext-'.uniqid(),
-            ]);
-        },
-        Booking::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return app(BookingService::class)->create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'item_name' => 'Sunset dive',
-                'charge_model' => 'pay_on_site',
-                'origin' => 'guest_request',
-            ]);
-        },
-        RecommendationOutcome::class => function (Hotel $hotel) {
-            $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10]);
-            $recommendation = Recommendation::create([
-                'hotel_id' => $hotel->id,
-                'activity_id' => $activity->id,
-            ]);
-
-            return app(RecommendationOutcomeService::class)->record(
-                $recommendation,
-                OutcomeType::DELIVERED,
-                AttributionMethod::STAFF,
-            );
-        },
-        EventLog::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return EventLog::create([
-                'hotel_id' => $hotel->id,
-                'event_type' => 'guest.created',
-                'subject_type' => $guest->getMorphClass(),
-                'subject_id' => $guest->id,
-                'actor_kind' => 'system',
-                'occurred_at' => now(),
-            ]);
-        },
-        KnowledgeChunk::class => function (Hotel $hotel) {
-            $policy = HotelPolicy::create(['hotel_id' => $hotel->id, 'title' => 'Policy', 'content' => 'Content']);
-
-            return KnowledgeChunk::create([
-                'chunkable_type' => HotelPolicy::class,
-                'chunkable_id' => $policy->id,
-                'hotel_id' => $hotel->id,
-                'content' => 'Chunk content',
-                'embedding' => array_fill(0, 1536, 0.0),
-            ]);
-        },
-        KnowledgeDocument::class => fn (Hotel $hotel) => KnowledgeDocument::create([
-            'hotel_id' => $hotel->id,
-            'title' => 'House Rules',
-            'original_filename' => 'rules.pdf',
-            'path' => 'knowledge/'.$hotel->id.'/doc/rules.pdf',
-            'mime_type' => 'application/pdf',
-            'size' => 10,
-            'content_hash' => hash('sha256', uniqid()),
-        ]),
-        ProactiveMessage::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return tap((new ProactiveMessage)->forceFill([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $guest->id,
-                'trigger' => 'first_morning',
-                'event_key' => 'first_morning:'.uniqid(),
-                'status' => 'scheduled',
-                'due_at' => now(),
-                'valid_until' => now()->addHours(3),
-            ]))->save();
-        },
-        AiActivity::class => fn (Hotel $hotel) => AiActivity::create([
-            'hotel_id' => $hotel->id,
-            'category' => 'ai_run',
-            'agent' => 'concierge',
-            'action' => 'run.completed',
-            'result' => 'succeeded',
-            'occurred_at' => now(),
-        ]),
-        GuestMemory::class => function (Hotel $hotel) {
-            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
-
-            return cmaMemory($guest);
-        },
-        GuestMemoryExtraction::class => function (Hotel $hotel) {
-            $reservation = Reservation::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com'])->id,
-                'reservation_id' => 'RES-'.uniqid(),
-                'arrival_date' => now()->toDateString(),
-                'departure_date' => now()->addDay()->toDateString(),
-                'status' => 'confirmed',
-            ]);
-
-            return GuestMemoryExtraction::create([
-                'hotel_id' => $hotel->id,
-                'guest_id' => $reservation->guest_id,
-                'reservation_id' => $reservation->id,
-                'status' => 'extracted',
-            ]);
-        },
-        WhatsAppDevice::class => function (Hotel $hotel) {
-            $user = User::factory()->role(UserRole::EMPLOYEE)->create();
-
-            return WhatsAppDevice::create([
-                'user_id' => $user->id,
-                'hotel_id' => $hotel->id,
-                'wa_user_id' => 'wa-'.uniqid(),
-                'phone_number' => '2010'.random_int(1000000, 9999999),
-                'status' => 'active',
-            ]);
-        },
-    ];
-}
 
 it('never leaks another hotel\'s rows for every tenant-owned model', function (string $modelClass, Closure $factory) {
     $hotelA = makeHotel();
@@ -395,7 +77,7 @@ it('does not carry the tenant of one request into the next', function () {
     $second = $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
         ->getJson("/api/booking/{$bookingA->id}");
 
-    expect($first->status())->toBe(403)
+    expect($first->status())->toBe(404)
         ->and($second->status())->toBe($first->status());
 });
 
@@ -487,7 +169,7 @@ it('never shows or accepts another hotel\'s room types and rooms on reservation 
     // Reading hotel A's reservation (and its lines) is refused.
     $this->withHeaders(wp5Headers())->actingAs($adminB, 'sanctum')
         ->getJson("/api/reservation/{$reservationA->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     // Filtering by hotel A's type or room finds nothing.
     foreach (['room_type_id' => $typeA, 'room_id' => $roomA->id] as $filter => $value) {
@@ -581,11 +263,11 @@ it('never shows or lets anyone act on another hotel\'s stays', function () {
 
     // Another hotel's stay or reservation is refused (the same-hotel policy
     // check, like every other resource), and nothing changes.
-    fdGet($this, $adminA, "/api/stays/{$stayB->id}")->assertForbidden();
-    fdPost($this, $adminA, "/api/stays/{$stayB->id}/check-in")->assertForbidden();
-    fdPost($this, $adminA, "/api/stays/{$stayB->id}/check-out")->assertForbidden();
-    fdPost($this, $adminA, "/api/reservation/{$reservationB->id}/check-in")->assertForbidden();
-    fdPost($this, $adminA, "/api/reservation/{$reservationB->id}/check-out")->assertForbidden();
+    fdGet($this, $adminA, "/api/stays/{$stayB->id}")->assertNotFound();
+    fdPost($this, $adminA, "/api/stays/{$stayB->id}/check-in")->assertNotFound();
+    fdPost($this, $adminA, "/api/stays/{$stayB->id}/check-out")->assertNotFound();
+    fdPost($this, $adminA, "/api/reservation/{$reservationB->id}/check-in")->assertNotFound();
+    fdPost($this, $adminA, "/api/reservation/{$reservationB->id}/check-out")->assertNotFound();
 
     // Naming another hotel's room at check-in is refused like an unknown room.
     [$stayA] = fdStays(fdBook($hotelA, $typeA, [null]));
@@ -607,12 +289,12 @@ it('keeps one hotel out of another hotel housekeeping and maintenance (FR-034)',
     $adminA = $hotelA->owner;
 
     // Another hotel's room or task cannot be acted on.
-    hkPut($this, $adminA, "/api/room/{$roomB->id}/housekeeping-status", ['housekeeping_status' => 'clean', 'reason' => 'x'])->assertForbidden();
-    fdPost($this, $adminA, "/api/room/{$roomB->id}/out-of-order", ['reason' => 'x'])->assertForbidden();
-    hkPatch($this, $adminA, "/api/room/{$roomB->id}/out-of-order", ['reason' => 'x'])->assertForbidden();
-    fdPost($this, $adminA, "/api/room/{$roomB->id}/return-to-service")->assertForbidden();
-    fdPost($this, $adminA, "/api/task/{$cleaningB->id}/inspection", ['result' => 'pass'])->assertForbidden();
-    fdPost($this, $adminA, "/api/task/{$cleaningB->id}/issues", ['description' => 'x'])->assertForbidden();
+    hkPut($this, $adminA, "/api/room/{$roomB->id}/housekeeping-status", ['housekeeping_status' => 'clean', 'reason' => 'x'])->assertNotFound();
+    fdPost($this, $adminA, "/api/room/{$roomB->id}/out-of-order", ['reason' => 'x'])->assertNotFound();
+    hkPatch($this, $adminA, "/api/room/{$roomB->id}/out-of-order", ['reason' => 'x'])->assertNotFound();
+    fdPost($this, $adminA, "/api/room/{$roomB->id}/return-to-service")->assertNotFound();
+    fdPost($this, $adminA, "/api/task/{$cleaningB->id}/inspection", ['result' => 'pass'])->assertNotFound();
+    fdPost($this, $adminA, "/api/task/{$cleaningB->id}/issues", ['description' => 'x'])->assertNotFound();
     fdPost($this, $adminA, "/api/room/{$roomA->id}/out-of-order", ['reason' => 'x', 'task_id' => $cleaningB->id])->assertForbidden();
 
     // Lists show only the caller's own hotel.
@@ -643,10 +325,10 @@ it('keeps one hotel out of another hotel activity availability, bookings and can
     app(BookingCancellationService::class)
         ->request($bookingB, Guest::withoutGlobalScope('hotel')->find($bookingB->guest_id), 'B guest');
 
-    fdGet($this, $adminA, "/api/activity/{$activityB->id}/availability?from=2026-10-09")->assertForbidden();
-    abPatch($this, $adminA, "/api/booking/{$bookingB->id}", ['notes' => 'x'])->assertForbidden();
-    fdPost($this, $adminA, "/api/booking/{$bookingB->id}/cancellation-request/approve")->assertForbidden();
-    fdPost($this, $adminA, "/api/booking/{$bookingB->id}/cancellation-request/decline", ['note' => 'x'])->assertForbidden();
+    fdGet($this, $adminA, "/api/activity/{$activityB->id}/availability?from=2026-10-09")->assertNotFound();
+    abPatch($this, $adminA, "/api/booking/{$bookingB->id}", ['notes' => 'x'])->assertNotFound();
+    fdPost($this, $adminA, "/api/booking/{$bookingB->id}/cancellation-request/approve")->assertNotFound();
+    fdPost($this, $adminA, "/api/booking/{$bookingB->id}/cancellation-request/decline", ['note' => 'x'])->assertNotFound();
 
     expect(fdGet($this, $adminA, '/api/booking/cancellation-requests')->json('body.data'))->toBe([])
         // A's places never count B's bookings.
@@ -667,8 +349,8 @@ it('keeps one hotel out of another hotel guest requests and their notices (SPEC-
     $maintenanceB = Task::withoutGlobalScope('hotel')->where('guest_signal', 'maintenance_request')->sole();
     hkSetTaskStatus($this, $adminB, $maintenanceB, 'cancelled')->assertOk();
 
-    fdGet($this, $adminA, "/api/task/{$roomChangeB->id}")->assertForbidden();
-    hkSetTaskStatus($this, $adminA, $roomChangeB, 'completed')->assertForbidden();
+    fdGet($this, $adminA, "/api/task/{$roomChangeB->id}")->assertNotFound();
+    hkSetTaskStatus($this, $adminA, $roomChangeB, 'completed')->assertNotFound();
 
     expect(fdGet($this, $adminA, '/api/task?filter[guest_signal]=room_change_request')->assertOk()->json('body.data'))->toBe([])
         ->and(fdGet($this, $adminA, '/api/task?filter[guest_notice_status]=skipped')->assertOk()->json('body.data'))->toBe([])
@@ -710,8 +392,8 @@ it('keeps one hotel out of another hotel recommendation approvals (SPEC-071 FR-0
     $recommendationB = rapRecommendation($reservationB, rapActivity($hotelB), 'pending_approval');
     $adminA = rapAdmin($hotelA);
 
-    rapRequest($this, $adminA, 'POST', "/api/recommendation/{$recommendationB->id}/approve")->assertForbidden();
-    rapRequest($this, $adminA, 'POST', "/api/recommendation/{$recommendationB->id}/reject")->assertForbidden();
+    rapRequest($this, $adminA, 'POST', "/api/recommendation/{$recommendationB->id}/approve")->assertNotFound();
+    rapRequest($this, $adminA, 'POST', "/api/recommendation/{$recommendationB->id}/reject")->assertNotFound();
 
     $bulk = rapRequest($this, $adminA, 'POST', '/api/recommendations/decide', ['action' => 'approve', 'ids' => [$recommendationB->id]])->assertOk();
 
@@ -726,7 +408,7 @@ it('keeps one hotel out of another hotel guest contact preferences (SPEC-073 FR-
     $hotelB = rapHotel();
     [$guestB] = rapInHouseStay($hotelB);
 
-    rapRequest($this, rapAdmin($hotelA), 'PUT', "/api/guest/{$guestB->id}/contact-preference", ['proactive_opted_out' => true])->assertForbidden();
+    rapRequest($this, rapAdmin($hotelA), 'PUT', "/api/guest/{$guestB->id}/contact-preference", ['proactive_opted_out' => true])->assertNotFound();
 
     expect($guestB->fresh()->proactive_opted_out_at)->toBeNull();
 });
@@ -786,7 +468,7 @@ it('never shows or attaches another hotel\'s guests on a reservation guest list 
     // Hotel B's reservation and its guest list stay out of reach.
     $this->withHeaders(apiHeaders())->actingAs($adminA, 'sanctum')
         ->getJson("/api/reservation/{$reservationB->id}")
-        ->assertForbidden();
+        ->assertNotFound();
 
     expect(ReservationGuest::withoutGlobalScope('hotel')->where('guest_id', $guestB->id)->exists())->toBeFalse()
         ->and($reservationA->fresh()->guest_id)->toBe($guestA->id);
@@ -805,7 +487,7 @@ it('never lets another hotel mark or undo a no-show (SPEC-012)', function () {
         "/api/stays/{$stayB->id}/no-show",
         "/api/stays/{$stayB->id}/undo-no-show",
     ] as $uri) {
-        fdPost($this, $adminA, $uri)->assertForbidden();
+        fdPost($this, $adminA, $uri)->assertNotFound();
     }
 
     $result = aatCall(aatTool($adminA->fresh(), 'NoShowTool'), ['action' => 'mark', 'reservation_id' => $reservationB->reservation_id]);
@@ -878,4 +560,22 @@ it('suggests each hotel only its own saved import mapping (016)', function () {
 
     expect($suggested($adminA))->toBe(['arrival_date', 'departure_date', 'guest_phone', 'special_requests'])
         ->and($suggested($adminB))->toBe(['arrival_date', 'departure_date', 'guest_external_id', null]);
+});
+
+it('generates insights for the caller\'s own hotel only (spec 017)', function () {
+    Bus::fake();
+    $hotelA = makeHotel();
+    makeHotel();
+
+    $this->actingAs(User::findOrFail($hotelA->owner_id))
+        ->withHeaders(['X-API-KEY' => 'test-api-key'])
+        ->postJson('/api/ai-insights', ['hotel_id' => 'not-this-one'])
+        ->assertCreated();
+
+    // The job is handed the caller, and works for the caller's hotel: the
+    // request has no way to name another one.
+    Bus::assertDispatched(
+        CreateAiInsightsJob::class,
+        fn ($job) => $job->data['user']->hotel_id === $hotelA->id,
+    );
 });

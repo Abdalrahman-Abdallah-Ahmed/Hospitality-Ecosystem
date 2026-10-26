@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Observability\TagsSentryScope;
 use App\Support\Tenancy\TenantContext;
 use Closure;
 use Illuminate\Http\Request;
@@ -27,18 +28,24 @@ class ResolveTenant
             TenantContext::setCurrentHotelId(
                 $requested && in_array($requested, $available, true) ? $requested : ($user->hotel_id ?? $available[0] ?? null)
             );
+
+            // Which hotel and which endpoint, for an error that follows (spec 017 FR-027).
+            TagsSentryScope::tag([
+                'hotel_id' => TenantContext::currentHotelId(),
+                'operation' => $request->route()?->getName() ?? $request->method().' '.$request->route()?->uri(),
+            ]);
         }
 
         try {
             return $next($request);
         } finally {
-            // TenantContext is process-static and route-model binding runs
-            // *before* this middleware. On a persistent worker (Octane) or
-            // any process serving more than one request, leaving the context
-            // set would mean the next request resolves its bindings under the
-            // previous request's tenant -- making the same cross-hotel lookup
-            // answer 403 or 404 purely on request order. Hand the process back
-            // in the state we found it.
+            // TenantContext is process-static. On a persistent worker (Octane)
+            // or any process serving more than one request, leaving the
+            // context set would let the next request's early queries -- the
+            // ones before this middleware runs -- see the previous request's
+            // tenant. Hand the process back in the state we found it. (Route-
+            // model binding itself now runs after this middleware: see the
+            // priority set in bootstrap/app.php, spec 017 FR-005.)
             TenantContext::reset();
         }
     }

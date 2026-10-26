@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\AttributionMethod;
 use App\Enums\OutcomeType;
+use App\Enums\QueueLane;
 use App\Enums\ReservationStatus;
 use App\Enums\StayStatus;
 use App\Models\Booking;
@@ -41,7 +42,10 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
 
     public function __construct(
         public ?string $hotelId = null,
-    ) {}
+    ) {
+        // Short and not AI work: it must never wait behind a long LLM job (spec 017 FR-020).
+        $this->onQueue(QueueLane::DEFAULT->value);
+    }
 
     public function handle(): void
     {

@@ -47,3 +47,22 @@ jobs:
             php artisan optimize
 
             php artisan queue:restart
+
+      # The new version must answer the full health check (database, queue,
+      # cache) from outside. If it does not within ~25 s, the deploy is marked
+      # failed and GitHub emails the owner. Nothing is rolled back: fix
+      # forward or revert (spec 017 FR-025; atomic releases are post-MVP).
+      - name: Health check
+        env:
+          HEALTH_CHECK_TOKEN: ${{ secrets.HEALTH_CHECK_TOKEN }}
+          API_HEALTH_URL: ${{ secrets.API_HEALTH_URL }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS -o /dev/null -H "X-Health-Token: ${HEALTH_CHECK_TOKEN}" "${API_HEALTH_URL}"; then
+              echo "Healthy after attempt ${attempt}."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The deployed API did not pass its health check."
+          exit 1

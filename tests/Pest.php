@@ -8,27 +8,42 @@ use App\Ai\Tools\AuditedTool;
 use App\Ai\Tools\KnowledgeSearchTool;
 use App\Ai\Tools\PitchActivityTool;
 use App\Ai\Tools\UpdateRecommendationTool;
+use App\Enums\AttributionMethod;
 use App\Enums\BookingOrigin;
 use App\Enums\ChargeModel;
 use App\Enums\ImportStatus;
 use App\Enums\KnowledgeAudience;
+use App\Enums\OutcomeType;
 use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Jobs\EvaluateProactiveTriggersJob;
 use App\Jobs\PrepareReservationImportJob;
 use App\Jobs\WriteReservationImportJob;
 use App\Models\Activity;
+use App\Models\ActivityCategory;
+use App\Models\AiActivity;
+use App\Models\AiInsights;
 use App\Models\Booking;
+use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\GuestMemory;
+use App\Models\GuestMemoryExtraction;
 use App\Models\Hotel;
+use App\Models\HotelPolicy;
+use App\Models\HousekeepingDayRun;
 use App\Models\KnowledgeBaseArticle;
+use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeDocument;
+use App\Models\PitchDecision;
 use App\Models\ProactiveMessage;
 use App\Models\Recommendation;
 use App\Models\RecommendationOutcome;
 use App\Models\Reservation;
+use App\Models\ReservationGuest;
 use App\Models\ReservationImport;
+use App\Models\ReservationImportDraft;
+use App\Models\ReservationImportMapping;
+use App\Models\ReservationImportPreview;
 use App\Models\ReservationImportRow;
 use App\Models\ReservationRoom;
 use App\Models\Room;
@@ -36,12 +51,15 @@ use App\Models\RoomType;
 use App\Models\StaffRole;
 use App\Models\Stay;
 use App\Models\Task;
+use App\Models\TaskCategory;
+use App\Models\Team;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Models\WhatsAppInboundMessage;
 use App\Services\BookingService;
 use App\Services\Pitching\PitchCoordinator;
+use App\Services\RecommendationOutcomeService;
 use App\Services\StayLifecycleService;
 use App\Services\TransactionService;
 use App\Services\WhatsAppMessageService;
@@ -54,8 +72,11 @@ use App\Support\Proactive\ProactiveSettings;
 use App\Support\Reservations\ReservationCreator;
 use App\Support\Tenancy\TenantContext;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -1573,4 +1594,412 @@ function imConfirm($test, User $user, string $previewId, array $body): TestRespo
     return $test->withHeaders(apiHeaders())
         ->actingAs($user, 'sanctum')
         ->postJson("/api/reservation/import-previews/{$previewId}/confirm", $body);
+}
+
+/*
+| Tenant fixtures shared by TenantIsolationTest and CrossTenantRouteTest (spec 017).
+*/
+
+function makeHotel(): Hotel
+{
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create([
+        'owner_id' => $owner->id,
+        'name' => 'Hotel '.uniqid(),
+        'slug' => 'hotel-'.uniqid(),
+        'currency' => 'USD',
+    ]);
+    $owner->update(['hotel_id' => $hotel->id]);
+
+    return $hotel;
+}
+
+/**
+ * One row-factory per tenant-owned model, each producing a row that belongs
+ * to the given hotel. Covers every model using the BelongsToHotel trait —
+ * not just the eight the plan named explicitly, since Team, ActivityCategory,
+ * TaskCategory, Recommendation, KnowledgeChunk, and WhatsAppDevice also carry
+ * a hotel_id and are just as exposed to cross-tenant leakage if unscoped.
+ */
+function tenantOwnedModelFactories(): array
+{
+    return [
+        Guest::class => fn (Hotel $hotel) => Guest::create([
+            'hotel_id' => $hotel->id,
+            'external_id' => 'ext-'.uniqid(),
+            'channel' => 'booking_com',
+        ]),
+        Reservation::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return Reservation::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'reservation_id' => 'RES-'.uniqid(),
+                'arrival_date' => '2026-09-01',
+                'departure_date' => '2026-09-04',
+                'status' => 'confirmed',
+            ]);
+        },
+        ReservationGuest::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+            $reservation = Reservation::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'reservation_id' => 'RES-'.uniqid(),
+                'arrival_date' => '2026-09-01',
+                'departure_date' => '2026-09-04',
+                'status' => 'confirmed',
+            ]);
+
+            return ReservationGuest::create([
+                'hotel_id' => $hotel->id,
+                'reservation_id' => $reservation->id,
+                'guest_id' => $guest->id,
+                'is_primary' => true,
+            ]);
+        },
+        ReservationRoom::class => fn (Hotel $hotel) => createReservationWithRooms($hotel, [[]])
+            ->reservationRooms()->first(),
+        ReservationImport::class => fn (Hotel $hotel) => ReservationImport::create([
+            'hotel_id' => $hotel->id,
+            'file_name' => 'reservations.csv',
+            'status' => 'completed',
+            'date_order' => 'day_first',
+        ]),
+        ReservationImportRow::class => fn (Hotel $hotel) => ReservationImportRow::create([
+            'hotel_id' => $hotel->id,
+            'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'completed', 'date_order' => 'day_first'])->id,
+            'row_number' => 2,
+            'outcome' => 'invalid',
+            'stage' => 'validate',
+        ]),
+        ReservationImportDraft::class => fn (Hotel $hotel) => ReservationImportDraft::create([
+            'hotel_id' => $hotel->id,
+            'reservation_import_id' => ReservationImport::create(['hotel_id' => $hotel->id, 'file_name' => 'r.csv', 'status' => 'running', 'date_order' => 'day_first'])->id,
+            'position' => 2,
+            'payload' => [],
+        ]),
+        ReservationImportPreview::class => fn (Hotel $hotel) => ReservationImportPreview::create([
+            'hotel_id' => $hotel->id,
+            'file_name' => 'r.csv',
+            'file_path' => "reservation-import-previews/{$hotel->id}/r.csv",
+            'expires_at' => now()->addDay(),
+        ]),
+        ReservationImportMapping::class => fn (Hotel $hotel) => ReservationImportMapping::create([
+            'hotel_id' => $hotel->id,
+            'header_row' => 1,
+            'columns' => ['arrival' => 'arrival_date'],
+        ]),
+        Room::class => fn (Hotel $hotel) => Room::create([
+            'hotel_id' => $hotel->id,
+            'room_type_id' => roomTypeIdFor($hotel),
+            'room_number' => '101',
+        ]),
+        Stay::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return Stay::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'planned_arrival_date' => '2026-09-01',
+                'planned_departure_date' => '2026-09-04',
+            ]);
+        },
+        // Pitch decisions quote the guest's own words, so another hotel
+        // seeing them is a privacy leak as well as a tenancy one.
+        PitchDecision::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return PitchDecision::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'eligible' => false,
+                'gates' => [],
+                'opening_quote' => 'what can we do tonight',
+                'rules_version' => '1.0',
+                'decided_at' => now(),
+            ]);
+        },
+        ActivityCategory::class => fn (Hotel $hotel) => ActivityCategory::create([
+            'hotel_id' => $hotel->id,
+            'name' => 'Category',
+        ]),
+        Activity::class => fn (Hotel $hotel) => Activity::create([
+            'hotel_id' => $hotel->id,
+            'name' => 'Diving',
+            'price' => 10,
+        ]),
+        Task::class => fn (Hotel $hotel) => Task::create([
+            'hotel_id' => $hotel->id,
+            'title' => 'Clean room',
+        ]),
+        AiInsights::class => fn (Hotel $hotel) => AiInsights::create([
+            'hotel_id' => $hotel->id,
+            'title' => 'Insight',
+            'description' => 'Description',
+            'category' => 'general',
+            'insight_type' => 'general',
+        ]),
+        KnowledgeBaseArticle::class => fn (Hotel $hotel) => KnowledgeBaseArticle::create([
+            'hotel_id' => $hotel->id,
+            'title' => 'Article',
+            'content' => 'Content',
+        ]),
+        HotelPolicy::class => fn (Hotel $hotel) => HotelPolicy::create([
+            'hotel_id' => $hotel->id,
+            'title' => 'Policy',
+            'content' => 'Content',
+        ]),
+        TaskCategory::class => fn (Hotel $hotel) => TaskCategory::create([
+            'hotel_id' => $hotel->id,
+            'name' => 'Housekeeping',
+        ]),
+        Team::class => fn (Hotel $hotel) => Team::create([
+            'hotel_id' => $hotel->id,
+            'name' => 'Team '.uniqid(),
+        ]),
+        Recommendation::class => function (Hotel $hotel) {
+            $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10]);
+
+            return Recommendation::create([
+                'hotel_id' => $hotel->id,
+                'activity_id' => $activity->id,
+            ]);
+        },
+        Transaction::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return Transaction::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'item_name' => 'Dive trip',
+                'line_total' => 120,
+                'currency' => 'USD',
+                'transacted_at' => '2026-09-01 12:00:00',
+                'business_date' => '2026-09-01',
+                'source_system' => 'import',
+                'external_reference' => 'ext-'.uniqid(),
+            ]);
+        },
+        Booking::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return app(BookingService::class)->create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'item_name' => 'Sunset dive',
+                'charge_model' => 'pay_on_site',
+                'origin' => 'guest_request',
+            ]);
+        },
+        RecommendationOutcome::class => function (Hotel $hotel) {
+            $activity = Activity::create(['hotel_id' => $hotel->id, 'name' => 'Diving', 'price' => 10]);
+            $recommendation = Recommendation::create([
+                'hotel_id' => $hotel->id,
+                'activity_id' => $activity->id,
+            ]);
+
+            return app(RecommendationOutcomeService::class)->record(
+                $recommendation,
+                OutcomeType::DELIVERED,
+                AttributionMethod::STAFF,
+            );
+        },
+        EventLog::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return EventLog::create([
+                'hotel_id' => $hotel->id,
+                'event_type' => 'guest.created',
+                'subject_type' => $guest->getMorphClass(),
+                'subject_id' => $guest->id,
+                'actor_kind' => 'system',
+                'occurred_at' => now(),
+            ]);
+        },
+        KnowledgeChunk::class => function (Hotel $hotel) {
+            $policy = HotelPolicy::create(['hotel_id' => $hotel->id, 'title' => 'Policy', 'content' => 'Content']);
+
+            return KnowledgeChunk::create([
+                'chunkable_type' => HotelPolicy::class,
+                'chunkable_id' => $policy->id,
+                'hotel_id' => $hotel->id,
+                'content' => 'Chunk content',
+                'embedding' => array_fill(0, 1536, 0.0),
+            ]);
+        },
+        KnowledgeDocument::class => fn (Hotel $hotel) => KnowledgeDocument::create([
+            'hotel_id' => $hotel->id,
+            'title' => 'House Rules',
+            'original_filename' => 'rules.pdf',
+            'path' => 'knowledge/'.$hotel->id.'/doc/rules.pdf',
+            'mime_type' => 'application/pdf',
+            'size' => 10,
+            'content_hash' => hash('sha256', uniqid()),
+        ]),
+        ProactiveMessage::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return tap((new ProactiveMessage)->forceFill([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $guest->id,
+                'trigger' => 'first_morning',
+                'event_key' => 'first_morning:'.uniqid(),
+                'status' => 'scheduled',
+                'due_at' => now(),
+                'valid_until' => now()->addHours(3),
+            ]))->save();
+        },
+        AiActivity::class => fn (Hotel $hotel) => AiActivity::create([
+            'hotel_id' => $hotel->id,
+            'category' => 'ai_run',
+            'agent' => 'concierge',
+            'action' => 'run.completed',
+            'result' => 'succeeded',
+            'occurred_at' => now(),
+        ]),
+        GuestMemory::class => function (Hotel $hotel) {
+            $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com']);
+
+            return cmaMemory($guest);
+        },
+        GuestMemoryExtraction::class => function (Hotel $hotel) {
+            $reservation = Reservation::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-'.uniqid(), 'channel' => 'booking_com'])->id,
+                'reservation_id' => 'RES-'.uniqid(),
+                'arrival_date' => now()->toDateString(),
+                'departure_date' => now()->addDay()->toDateString(),
+                'status' => 'confirmed',
+            ]);
+
+            return GuestMemoryExtraction::create([
+                'hotel_id' => $hotel->id,
+                'guest_id' => $reservation->guest_id,
+                'reservation_id' => $reservation->id,
+                'status' => 'extracted',
+            ]);
+        },
+        RoomType::class => fn (Hotel $hotel) => avType($hotel, 'Type '.uniqid()),
+        StaffRole::class => fn (Hotel $hotel) => StaffRole::create([
+            'hotel_id' => $hotel->id,
+            'name' => 'Role '.uniqid(),
+            'permissions' => [],
+        ]),
+        HousekeepingDayRun::class => fn (Hotel $hotel) => HousekeepingDayRun::create([
+            'hotel_id' => $hotel->id,
+            'day' => now()->toDateString(),
+            'rooms_dirtied' => 0,
+            'tasks_created' => 0,
+        ]),
+        WhatsAppDevice::class => function (Hotel $hotel) {
+            $user = User::factory()->role(UserRole::EMPLOYEE)->create();
+
+            return WhatsAppDevice::create([
+                'user_id' => $user->id,
+                'hotel_id' => $hotel->id,
+                'wa_user_id' => 'wa-'.uniqid(),
+                'phone_number' => '2010'.random_int(1000000, 9999999),
+                'status' => 'active',
+            ]);
+        },
+    ];
+}
+
+/*
+| Which generic cross-tenant rule (spec 017, research R2) can drive a route:
+| 'super_admin' (routes/admin.php: a hotel admin is refused),
+| 'index' (GET, no parameters), 'bound' (every route parameter binds to a
+| tenant-owned model), 'foreign_key' (POST/PUT/PATCH with no parameters whose
+| form request names a tenant model by *_id), or null when none can — those
+| routes are listed in tests/Inventory/entry_points.php with their own test.
+*/
+function crossTenantRuleFor(Route $route, string $method): ?string
+{
+    if ($route->uri() === 'api/whatsapp') {
+        return null;
+    }
+
+    // routes/admin.php is cross-account by design; what matters is that a
+    // hotel admin can never reach it.
+    if (in_array('super_admin', $route->gatherMiddleware(), true)) {
+        return 'super_admin';
+    }
+
+    $parameters = $route->parameterNames();
+
+    if ($parameters === []) {
+        if ($method === 'GET') {
+            return 'index';
+        }
+
+        return in_array($method, ['POST', 'PUT', 'PATCH'], true) && crossTenantForeignKeys($route) !== []
+            ? 'foreign_key'
+            : null;
+    }
+
+    return count(crossTenantBoundModels($route)) === count($parameters) ? 'bound' : null;
+}
+
+/**
+ * Route parameter name => tenant-owned model class, for parameters bound to
+ * a model that tenantOwnedModelFactories() can build.
+ *
+ * @return array<string, class-string>
+ */
+function crossTenantBoundModels(Route $route): array
+{
+    $factories = tenantOwnedModelFactories();
+    $bound = [];
+
+    // Laravel binds {activity_category} to $activityCategory, so match camel-cased.
+    $names = collect($route->parameterNames())->mapWithKeys(fn (string $name) => [Str::camel($name) => $name]);
+
+    foreach ($route->signatureParameters(['subClass' => Model::class]) as $parameter) {
+        $class = $parameter->getType()?->getName();
+
+        if ($names->has($parameter->getName()) && isset($factories[$class])) {
+            $bound[$names->get($parameter->getName())] = $class;
+        }
+    }
+
+    return $bound;
+}
+
+/**
+ * Request field => tenant-owned model class, for top-level *_id rules in the
+ * route's form request (guest_id → Guest, room_type_id → RoomType, …).
+ *
+ * @return array<string, class-string>
+ */
+function crossTenantForeignKeys(Route $route): array
+{
+    $factories = tenantOwnedModelFactories();
+    $keys = [];
+
+    foreach ($route->signatureParameters(['subClass' => FormRequest::class]) as $parameter) {
+        try {
+            // rules() may read the route or the request, so give it a stub
+            // request bound to this route rather than resolving it bare.
+            $class = $parameter->getType()->getName();
+            $request = $class::createFrom(Illuminate\Http\Request::create('/'.$route->uri(), 'POST'));
+            $request->setContainer(app())->setRouteResolver(fn () => $route);
+            $rules = $request->rules();
+        } catch (Throwable) {
+            continue;
+        }
+
+        foreach (array_keys($rules) as $field) {
+            if (preg_match('/^([a-z_]+)_id$/', $field, $match)) {
+                $class = 'App\\Models\\'.Str::studly($match[1]);
+
+                if (isset($factories[$class])) {
+                    $keys[$field] = $class;
+                }
+            }
+        }
+    }
+
+    return $keys;
 }

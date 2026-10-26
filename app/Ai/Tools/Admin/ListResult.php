@@ -18,11 +18,12 @@ class ListResult
     public const MAX = 50;
 
     /**
-     * Count the query, take at most $limit rows, map each one, and encode.
+     * Count the query, take at most $limit rows after $offset, map each one,
+     * and encode.
      */
-    public static function fromQuery(Builder $query, int $limit, Closure $map): string
+    public static function fromQuery(Builder $query, int $limit, Closure $map, int $offset = 0): string
     {
-        return self::encode(self::queryPayload($query, $limit, $map));
+        return self::encode(self::queryPayload($query, $limit, $map, $offset));
     }
 
     /**
@@ -38,11 +39,11 @@ class ListResult
      *
      * @return array{total: int, returned: int, partial: bool, items: array<int, mixed>}
      */
-    public static function queryPayload(Builder $query, int $limit, Closure $map): array
+    public static function queryPayload(Builder $query, int $limit, Closure $map, int $offset = 0): array
     {
         $total = (clone $query)->count();
 
-        return self::payload($total, $query->limit($limit)->get()->map($map)->values());
+        return self::payload($total, $query->offset($offset)->limit($limit)->get()->map($map)->values(), $offset);
     }
 
     /**
@@ -68,12 +69,12 @@ class ListResult
     /**
      * @return array{total: int, returned: int, partial: bool, items: array<int, mixed>}
      */
-    private static function payload(int $total, Collection $items): array
+    private static function payload(int $total, Collection $items, int $offset = 0): array
     {
         return [
             'total' => $total,
             'returned' => $items->count(),
-            'partial' => $items->count() < $total,
+            'partial' => $offset > 0 || $items->count() < $total,
             'items' => $items->all(),
         ];
     }

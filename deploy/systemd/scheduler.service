@@ -1,0 +1,17 @@
+# Runs the Laravel scheduler (routes/console.php), including the lane wait
+# check, which runs here rather than in a lane so a stuck lane cannot hide
+# itself (spec 017, research R9, FR-031).
+[Unit]
+Description=Laravel scheduler
+After=network.target postgresql.service
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/var/www/api-hospitality
+ExecStart=/usr/bin/php /var/www/api-hospitality/artisan schedule:work
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

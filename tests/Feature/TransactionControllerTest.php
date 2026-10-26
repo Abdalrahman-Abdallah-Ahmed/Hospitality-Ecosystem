@@ -72,7 +72,7 @@ it('forbids showing another hotel transaction', function () {
     // rejects a cross-hotel id — a 403, not a 404.
     $this->withHeaders(txnCtrlApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson("/api/transaction/{$theirs->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 });
 
 it('reverses a transaction through the endpoint', function () {

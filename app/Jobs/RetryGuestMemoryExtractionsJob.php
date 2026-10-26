@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\GuestMemoryExtractionStatus;
+use App\Enums\QueueLane;
 use App\Models\GuestMemoryExtraction;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -16,6 +17,12 @@ use Illuminate\Foundation\Queue\Queueable;
 class RetryGuestMemoryExtractionsJob implements ShouldQueue
 {
     use Queueable;
+
+    public function __construct()
+    {
+        // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
+        $this->onQueue(QueueLane::AI_BATCH->value);
+    }
 
     public function handle(): void
     {

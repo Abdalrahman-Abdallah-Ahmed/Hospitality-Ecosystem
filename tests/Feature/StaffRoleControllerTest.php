@@ -204,13 +204,13 @@ it('does not let an admin reach another hotel staff role', function () {
     $role = staffRoleFor($otherHotel);
 
     $this->withHeaders(staffRoleApiHeaders())->actingAs($admin, 'sanctum')
-        ->getJson("/api/staff-roles/{$role->id}")->assertForbidden();
+        ->getJson("/api/staff-roles/{$role->id}")->assertNotFound();
 
     $this->withHeaders(staffRoleApiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/staff-roles/{$role->id}", ['permissions' => Permission::cases()])->assertForbidden();
+        ->putJson("/api/staff-roles/{$role->id}", ['permissions' => Permission::cases()])->assertNotFound();
 
     $this->withHeaders(staffRoleApiHeaders())->actingAs($admin, 'sanctum')
-        ->deleteJson("/api/staff-roles/{$role->id}")->assertForbidden();
+        ->deleteJson("/api/staff-roles/{$role->id}")->assertNotFound();
 
     expect($role->fresh()->grantedPermissions())->toBe([Permission::GUESTS_VIEW]);
 });

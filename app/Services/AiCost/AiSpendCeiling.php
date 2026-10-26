@@ -6,6 +6,7 @@ use App\Enums\AiTriggerKind;
 use App\Exceptions\AiSpendCeilingExceededException;
 use App\Models\AiUsageLog;
 use App\Models\HotelGroup;
+use App\Support\Observability\PlatformAlerts;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -98,6 +99,20 @@ class AiSpendCeiling
             'spent_today_usd' => $spentToday,
             'ceiling_usd' => $ceiling,
         ]);
+
+        // A log line nobody watches is not an alert: tell the platform owner,
+        // once per account, scope and day (spec 017 FR-028).
+        PlatformAlerts::send(
+            "alert:spend-ceiling:{$account->getKey()}:{$scope}:".now()->toDateString(),
+            24 * 60,
+            "[Ops] AI spend ceiling reached: {$account->name}",
+            [
+                "{$account->name} reached its daily {$scope} AI spend ceiling; further AI calls of this kind are stopped for today.",
+                'Account id: '.$account->getKey().'.',
+                'Spent today: $'.number_format($spentToday, 2).' of a $'.number_format($ceiling, 2).' ceiling.',
+                'Time: '.now()->toDateTimeString().'.',
+            ],
+        );
 
         throw new AiSpendCeilingExceededException($account, $spentToday, $ceiling);
     }

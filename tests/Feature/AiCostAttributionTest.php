@@ -20,13 +20,16 @@ use App\Models\Hotel;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\User;
 use App\Models\WhatsAppInboundMessage;
+use App\Notifications\PlatformAlertNotification;
 use App\Services\AiCost\AiCostRecorder;
 use App\Services\Metering\MeteringService;
 use App\Services\WhatsAppMessageService;
 use App\Support\Ai\AiCostContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -727,4 +730,23 @@ it('backfills the capability of existing calls from their run, then from their a
     expect($capability($fromRun))->toBe('guest_memory')
         ->and($capability($fromClass))->toBe('concierge')
         ->and($capability($orphan))->toBe('unattributed');
+});
+
+it('alerts the platform owner once a day when an account reaches its ceiling (spec 017)', function () {
+    Notification::fake();
+    config(['ops.alert_email' => 'ops@example.test', 'ai_cost.daily_ceiling_usd' => 10.00]);
+    $hotel = costHotel();
+
+    logCall($hotel, AiTriggerKind::GUEST_MESSAGE, ['inputTokens' => 12_000_000]);
+
+    foreach ([1, 2] as $attempt) {
+        expect(fn () => AiCostContext::for(kind: AiTriggerKind::STAFF_REQUEST, hotel: $hotel, callback: fn () => 'no'))
+            ->toThrow(AiSpendCeilingExceededException::class);
+    }
+
+    $sent = Notification::sent(new AnonymousNotifiable, PlatformAlertNotification::class);
+
+    expect($sent)->toHaveCount(1)
+        ->and($sent->first()->subject)->toStartWith('[Ops] AI spend ceiling reached:')
+        ->and(implode(' ', $sent->first()->lines))->toContain('$12.00 of a $10.00 ceiling');
 });

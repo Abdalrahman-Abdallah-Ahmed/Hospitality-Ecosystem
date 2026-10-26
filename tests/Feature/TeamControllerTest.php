@@ -104,7 +104,7 @@ it('rejects an admin updating a team belonging to a different hotel', function (
 
     $this->withHeaders(teamApiHeaders())->actingAs($stranger, 'sanctum')
         ->putJson("/api/team/{$team->id}", ['name' => 'Hijacked'])
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect($team->fresh()->name)->not->toBe('Hijacked');
 });
@@ -157,7 +157,7 @@ it('rejects an admin from adding a member to a team belonging to a different hot
 
     $this->withHeaders(teamApiHeaders())->actingAs($stranger, 'sanctum')
         ->postJson("/api/team/{$team->id}/members", ['user_id' => $staff->id])
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect($staff->fresh()->team_id)->not->toBe($team->id);
 });

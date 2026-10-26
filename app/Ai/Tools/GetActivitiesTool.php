@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools;
 
+use App\Ai\Tools\Admin\ListResult;
 use App\Ai\Tools\Contracts\ReadsData;
 use App\Models\Activity;
 use App\Models\Hotel;
@@ -26,7 +27,8 @@ class GetActivitiesTool implements ReadsData, Tool
     public function description(): Stringable|string
     {
         return 'Retrieve the activities offered by the current hotel, including each activity\'s category, name, description, price, and when it can be done: available_from/available_until bound the season, operating_hours lists the time slots per weekday in the hotel\'s local time (a missing weekday means closed that day), and unavailable_periods lists date ranges when it is closed. A null value means no restriction. '
-            .'Pass a date (or a from/to range of at most '.ActivityAvailabilityService::AI_MAX_RANGE_DAYS.' days) to get live availability for those dates: whether each activity is open, why not, its time windows, and how many places remain. Always check a date this way before offering or booking an activity; never promise a place it did not confirm.';
+            .'Pass a date (or a from/to range of at most '.ActivityAvailabilityService::AI_MAX_RANGE_DAYS.' days) to get live availability for those dates: whether each activity is open, why not, its time windows, and how many places remain. Always check a date this way before offering or booking an activity; never promise a place it did not confirm. '
+            .'At most '.ListResult::MAX.' activities come back at once, by name. When partial is true, pass search to find a named activity or category, or offset to read the next page; never say the hotel lacks an activity you have not seen.';
     }
 
     /**
@@ -42,36 +44,48 @@ class GetActivitiesTool implements ReadsData, Tool
 
         $availability = app(ActivityAvailabilityService::class);
 
-        $activities = Activity::where('hotel_id', $this->hotel->id)
+        $search = trim($request->string('search')->toString());
+        $like = '%'.addcslashes($search, '%_\\').'%';
+
+        $query = Activity::where('hotel_id', $this->hotel->id)
             ->active()
             ->with('category')
-            ->get()
-            ->map(function (Activity $activity) use ($range, $availability) {
-                $row = [
-                    'id' => $activity->id,
-                    'category' => $activity->category?->name,
-                    'name' => $activity->name,
-                    'description' => $activity->description,
-                    'price' => $activity->price,
-                    'currency' => $activity->currency,
-                    'available_from' => $activity->available_from?->toDateString(),
-                    'available_until' => $activity->available_until?->toDateString(),
-                    'operating_hours' => $activity->operating_hours,
-                    'unavailable_periods' => $activity->unavailable_periods,
-                ];
+            ->when($search !== '', fn ($query) => $query->where(fn ($query) => $query
+                ->where('name', 'ilike', $like)
+                ->orWhere('description', 'ilike', $like)
+                ->orWhereHas('category', fn ($query) => $query->where('name', 'ilike', $like))))
+            ->orderBy('name')
+            ->orderBy('id');
 
-                if ($range !== null) {
-                    $row['availability'] = array_map(
-                        fn (DayAvailability $day) => $this->day($day),
-                        $availability->range($activity, $range[0], $range[1]),
-                    );
-                }
+        // Bounded, and says when there is more (spec 017 FR-019): a large
+        // catalogue would otherwise cost an availability calculation per
+        // activity and flood the model's context. search and offset reach
+        // the rest.
+        $offset = max(0, (int) ($request['offset'] ?? 0));
 
-                return $row;
-            })
-            ->values();
+        return ListResult::fromQuery($query, ListResult::MAX, function (Activity $activity) use ($range, $availability) {
+            $row = [
+                'id' => $activity->id,
+                'category' => $activity->category?->name,
+                'name' => $activity->name,
+                'description' => $activity->description,
+                'price' => $activity->price,
+                'currency' => $activity->currency,
+                'available_from' => $activity->available_from?->toDateString(),
+                'available_until' => $activity->available_until?->toDateString(),
+                'operating_hours' => $activity->operating_hours,
+                'unavailable_periods' => $activity->unavailable_periods,
+            ];
 
-        return json_encode($activities);
+            if ($range !== null) {
+                $row['availability'] = array_map(
+                    fn (DayAvailability $day) => $this->day($day),
+                    $availability->range($activity, $range[0], $range[1]),
+                );
+            }
+
+            return $row;
+        }, $offset);
     }
 
     /**
@@ -80,6 +94,10 @@ class GetActivitiesTool implements ReadsData, Tool
     public function schema(JsonSchema $schema): array
     {
         return [
+            'search' => $schema->string()
+                ->description('Part of an activity\'s name, description or category, to find it in a large catalogue.'),
+            'offset' => $schema->integer()
+                ->description('How many activities to skip, to read past the first '.ListResult::MAX.'.'),
             'date' => $schema->string()
                 ->description('A single date (YYYY-MM-DD, hotel local) to get live availability for.'),
             'from' => $schema->string()

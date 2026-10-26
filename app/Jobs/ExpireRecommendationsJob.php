@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\QueueLane;
 use App\Enums\RecommendationStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\StayStatus;
@@ -26,6 +27,12 @@ use Illuminate\Foundation\Queue\Queueable;
 class ExpireRecommendationsJob implements ShouldQueue
 {
     use Queueable;
+
+    public function __construct()
+    {
+        // Short and not AI work: it must never wait behind a long LLM job (spec 017 FR-020).
+        $this->onQueue(QueueLane::DEFAULT->value);
+    }
 
     public function handle(): void
     {

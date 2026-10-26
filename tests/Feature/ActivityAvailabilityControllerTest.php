@@ -93,7 +93,7 @@ it('hides another hotel activity', function () {
     $hotel = avHotel();
     $theirs = abCalendarActivity(avHotel());
 
-    abAvailability($this, User::find($hotel->owner_id), $theirs, 'from=2026-10-09')->assertForbidden();
+    abAvailability($this, User::find($hotel->owner_id), $theirs, 'from=2026-10-09')->assertNotFound();
 });
 
 it('needs the activities view permission', function () {
@@ -112,17 +112,29 @@ it('gives the concierge the same availability as the calendar', function () {
     $tool = json_decode((string) (new GetActivitiesTool($hotel))->handle(new Request(['from' => '2026-10-08', 'to' => '2026-10-16'])), true);
     $calendar = abAvailability($this, User::find($hotel->owner_id), $activity, 'from=2026-10-08&to=2026-10-16')->json('body.days');
 
-    $toolDays = collect($tool[0]['availability'])->keyBy('date');
+    $toolDays = collect($tool['items'][0]['availability'])->keyBy('date');
 
     foreach ($calendar as $day) {
         expect($toolDays[$day['date']]['remaining'])->toBe(max(0, $day['remaining']))
             ->and($toolDays[$day['date']]['open'])->toBe($day['open'] && $day['remaining'] > 0);
     }
 
-    // No date asked: the listing is as it always was.
+    // No date asked: the listing carries no availability.
     $plain = json_decode((string) (new GetActivitiesTool($hotel))->handle(new Request([])), true);
 
-    expect($plain[0])->not->toHaveKey('availability')
+    expect($plain['items'][0])->not->toHaveKey('availability')
         ->and((string) (new GetActivitiesTool($hotel))->handle(new Request(['from' => '2026-10-01', 'to' => '2026-10-30'])))
         ->toContain('at most 14 days');
+});
+
+it('lets the concierge reach activities past the first page', function () {
+    $hotel = avHotel();
+    abActivity($hotel, ['name' => 'Kayaking']);
+    abActivity($hotel, ['name' => 'Yoga at dawn']);
+
+    $tool = fn (array $input) => json_decode((string) (new GetActivitiesTool($hotel))->handle(new Request($input)), true);
+
+    expect(collect($tool(['search' => 'yoga'])['items'])->pluck('name')->all())->toBe(['Yoga at dawn'])
+        ->and($tool(['offset' => 1]))->toMatchArray(['total' => 2, 'returned' => 1, 'partial' => true])
+        ->and($tool(['offset' => 1])['items'][0]['name'])->toBe('Yoga at dawn');
 });

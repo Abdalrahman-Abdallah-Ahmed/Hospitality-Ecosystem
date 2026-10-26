@@ -9,7 +9,9 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
+use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -41,9 +43,20 @@ return Application::configure(basePath: dirname(__DIR__))
             'super_admin' => EnsureSuperAdmin::class,
             'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
         ]);
+
+        // Resolve the tenant before route-model binding, so a bound record
+        // is looked up under the hotel scope: another hotel's id is simply
+        // not found (404), instead of being loaded, validated and then
+        // refused by the policy (spec 017 FR-005).
+        $middleware->prependToPriorityList(SubstituteBindings::class, ResolveTenant::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        // Unhandled errors go to Sentry once each, scrubbed (spec 017 FR-027).
+        // With no DSN configured Sentry is off and this does nothing.
+        $exceptions->dontReportDuplicates();
+        Integration::handles($exceptions);
     })->create();

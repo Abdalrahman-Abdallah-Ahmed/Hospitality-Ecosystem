@@ -50,7 +50,7 @@ it('does not show another hotel task category', function () {
 
     $this->withHeaders(taskCategoryApiHeaders())->actingAs($adminA, 'sanctum')
         ->getJson("/api/task-category/{$category->id}")
-        ->assertForbidden();
+        ->assertNotFound();
 });
 
 it('does not show a task category to an employee', function () {

@@ -200,7 +200,7 @@ it('blocks an employee from recording an outcome for another hotel', function ()
 
     $this->withHeaders(wp5Headers())->actingAs($outsider, 'sanctum')
         ->postJson("/api/recommendation/{$recommendation->id}/outcome", ['outcome' => 'delivered'])
-        ->assertStatus(403);
+        ->assertStatus(404);
 });
 
 // --- integrity -----------------------------------------------------------

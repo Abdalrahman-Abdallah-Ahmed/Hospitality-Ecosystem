@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\ImportRowOutcome;
 use App\Enums\ImportStatus;
+use App\Enums\QueueLane;
 use App\Models\Hotel;
 use App\Models\ReservationImport;
 use App\Models\ReservationImportDraft;
@@ -44,10 +45,15 @@ class WriteReservationImportJob implements ShouldQueue
     /** @var list<int> */
     public array $backoff = [30, 120];
 
-    public function __construct(public string $importId) {}
+    public function __construct(public string $importId)
+    {
+        // Imports run in their own lane, one at a time (spec 017 FR-020).
+        $this->onQueue(QueueLane::IMPORTS->value);
+    }
 
     public function handle(ReservationImportWriter $writer, ImportOutcomeRecorder $recorder, ReservationImportCompleter $completer): void
     {
+        // Unscoped on purpose: found by id before its hotel is known; the work itself runs in runForHotel.
         $import = TenantContext::withoutScope(fn () => ReservationImport::find($this->importId));
         if (! $import || $import->status !== ImportStatus::RUNNING) {
             return;
@@ -124,6 +130,7 @@ class WriteReservationImportJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
+        // Unscoped on purpose: failed() runs outside handle(), with no hotel context.
         TenantContext::withoutScope(function () use ($exception) {
             $import = ReservationImport::find($this->importId);
             if (! $import || $import->isFinished()) {

@@ -370,7 +370,7 @@ it('lets an employee list and view their own hotel guests for the booking form',
 
     $this->withHeaders(guestApiHeaders())->actingAs($employee, 'sanctum')
         ->getJson("/api/guest/{$other->id}")
-        ->assertForbidden();
+        ->assertNotFound();
 });
 
 it('does not let an employee change guests', function () {

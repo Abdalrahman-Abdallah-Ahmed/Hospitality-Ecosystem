@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\QueueLane;
 use App\Services\WhatsAppMessageService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -24,7 +25,10 @@ class SendWhatsAppMessageJob implements ShouldQueue
     public function __construct(
         public string $phoneNumber,
         public string $text,
-    ) {}
+    ) {
+        // A guest is waiting on the other end (spec 017 FR-020).
+        $this->onQueue(QueueLane::REALTIME->value);
+    }
 
     public function handle(WhatsAppMessageService $whatsApp): void
     {

@@ -10,13 +10,16 @@ class DatabaseSeeder extends Seeder
     use WithoutModelEvents;
 
     /**
-     * Seed the application's database.
+     * Seed the application's database: the platform always, the demo hotel
+     * only in local and testing or when SEED_DEMO=true (spec 017 FR-030).
      */
     public function run(): void
     {
         $this->call(AiModelPriceSeeder::class);
-        $this->call(HospitalitySeeder::class);
-        $this->call(KnowledgeBaseSeeder::class);
-        $this->call(GuestReservationSeeder::class);
+        $this->call(PlatformSeeder::class);
+
+        if (app()->environment('local', 'testing') || config('seeding.demo')) {
+            $this->call(DemoSeeder::class);
+        }
     }
 }

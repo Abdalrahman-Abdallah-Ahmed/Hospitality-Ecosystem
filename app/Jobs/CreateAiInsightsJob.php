@@ -10,6 +10,7 @@ use App\Enums\AiTriggerKind;
 use App\Enums\EvidenceLevel;
 use App\Enums\InsightTypes;
 use App\Enums\MeterFeature;
+use App\Enums\QueueLane;
 use App\Models\AiInsights;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -44,6 +45,9 @@ class CreateAiInsightsJob implements ShouldQueue
     public function __construct(
         public array $data,
     ) {
+        // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
+        $this->onQueue(QueueLane::AI_BATCH->value);
+
         $this->meterKey = 'ai-insights:'.Str::uuid7();
     }
 

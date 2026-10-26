@@ -9,6 +9,7 @@ use App\Enums\PitchOpening;
 use App\Enums\PitchResult;
 use App\Enums\ProactiveMessageStatus;
 use App\Enums\ProactiveSkipReason;
+use App\Enums\QueueLane;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\PitchDecision;
@@ -54,7 +55,11 @@ class SendProactiveMessageJob implements ShouldQueue
 
     public int $timeout = 120;
 
-    public function __construct(public string $messageId) {}
+    public function __construct(public string $messageId)
+    {
+        // A guest is waiting on the other end (spec 017 FR-020).
+        $this->onQueue(QueueLane::REALTIME->value);
+    }
 
     public function handle(
         WhatsAppMessageService $whatsApp,

@@ -270,7 +270,7 @@ it('rejects an admin viewing a reservation belonging to a different hotel', func
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->getJson("/api/reservation/{$reservation->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 });
 
 // update
@@ -296,7 +296,7 @@ it('rejects an admin updating a reservation belonging to a different hotel', fun
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->putJson("/api/reservation/{$reservation->id}", ['adults' => 5])
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect($reservation->fresh()->adults)->toBe(1);
 });
@@ -369,7 +369,7 @@ it('rejects an admin deleting a reservation belonging to a different hotel', fun
 
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
         ->deleteJson("/api/reservation/{$reservation->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect(Reservation::withoutGlobalScope('hotel')->find($reservation->id))->not->toBeNull();
 });

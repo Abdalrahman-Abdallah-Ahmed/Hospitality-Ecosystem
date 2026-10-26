@@ -62,5 +62,5 @@ it('keeps one hotel out of another hotel\'s log', function () {
     $rowB = logRow($hotelB, $guestB);
 
     expect(rapRequest($this, rapAdmin($hotelA), 'GET', '/api/proactive-messages')->json('body.data'))->toBe([]);
-    rapRequest($this, rapAdmin($hotelA), 'GET', "/api/proactive-messages/{$rowB->id}")->assertForbidden();
+    rapRequest($this, rapAdmin($hotelA), 'GET', "/api/proactive-messages/{$rowB->id}")->assertNotFound();
 });

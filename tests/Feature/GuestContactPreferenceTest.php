@@ -49,7 +49,7 @@ it('keeps another hotel out of a guest\'s contact preference', function () {
     $hotelB = rapHotel();
     [$guestB] = rapInHouseStay($hotelB);
 
-    rapRequest($this, rapAdmin($hotelA), 'PUT', "/api/guest/{$guestB->id}/contact-preference", ['proactive_opted_out' => true])->assertForbidden();
+    rapRequest($this, rapAdmin($hotelA), 'PUT', "/api/guest/{$guestB->id}/contact-preference", ['proactive_opted_out' => true])->assertNotFound();
 
     expect($guestB->fresh()->proactive_opted_out_at)->toBeNull();
 });

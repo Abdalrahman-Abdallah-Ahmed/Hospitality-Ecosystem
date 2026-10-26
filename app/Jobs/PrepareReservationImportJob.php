@@ -6,6 +6,7 @@ use App\Enums\ImportDecimalMark;
 use App\Enums\ImportRowOutcome;
 use App\Enums\ImportStage;
 use App\Enums\ImportStatus;
+use App\Enums\QueueLane;
 use App\Models\Hotel;
 use App\Models\ReservationImport;
 use App\Support\Import\Reservations\ImportFailed;
@@ -52,7 +53,11 @@ class PrepareReservationImportJob implements ShouldQueue
 
     public bool $failOnTimeout = true;
 
-    public function __construct(public string $importId) {}
+    public function __construct(public string $importId)
+    {
+        // Imports run in their own lane, one at a time (spec 017 FR-020).
+        $this->onQueue(QueueLane::IMPORTS->value);
+    }
 
     public function retryUntil(): CarbonInterface
     {
@@ -61,6 +66,7 @@ class PrepareReservationImportJob implements ShouldQueue
 
     public function handle(ImportFileReader $reader, RowNormalizer $normalizer, RowValidator $validator, ReservationMapper $mapper, ReservationImportResolver $resolver, ImportOutcomeRecorder $recorder, ReservationImportCompleter $completer): void
     {
+        // Unscoped on purpose: found by id before its hotel is known; the work itself runs in runForHotel.
         $import = TenantContext::withoutScope(fn () => ReservationImport::find($this->importId));
         if (! $import || $import->status !== ImportStatus::QUEUED) {
             return;
@@ -72,6 +78,7 @@ class PrepareReservationImportJob implements ShouldQueue
             return;
         }
 
+        // Unscoped on purpose: the claim must see the row whatever context the worker has.
         // Claimed atomically: a redelivered copy of this job finds it running.
         $claimed = TenantContext::withoutScope(fn () => ReservationImport::whereKey($import->id)
             ->where('status', ImportStatus::QUEUED->value)
@@ -151,6 +158,7 @@ class PrepareReservationImportJob implements ShouldQueue
 
     private function waitingBehindAnother(ReservationImport $import): bool
     {
+        // Unscoped, but filtered to this import's own hotel explicitly.
         return TenantContext::withoutScope(fn () => ReservationImport::where('hotel_id', $import->hotel_id)
             ->whereKeyNot($import->id)
             ->whereIn('status', [ImportStatus::QUEUED->value, ImportStatus::RUNNING->value])
@@ -168,6 +176,7 @@ class PrepareReservationImportJob implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
+        // Unscoped on purpose: failed() runs outside handle(), with no hotel context.
         TenantContext::withoutScope(function () use ($exception) {
             $import = ReservationImport::find($this->importId);
             if (! $import || $import->isFinished()) {

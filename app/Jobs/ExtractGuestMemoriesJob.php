@@ -8,6 +8,7 @@ use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\GuestMemoryExtractionStatus;
 use App\Enums\MeterFeature;
+use App\Enums\QueueLane;
 use App\Enums\StayStatus;
 use App\Exceptions\AiSpendCeilingExceededException;
 use App\Models\Guest;
@@ -59,7 +60,10 @@ class ExtractGuestMemoriesJob implements ShouldQueue
         public string $hotelId,
         public string $guestId,
         public string $reservationId,
-    ) {}
+    ) {
+        // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
+        $this->onQueue(QueueLane::AI_BATCH->value);
+    }
 
     public function handle(GuestMemoryService $memories): void
     {

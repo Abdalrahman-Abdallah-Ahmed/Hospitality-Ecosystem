@@ -2,6 +2,7 @@
 
 namespace App\Jobs\AiCost;
 
+use App\Enums\QueueLane;
 use App\Models\AiUsageLog;
 use App\Models\HotelGroup;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,6 +28,12 @@ use Illuminate\Support\Facades\Log;
 class FlagAiCostOverrunsJob implements ShouldQueue
 {
     use Queueable, SerializesModels;
+
+    public function __construct()
+    {
+        // Short and not AI work: it must never wait behind a long LLM job (spec 017 FR-020).
+        $this->onQueue(QueueLane::DEFAULT->value);
+    }
 
     /**
      * @return array<int, array<string, mixed>> the accounts flagged

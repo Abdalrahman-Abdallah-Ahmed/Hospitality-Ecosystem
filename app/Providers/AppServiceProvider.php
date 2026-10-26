@@ -16,6 +16,7 @@ use App\Observers\ProactiveMessageObserver;
 use App\Observers\RecommendationOutcomeObserver;
 use App\Policies\ConversationPolicy;
 use App\Support\Audit\EventLogger;
+use App\Support\Observability\TagsSentryScope;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -72,6 +73,10 @@ class AppServiceProvider extends ServiceProvider
                 EventLogger::noticeModelEvent($payload[0], $verb);
             });
         }
+
+        // Error tags for Sentry (spec 017 FR-027). The repeated-failure
+        // alert, App\Listeners\AlertOnRepeatedJobFailures, is discovered.
+        TagsSentryScope::register();
 
         $this->refuseDebugOutsideLocal();
         $this->recordAiCost();

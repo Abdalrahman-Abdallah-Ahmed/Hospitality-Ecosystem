@@ -55,3 +55,7 @@ Schedule::job(new RetryGuestMemoryExtractionsJob)->hourly()->withoutOverlapping(
 // sends the ones due. Hotels with proactive messaging off are skipped; a
 // message is created at most once per guest and event however often this runs.
 Schedule::job(new EvaluateProactiveTriggersJob)->everyFifteenMinutes()->withoutOverlapping();
+
+// Alerts when a lane's oldest job has waited past its limit (spec 017 FR-028).
+// A scheduler command, not a queued job, so a stuck lane cannot hide itself.
+Schedule::command('queue:check-waits')->everyMinute()->withoutOverlapping();

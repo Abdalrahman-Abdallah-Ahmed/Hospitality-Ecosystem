@@ -51,7 +51,7 @@ it('lets an employee list and view their own hotel activities for the booking fo
 
     $this->withHeaders(activityApiHeaders())->actingAs($employee, 'sanctum')
         ->getJson("/api/activity/{$other->id}")
-        ->assertForbidden();
+        ->assertNotFound();
 });
 
 it('does not let an employee change activities', function () {

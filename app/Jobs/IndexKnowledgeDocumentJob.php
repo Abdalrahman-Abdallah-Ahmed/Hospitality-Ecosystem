@@ -9,6 +9,7 @@ use App\Enums\KnowledgeContentSource;
 use App\Enums\KnowledgeDocumentFailure;
 use App\Enums\KnowledgeDocumentStatus;
 use App\Enums\MeterFeature;
+use App\Enums\QueueLane;
 use App\Exceptions\AiSpendCeilingExceededException;
 use App\Models\KnowledgeDocument;
 use App\Models\KnowledgeIndexRebuild;
@@ -79,7 +80,10 @@ class IndexKnowledgeDocumentJob implements ShouldQueue
         public string $documentId,
         public string $mode = self::MODE_EXTRACT,
         public ?string $rebuildId = null,
-    ) {}
+    ) {
+        // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
+        $this->onQueue(QueueLane::AI_BATCH->value);
+    }
 
     public function retryUntil(): CarbonInterface
     {

@@ -287,13 +287,13 @@ it('does not let a granted permission reach another hotel', function () {
     $otherGuest = guestForPermissions($otherHotel);
 
     $this->withHeaders(permissionApiHeaders())->actingAs($employee, 'sanctum')
-        ->getJson("/api/guest/{$otherGuest->id}")->assertForbidden();
+        ->getJson("/api/guest/{$otherGuest->id}")->assertNotFound();
 
     $this->withHeaders(permissionApiHeaders())->actingAs($employee, 'sanctum')
-        ->putJson("/api/guest/{$otherGuest->id}", ['first_name' => 'Hijacked'])->assertForbidden();
+        ->putJson("/api/guest/{$otherGuest->id}", ['first_name' => 'Hijacked'])->assertNotFound();
 
     $this->withHeaders(permissionApiHeaders())->actingAs($employee, 'sanctum')
-        ->deleteJson("/api/guest/{$otherGuest->id}")->assertForbidden();
+        ->deleteJson("/api/guest/{$otherGuest->id}")->assertNotFound();
 
     $listed = $this->withHeaders(permissionApiHeaders())->actingAs($employee, 'sanctum')
         ->getJson('/api/guest')->assertOk();

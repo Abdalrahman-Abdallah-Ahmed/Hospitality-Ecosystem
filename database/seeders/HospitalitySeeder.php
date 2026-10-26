@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Enums\UserRole;
 use App\Models\Activity;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
@@ -14,13 +13,8 @@ class HospitalitySeeder extends Seeder
 {
     public function run(): void
     {
-        $user = User::factory()->create([
-            'name' => 'Hospitality Admin',
-            'email' => 'admin@hospitality.test',
-            'password' => bcrypt('123123123'),
-            'role' => UserRole::SUPER_ADMIN,
-            'phone_number' => '201151793758',
-        ]);
+        // The demo hotel belongs to the super admin PlatformSeeder created.
+        $user = User::where('email', PlatformSeeder::email())->firstOrFail();
 
         // DatabaseSeeder runs WithoutModelEvents, so Hotel's creating hook —
         // which normally gives a group-less hotel a single-property group of

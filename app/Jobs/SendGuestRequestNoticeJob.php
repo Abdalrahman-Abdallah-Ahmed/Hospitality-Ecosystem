@@ -7,6 +7,7 @@ use App\Enums\GuestNoticeChannel;
 use App\Enums\GuestNoticeReason;
 use App\Enums\GuestNoticeStatus;
 use App\Enums\GuestSignal;
+use App\Enums\QueueLane;
 use App\Enums\TaskStatus;
 use App\Models\Booking;
 use App\Models\Guest;
@@ -68,7 +69,11 @@ class SendGuestRequestNoticeJob implements ShouldQueue
     /** A worker killed mid-send is retried; the stale claim is taken over. */
     public int $tries = 3;
 
-    public function __construct(public string $taskId) {}
+    public function __construct(public string $taskId)
+    {
+        // A guest is waiting on the other end (spec 017 FR-020).
+        $this->onQueue(QueueLane::REALTIME->value);
+    }
 
     public function handle(WhatsAppMessageService $whatsApp): void
     {

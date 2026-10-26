@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Metering;
 
+use App\Enums\QueueLane;
 use App\Services\Metering\MeteringService;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -24,7 +25,10 @@ class RebuildUsageCountersJob implements ShouldQueue
 
     public function __construct(
         public ?CarbonInterface $period = null,
-    ) {}
+    ) {
+        // Short and not AI work: it must never wait behind a long LLM job (spec 017 FR-020).
+        $this->onQueue(QueueLane::DEFAULT->value);
+    }
 
     public function handle(MeteringService $metering): void
     {

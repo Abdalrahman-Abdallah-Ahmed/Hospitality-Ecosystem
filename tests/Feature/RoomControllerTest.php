@@ -194,7 +194,7 @@ it('rejects an admin viewing a room belonging to a different hotel', function ()
 
     $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson("/api/room/{$room->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 });
 
 // update
@@ -219,7 +219,7 @@ it('rejects an admin updating a room belonging to a different hotel', function (
 
     $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
         ->putJson("/api/room/{$room->id}", ['floor' => '9'])
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect($room->fresh()->floor)->not->toBe('9');
 });
@@ -254,7 +254,7 @@ it('rejects an admin deleting a room belonging to a different hotel', function (
 
     $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
         ->deleteJson("/api/room/{$room->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect(Room::withoutGlobalScope('hotel')->find($room->id))->not->toBeNull();
 });

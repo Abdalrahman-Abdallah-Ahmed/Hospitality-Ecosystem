@@ -18,6 +18,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GuestContactPreferenceController;
 use App\Http\Controllers\GuestController;
 use App\Http\Controllers\GuestMemoryController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\HotelController;
 use App\Http\Controllers\HotelPolicyController;
@@ -52,6 +53,10 @@ use Illuminate\Support\Facades\Route;
 Route::get('/whatsapp', [WhatsAppController::class, 'whatsappVerify']);
 Route::post('/whatsapp', [WhatsAppController::class, 'whatsappWebhook'])
     ->middleware('whatsapp.signature');
+
+// Full health check for the deploy and the uptime monitor: its own secret
+// token, outside the API key and login (spec 017 FR-026).
+Route::get('/health', HealthController::class)->middleware('throttle:30,1');
 
 Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore'])->middleware('throttle:register');

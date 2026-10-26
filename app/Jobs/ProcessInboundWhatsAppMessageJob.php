@@ -8,6 +8,7 @@ use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\InboundMessageStatus;
 use App\Enums\MeterFeature;
+use App\Enums\QueueLane;
 use App\Enums\SenderType;
 use App\Exceptions\AiSpendCeilingExceededException;
 use App\Models\Guest;
@@ -87,7 +88,10 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         // Meta's own message timestamp (Unix seconds), so a queue delay does
         // not shift the recorded contact time.
         public ?int $receivedAt = null,
-    ) {}
+    ) {
+        // A guest is waiting on the other end (spec 017 FR-020).
+        $this->onQueue(QueueLane::REALTIME->value);
+    }
 
     /**
      * One message per sender at a time: two quick messages must not race on

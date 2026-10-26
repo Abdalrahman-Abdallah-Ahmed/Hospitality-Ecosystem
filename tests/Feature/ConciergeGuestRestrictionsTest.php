@@ -4,8 +4,11 @@ use App\Ai\Tools\CreateBookingTool;
 use App\Ai\Tools\CreateGuestServiceRequestTool;
 use App\Ai\Tools\EscalateToHumanTool;
 use App\Ai\Tools\GetActivitiesTool;
+use App\Ai\Tools\GetOwnBookingsTool;
 use App\Ai\Tools\GetOwnReservationTool;
+use App\Ai\Tools\RequestBookingCancellationTool;
 use App\Ai\Tools\RequestRoomChangeTool;
+use App\Ai\Tools\SetContactPreferenceTool;
 use App\Enums\ActorKind;
 use App\Models\Booking;
 use App\Models\EventLog;
@@ -190,4 +193,29 @@ it('treats a guest still checked in after the planned departure as current', fun
     expect($result)->toContain('Maintenance request filed')
         ->and($output['is_active'])->toBeTrue()
         ->and(Reservation::activeFor($hotel, $guest)?->id)->toBe($reservation->id);
+});
+
+it('never shows or cancels another guest\'s booking, whatever id the tool is given (spec 017)', function () {
+    [$hotel, $a, $aReservation, $b] = gsTwoGuests();
+    $activity = abActivity($hotel, ['name' => 'Bilal sunset cruise']);
+    $bBooking = abBook($hotel, $activity, now($hotel->timezone)->addDays(2)->toDateString(), 2, ['guest_id' => $b->id]);
+    $before = $bBooking->fresh()->getAttributes();
+
+    $shown = (string) gsRunTool(new GetOwnBookingsTool($hotel, $a));
+    gsRunTool(new RequestBookingCancellationTool($hotel, $a, $aReservation), ['booking_id' => $bBooking->id, 'reason' => 'Changed plans']);
+    gsRunTool(new RequestBookingCancellationTool($hotel, $a, $aReservation), ['booking_reference' => (string) $bBooking->reference, 'reason' => 'Changed plans']);
+
+    expect($shown)->not->toContain('Bilal sunset cruise')
+        ->and($shown)->not->toContain((string) $bBooking->id)
+        ->and($bBooking->fresh()->getAttributes())->toBe($before)
+        ->and(Task::withoutGlobalScope('hotel')->where('guest_id', $a->id)->where('booking_id', $bBooking->id)->exists())->toBeFalse();
+});
+
+it('changes only the guest\'s own contact preference (spec 017)', function () {
+    [, $a, , $b] = gsTwoGuests();
+    $bBefore = $b->fresh()->getAttributes();
+
+    gsRunTool(new SetContactPreferenceTool($a), ['opt_out' => true, 'guest_id' => $b->id]);
+
+    expect($b->fresh()->getAttributes())->toBe($bBefore);
 });

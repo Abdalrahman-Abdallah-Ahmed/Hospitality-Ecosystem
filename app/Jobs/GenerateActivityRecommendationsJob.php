@@ -7,12 +7,14 @@ use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
+use App\Enums\QueueLane;
 use App\Enums\RecommendationSource;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Services\Metering\MeteringService;
 use App\Support\Ai\AiCostContext;
 use App\Support\Audit\EventLogger;
+use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\SerializesModels;
@@ -32,12 +34,23 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
      */
     public function __construct(
         public Reservation $reservation,
-    ) {}
+    ) {
+        // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
+        $this->onQueue(QueueLane::AI_BATCH->value);
+    }
 
     /**
      * Execute the job.
      */
     public function handle(MeteringService $metering): void
+    {
+        // A queue worker has no request behind it, so without this the
+        // agent's tools would read and write with no tenant scope at all
+        // (spec 017, research R3).
+        TenantContext::runForHotel($this->reservation->hotel_id, fn () => $this->generate($metering));
+    }
+
+    private function generate(MeteringService $metering): void
     {
         $this->reservation->loadMissing(['guest', 'hotel']);
 

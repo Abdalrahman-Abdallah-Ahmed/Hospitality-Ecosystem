@@ -6,6 +6,7 @@ use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
+use App\Enums\QueueLane;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeIndexRebuild;
@@ -13,6 +14,7 @@ use App\Services\Metering\MeteringService;
 use App\Support\Ai\AiCostContext;
 use App\Support\Knowledge\ChunkSynchronizer;
 use App\Support\Knowledge\KnowledgeSources;
+use App\Support\Tenancy\TenantContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -37,6 +39,9 @@ class SyncKnowledgeChunksJob implements ShouldQueue
         KnowledgeBaseArticle|HotelPolicy $chunkable,
         public ?string $rebuildId = null,
     ) {
+        // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
+        $this->onQueue(QueueLane::AI_BATCH->value);
+
         $this->chunkableType = $chunkable::class;
         $this->chunkableId = $chunkable->getKey();
     }
@@ -57,6 +62,19 @@ class SyncKnowledgeChunksJob implements ShouldQueue
             return;
         }
 
+        // A hotel's article syncs inside that hotel's scope; a global one has
+        // no hotel to scope to, so it runs unscoped on purpose (spec 017, R3).
+        $sync = fn () => $this->sync($chunkable, $metering);
+
+        $chunkable->hotel_id === null
+            ? TenantContext::withoutScope($sync)
+            : TenantContext::runForHotel($chunkable->hotel_id, $sync);
+
+        $this->reportRebuild(true, $chunkable);
+    }
+
+    private function sync(KnowledgeBaseArticle|HotelPolicy $chunkable, MeteringService $metering): void
+    {
         // Embeddings are pure cost with no visible output, and the easiest
         // line to forget entirely. The context makes them attributable: they
         // are our own work, not something a guest asked for.
@@ -91,8 +109,6 @@ class SyncKnowledgeChunksJob implements ShouldQueue
                 actorKind: ActorKind::SYSTEM,
             ));
         }
-
-        $this->reportRebuild(true, $chunkable);
     }
 
     /**

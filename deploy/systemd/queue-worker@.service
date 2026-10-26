@@ -1,0 +1,30 @@
+# One background worker for one lane (spec 017, research R9).
+#
+# The instance name is <lane>-<n>, e.g. queue-worker@realtime-1. The lane is the
+# instance name without its trailing -<n>. systemd expands both "$" and "%"
+# itself, so each is doubled: "$$" and "%%" reach bash as "$" and "%", and bash
+# receives ${0%-*}, which keeps "ai-batch" whole. A single "$" would be
+# replaced by systemd with nothing, and every worker would read the default
+# queue. Check with: ps aux | grep -o -- "--queue=[a-z-]*"
+#
+# --memory=128   the worker restarts itself above 128 MB (the host has 2 GB)
+# --max-time=3600 and restarts hourly, which also picks up new code
+# --tries=3 --timeout=90  the defaults the earlier single worker used, for jobs
+#                         that set neither; a job's own $tries/$timeout wins
+[Unit]
+Description=Queue worker %i
+After=network.target postgresql.service
+
+[Service]
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/var/www/api-hospitality
+ExecStart=/bin/bash -c 'exec /usr/bin/php /var/www/api-hospitality/artisan queue:work database --queue="$${0%%-*}" --tries=3 --timeout=90 --memory=128 --max-time=3600 --sleep=3' %i
+Restart=always
+RestartSec=5
+# Let a running job finish (up to the 300 s job timeout) on stop/restart.
+TimeoutStopSec=310
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

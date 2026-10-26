@@ -144,7 +144,7 @@ it('rejects an admin updating a policy belonging to a different hotel', function
 
     $this->withHeaders(hotelPolicyApiHeaders())->actingAs($stranger, 'sanctum')
         ->putJson("/api/hotel-policy/{$policy->id}", ['title' => 'Hijacked'])
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect($policy->fresh()->title)->not->toBe('Hijacked');
 });
@@ -182,7 +182,7 @@ it('rejects an admin deleting a policy belonging to a different hotel', function
 
     $this->withHeaders(hotelPolicyApiHeaders())->actingAs($stranger, 'sanctum')
         ->deleteJson("/api/hotel-policy/{$policy->id}")
-        ->assertStatus(403);
+        ->assertStatus(404);
 
     expect(HotelPolicy::withoutGlobalScope('hotel')->find($policy->id))->not->toBeNull();
 });

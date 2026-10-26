@@ -246,3 +246,50 @@ it('leaves out inactive, deleted and unpublished sources', function () {
 
     expect(knSearch($hotel))->toBe('No relevant results found.');
 });
+
+it('still finds the hotel own chunk with fifty other hotels closer to the query (spec 017 FR-017)', function () {
+    $hotel = hotelForKnowledgeSearch();
+    Embeddings::fake(fn ($prompt) => array_fill(0, count($prompt->inputs), tiltedEmbedding(0, 1)));
+
+    // Fifty hotels, twenty chunks each, every one closer to the query than
+    // the hotel's own: a thousand candidates in the way, each in its own
+    // direction so the index graph keeps them apart.
+    foreach (range(0, 49) as $h) {
+        $other = hotelForKnowledgeSearch();
+
+        foreach (range(1, 20) as $c) {
+            KnowledgeChunk::create([
+                'chunkable_type' => 'knowledge_base_article',
+                'chunkable_id' => (string) Str::uuid(),
+                'hotel_id' => $other->id,
+                'category' => 'policy',
+                'content' => "Another hotel's policy {$h}-{$c}",
+                'embedding' => tiltedEmbedding(0.1, $h * 20 + $c),
+            ]);
+        }
+    }
+
+    $article = KnowledgeBaseArticle::withoutEvents(fn () => KnowledgeBaseArticle::create([
+        'hotel_id' => $hotel->id,
+        'title' => 'Checkout',
+        'content' => 'Late checkout is free for returning guests.',
+        'status' => 'published',
+    ]));
+
+    KnowledgeChunk::create([
+        'chunkable_type' => $article->getMorphClass(),
+        'chunkable_id' => $article->id,
+        'hotel_id' => $hotel->id,
+        'category' => 'policy',
+        'content' => 'Late checkout is free for returning guests.',
+        'embedding' => tiltedEmbedding(0.15, 1),
+    ]);
+
+    DB::statement('set local enable_seqscan = off');
+    DB::statement('set local enable_bitmapscan = off');
+
+    $result = (string) (new KnowledgeSearchTool($hotel))->handle(new Request(['query' => 'Is late checkout free?']));
+
+    expect($result)->toContain('Late checkout is free')
+        ->not->toContain("Another hotel's policy");
+});

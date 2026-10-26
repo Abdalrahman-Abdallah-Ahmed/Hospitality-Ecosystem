@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\ProactiveMessageStatus;
 use App\Enums\ProactiveTrigger;
+use App\Enums\QueueLane;
 use App\Models\Hotel;
 use App\Models\ProactiveMessage;
 use App\Services\Proactive\ProactiveTriggerFinder;
@@ -32,7 +33,10 @@ class EvaluateProactiveTriggersJob implements ShouldQueue
         // an approval does not wait for the next sweep.
         public ?string $reservationId = null,
         public ?string $hotelId = null,
-    ) {}
+    ) {
+        // Short and not AI work: it must never wait behind a long LLM job (spec 017 FR-020).
+        $this->onQueue(QueueLane::DEFAULT->value);
+    }
 
     /**
      * Evaluate a reservation right after one of its recommendations was
