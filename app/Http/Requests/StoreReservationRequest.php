@@ -18,9 +18,13 @@ class StoreReservationRequest extends GenericStoreRequest
     public function rules(): array
     {
         $max = ReservationRoomSync::MAX_UNITS;
+        $rules = parent::rules();
 
         return [
-            ...parent::rules(),
+            ...$rules,
+            // With `guests`, guest_id follows the primary entry, which may be
+            // a new guest named by contact details (ReservationCreator::create()).
+            'guest_id' => ['required_without:guests', ...array_filter($rules['guest_id'], fn ($rule) => $rule !== 'required')],
             'room_id' => ['prohibited'],
             'rooms' => ['required', 'array', 'min:1', "max:{$max}"],
             'rooms.*' => ['array'],

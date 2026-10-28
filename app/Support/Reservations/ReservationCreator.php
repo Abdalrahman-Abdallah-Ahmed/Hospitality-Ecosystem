@@ -124,6 +124,12 @@ class ReservationCreator
         }
 
         return DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport, $overbookOverride, $guests) {
+            // A primary named only by contact details: found or created here,
+            // so it is rolled back with a reservation that fails.
+            if (empty($attributes['guest_id']) && $guests !== null) {
+                $attributes['guest_id'] = app(ReservationGuestSync::class)->resolvePrimary($attributes['hotel_id'], $guests)->id;
+            }
+
             $availability = app(AvailabilityService::class);
             $availability->lockTypes($attributes['hotel_id'], array_column($units, 'room_type_id'));
 

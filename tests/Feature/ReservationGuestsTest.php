@@ -506,3 +506,118 @@ it('accepts a new-contact primary on update when guest_id is left out', function
     $newPrimary = Guest::where('hotel_id', $hotel->id)->where('first_name', 'Nour')->sole();
     expect($reservation->fresh()->guest_id)->toBe($newPrimary->id);
 });
+
+/** @param array<string, mixed> $attributes */
+function newPrimaryPayload(Hotel $hotel, array $attributes = []): array
+{
+    return [
+        'hotel_id' => $hotel->id,
+        'reservation_id' => 'PARTY-NEW-'.Str::random(6),
+        'arrival_date' => now()->addDays(7)->toDateString(),
+        'departure_date' => now()->addDays(9)->toDateString(),
+        'adults' => 2,
+        'rooms' => [['room_type_id' => bookableTypeIdFor($hotel)]],
+        ...$attributes,
+    ];
+}
+
+it('creates a reservation for a new primary named by contact details when guest_id is left out', function () {
+    [$admin, $hotel] = adminWithHotel();
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', newPrimaryPayload($hotel, ['guests' => [
+            ['first_name' => 'Omar', 'last_name' => 'Fathy', 'phone_number' => '+201000000031', 'email' => 'omar@example.com', 'is_primary' => true],
+        ]]))
+        ->assertCreated()
+        ->assertJsonPath('body.guest_count', 1)
+        ->assertJsonPath('body.guests.0.first_name', 'Omar')
+        ->assertJsonPath('body.guests.0.is_primary', true);
+
+    $guest = Guest::where('hotel_id', $hotel->id)->where('first_name', 'Omar')->sole();
+    expect(Reservation::where('hotel_id', $hotel->id)->sole()->guest_id)->toBe($guest->id);
+});
+
+it('reuses an existing guest for a contact-named primary on create', function (array $contact) {
+    [$admin, $hotel] = adminWithHotel();
+    $existing = gsGuest($hotel, ['phone_number' => '+201000000032', 'email' => 'known@example.com']);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', newPrimaryPayload($hotel, ['guests' => [$contact]]))
+        ->assertCreated()
+        ->assertJsonPath('body.guest_id', $existing->id);
+
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+})->with([
+    'by phone' => [['phone_number' => '+20 100 000 0032']],
+    'by email' => [['email' => 'KNOWN@example.com']],
+]);
+
+it('leaves no new guest behind when a create with a contact-named primary fails', function (Closure $payload, string $errorKey) {
+    [$admin, $hotel] = adminWithHotel();
+    $payload = $payload($hotel);
+    $before = Guest::withoutGlobalScopes()->count();
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$errorKey]);
+
+    expect(Guest::withoutGlobalScopes()->count())->toBe($before)
+        ->and(Reservation::withoutGlobalScopes()->where('hotel_id', $hotel->id)->exists())->toBeFalse();
+})->with([
+    'another hotel guest on the list' => [fn (Hotel $hotel) => newPrimaryPayload($hotel, ['guests' => [
+        ['phone_number' => '+201000000033', 'is_primary' => true],
+        ['guest_id' => gsGuest(avHotel())->id, 'is_primary' => false],
+    ]]), 'guests.1.guest_id'],
+    'party over capacity' => [fn (Hotel $hotel) => newPrimaryPayload($hotel, [
+        'adults' => 9,
+        'guests' => [['phone_number' => '+201000000034', 'is_primary' => true]],
+    ]), 'rooms'],
+    'overbooked' => [fn (Hotel $hotel) => newPrimaryPayload($hotel, [
+        'rooms' => [['room_type_id' => bookableTypeIdFor($hotel), 'quantity' => 6]],
+        'guests' => [['phone_number' => '+201000000035', 'is_primary' => true]],
+    ]), 'rooms'],
+]);
+
+it('keeps the create guest rules when guest_id is left out', function (array $attributes, string $errorKey) {
+    [$admin, $hotel] = adminWithHotel();
+    $other = gsGuest($hotel, ['phone_number' => '+201000000036']);
+    $attributes = json_decode(str_replace('OTHER', $other->id, json_encode($attributes)), true);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/reservation', newPrimaryPayload($hotel, $attributes))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors([$errorKey]);
+
+    expect(Guest::where('hotel_id', $hotel->id)->count())->toBe(1);
+})->with([
+    'neither guest_id nor guests' => [[], 'guest_id'],
+    'no primary' => [['guests' => [
+        ['phone_number' => '+201000000037', 'is_primary' => false],
+        ['guest_id' => 'OTHER', 'is_primary' => false],
+    ]], 'guests'],
+    'two primaries' => [['guests' => [
+        ['phone_number' => '+201000000037', 'is_primary' => true],
+        ['guest_id' => 'OTHER', 'is_primary' => true],
+    ]], 'guests'],
+    'guest_id not the primary' => [['guest_id' => 'OTHER', 'guests' => [
+        ['phone_number' => '+201000000037', 'is_primary' => true],
+    ]], 'guests'],
+    'no contact details' => [['guests' => [['first_name' => 'Nobody', 'is_primary' => true]]], 'guests.0.guest_id'],
+]);
+
+it('accepts a contact-named entry listed before entries with a guest_id', function () {
+    [$admin, $hotel] = adminWithHotel();
+    $type = avType($hotel, 'Order');
+    avRooms($hotel, $type, 2);
+    $primary = gsGuest($hotel, ['phone_number' => '+201000000038']);
+    $reservation = partyReservation($hotel, $type, $primary);
+
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson('/api/reservation/'.$reservation->id, ['guests' => [
+            ['phone_number' => '+201000000039', 'first_name' => 'Sara', 'is_primary' => true],
+            ['guest_id' => $primary->id, 'is_primary' => false],
+        ]])
+        ->assertOk()
+        ->assertJsonPath('body.guest_count', 2);
+});

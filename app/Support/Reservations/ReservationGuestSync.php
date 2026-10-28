@@ -23,13 +23,7 @@ class ReservationGuestSync
      */
     public function sync(Reservation $reservation, array $members, ?string $expectedPrimaryId = null): void
     {
-        if (! array_is_list($members) || collect($members)->contains(fn ($member) => ! is_array($member))) {
-            throw ValidationException::withMessages(['guests' => 'Guests must be supplied as a list of guest objects.']);
-        }
-
-        if (count($members) === 1 && ! array_key_exists('is_primary', $members[0])) {
-            $members[0]['is_primary'] = true;
-        }
+        $members = $this->normalized($members);
 
         Reservation::withoutGlobalScope('hotel')->withTrashed()->whereKey($reservation->id)->lockForUpdate()->first();
 
@@ -37,6 +31,26 @@ class ReservationGuestSync
         $primary = $this->validateParty($reservation, $members, $expectedPrimaryId);
         $this->syncMemberships($reservation, $members);
         $this->syncPrimaryGuest($reservation, $primary);
+    }
+
+    /**
+     * The guest `$members` marks primary, found or created by the same rules
+     * as sync(), so a new reservation can point at a primary named only by
+     * contact details. Callers run it inside their reservation transaction,
+     * so a guest it creates goes away with a reservation that fails.
+     *
+     * @param  list<array<string, mixed>>  $members
+     */
+    public function resolvePrimary(string $hotelId, array $members): Guest
+    {
+        $members = $this->normalized($members);
+        $primaries = array_keys(array_filter($members, fn (array $member, int $index) => $this->primaryFlag($member, $index), ARRAY_FILTER_USE_BOTH));
+
+        if (count($primaries) !== 1) {
+            throw ValidationException::withMessages(['guests' => 'A reservation must have exactly one primary guest.']);
+        }
+
+        return $this->resolveMember(new Reservation(['hotel_id' => $hotelId]), $members[$primaries[0]], $primaries[0])['guest'];
     }
 
     /**
@@ -52,6 +66,26 @@ class ReservationGuestSync
         if ($named > (int) ($reservation->adults ?? 1) + (int) ($reservation->children ?? 0)) {
             throw ValidationException::withMessages(['guests' => 'The guest list cannot exceed the reservation party size.']);
         }
+    }
+
+    /** @param list<array<string, mixed>> $members @return list<array<string, mixed>> */
+    private function normalized(array $members): array
+    {
+        // validated() writes entries rule by rule, so an entry without the
+        // first rule's key (guest_id) can land after a later one: [1, 0].
+        if (collect(array_keys($members))->every(fn ($key) => is_int($key))) {
+            ksort($members);
+        }
+
+        if (! array_is_list($members) || collect($members)->contains(fn ($member) => ! is_array($member))) {
+            throw ValidationException::withMessages(['guests' => 'Guests must be supplied as a list of guest objects.']);
+        }
+
+        if (count($members) === 1 && ! array_key_exists('is_primary', $members[0])) {
+            $members[0]['is_primary'] = true;
+        }
+
+        return $members;
     }
 
     /** @param list<array<string, mixed>> $members @return list<array{guest: Guest, is_primary: bool, index: int}> */
