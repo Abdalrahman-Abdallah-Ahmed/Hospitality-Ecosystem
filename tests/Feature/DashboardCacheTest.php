@@ -98,3 +98,23 @@ it('keys the cache on what the caller can see, not on their home hotel', functio
     // ...which must never be served to that hotel's own admin.
     expect(dashboardFor($this, User::findOrFail($hotelA->owner_id))->assertOk()->json('body.pending_tasks'))->toBe(1);
 });
+
+it('serves nested rooms and VIP stays from the cache, not empty objects', function () {
+    // Serialize like the production stores, with object unserializing off
+    // (cache.serializable_classes = false), so a nested resource left in the
+    // cached array would come back as an incomplete class and encode as {}.
+    config(['cache.stores.array.serialize' => true]);
+    app('cache')->forgetDriver('array');
+
+    [$hotel, $type, [$room]] = fdHotel(1);
+    $reservation = fdBook($hotel, $type, [$room->id]);
+    $reservation->guest->update(['is_vip' => true]);
+
+    $fresh = dashboardFor($this, $hotel->owner)->assertOk()->json('body');
+    $cached = dashboardFor($this, $hotel->owner)->assertOk()->json('body');
+
+    expect($cached['today_arrivals'][0]['rooms'])->toBeArray()->toBeList()->not->toBeEmpty()
+        ->and($cached['today_arrivals'][0]['rooms'][0]['room_type'])->toBeArray()->not->toBeEmpty()
+        ->and($cached['vip_guests'][0]['stays'])->toBeArray()->toBeList()->not->toBeEmpty()
+        ->and($cached)->toBe($fresh);
+});
