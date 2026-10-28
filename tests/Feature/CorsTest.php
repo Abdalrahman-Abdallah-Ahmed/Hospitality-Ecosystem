@@ -14,9 +14,21 @@ it('allows a preflight from a configured frontend origin', function () {
 });
 
 it('exposes Retry-After to the frontend so it can show a throttle countdown', function () {
-    $this->withHeaders(['Origin' => 'https://app.example'])
+    $exposed = $this->withHeaders(['Origin' => 'https://app.example'])
         ->postJson('/api/login')
-        ->assertHeader('Access-Control-Expose-Headers', 'Retry-After');
+        ->headers->get('Access-Control-Expose-Headers');
+
+    expect(array_map('trim', explode(',', (string) $exposed)))->toContain('Retry-After');
+});
+
+it('exposes the voucher download headers to the frontend (SPEC-013)', function () {
+    $exposed = $this->withHeaders(['Origin' => 'https://app.example'])
+        ->postJson('/api/login')
+        ->headers->get('Access-Control-Expose-Headers');
+
+    expect(array_map('trim', explode(',', (string) $exposed)))
+        ->toContain('Content-Disposition')
+        ->toContain('X-Voucher-Unplaced');
 });
 
 it('does not allow a preflight from any other origin', function () {

@@ -33,11 +33,13 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\WhatsAppInboundMessage;
 use App\Services\Metering\MeteringService;
+use App\Services\Vouchers\VoucherTemplateService;
 use App\Services\WhatsAppMessageService;
 use App\Support\Ai\AiCostContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Ai\Embeddings;
 use Laravel\Ai\Tools\Request;
@@ -209,6 +211,8 @@ function cvSeed(): array
         'stage' => 'validate',
         'reason' => 'arrival_date is empty.',
     ]);
+    Storage::fake(config('vouchers.disk'));
+    $voucherTemplate = app(VoucherTemplateService::class)->create($hotel, ['name' => 'Main', 'language' => 'en'], vcImage(1240, 1754), $admin);
 
     return [
         'hotel' => $hotel->fresh(),
@@ -239,6 +243,7 @@ function cvSeed(): array
             'team' => $team->id,
             'transaction' => $transaction->id,
             'user' => $employee->id,
+            'voucherTemplate' => $voucherTemplate->id,
         ],
         // URIs whose parameters are not one record, or that need a query to
         // return data rather than a validation error: filled in directly.

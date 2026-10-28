@@ -8,9 +8,11 @@ use App\Models\StaffRole;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\BookingCancellationService;
+use App\Services\Vouchers\VoucherTemplateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -157,6 +159,8 @@ it('lets an employee read a resource only when their role grants it', function (
     'transactions' => ['/api/transaction', Permission::TRANSACTIONS_VIEW],
     'housekeeping board' => ['/api/housekeeping/board', Permission::ROOMS_VIEW],
     'maintenance list' => ['/api/maintenance/tasks', Permission::TASKS_VIEW],
+    'voucher templates' => ['/api/voucher-templates', Permission::VOUCHER_TEMPLATES_VIEW],
+    'voucher fields' => ['/api/voucher-templates/fields', Permission::VOUCHER_TEMPLATES_VIEW],
 ]);
 
 it('never gives employees without a role the housekeeping or out-of-order permissions', function () {
@@ -244,6 +248,65 @@ it('lets an employee mark and undo no-shows only when their role grants it', fun
     'mark a room' => ['no-show', 'room'],
     'undo a reservation' => ['undo-no-show', 'reservation'],
     'undo a room' => ['undo-no-show', 'room'],
+]);
+
+it('never gives employees without a role the voucher permissions', function () {
+    $voucher = [
+        Permission::RESERVATIONS_VOUCHER, Permission::RESERVATIONS_VOUCHER_EMAIL,
+        Permission::VOUCHER_TEMPLATES_VIEW, Permission::VOUCHER_TEMPLATES_CREATE,
+        Permission::VOUCHER_TEMPLATES_UPDATE, Permission::VOUCHER_TEMPLATES_DELETE,
+    ];
+
+    foreach ($voucher as $permission) {
+        expect(Permission::employeeDefaults())->not->toContain($permission);
+    }
+
+    $listed = $this->withHeaders(permissionApiHeaders())->actingAs(hotelForPermissions()->owner, 'sanctum')
+        ->getJson('/api/permissions')->assertOk()->json();
+
+    foreach ($voucher as $permission) {
+        expect(json_encode($listed))->toContain($permission->value);
+    }
+});
+
+it('lets an employee generate, email and manage vouchers only when their role grants it', function (string $action, Permission $permission) {
+    Queue::fake();
+    Storage::fake(config('vouchers.disk'));
+    $hotel = hotelForPermissions();
+    $reservation = vcReservation($hotel);
+    $template = app(VoucherTemplateService::class)->create($hotel, ['name' => 'Main', 'language' => 'en'], vcImage(1240, 1754), null);
+
+    $call = fn (User $user) => match ($action) {
+        'generate' => vcPost($this, $user, "/api/reservation/{$reservation->id}/voucher"),
+        'email' => vcPost($this, $user, "/api/reservation/{$reservation->id}/voucher/email", ['request_key' => (string) Str::uuid()]),
+        'email history' => vcGet($this, $user, "/api/reservation/{$reservation->id}/voucher/emails"),
+        'upload' => $this->withHeaders([...permissionApiHeaders(), 'Accept' => 'application/json'])->actingAs($user, 'sanctum')
+            ->post('/api/voucher-templates', ['name' => 'T '.Str::random(4), 'language' => 'en', 'image' => vcImage(1240, 1754)]),
+        'rename' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->putJson("/api/voucher-templates/{$template->id}", ['name' => 'Renamed '.Str::random(4)]),
+        'delete' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->deleteJson("/api/voucher-templates/{$template->id}"),
+        'show' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->getJson("/api/voucher-templates/{$template->id}"),
+        'image' => $this->withHeaders([...permissionApiHeaders(), 'Accept' => 'application/json'])->actingAs($user, 'sanctum')->get("/api/voucher-templates/{$template->id}/image"),
+        'preview' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->postJson("/api/voucher-templates/{$template->id}/preview"),
+        'layout' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')->putJson("/api/voucher-templates/{$template->id}/layout", ['layout' => []]),
+        'replace image' => $this->withHeaders([...permissionApiHeaders(), 'Accept' => 'application/json'])->actingAs($user, 'sanctum')
+            ->post("/api/voucher-templates/{$template->id}/image", ['image' => vcImage(1240, 1754)]),
+    };
+
+    $call(employeeWithPermissions($hotel, Permission::employeeDefaults()))->assertForbidden();
+    // getStatusCode(): the image endpoint streams, and a streamed response has no status().
+    expect($call(employeeWithPermissions($hotel, [$permission]))->getStatusCode())->toBeIn([200, 201, 202]);
+})->with([
+    'generate' => ['generate', Permission::RESERVATIONS_VOUCHER],
+    'email' => ['email', Permission::RESERVATIONS_VOUCHER_EMAIL],
+    'email history' => ['email history', Permission::RESERVATIONS_VOUCHER_EMAIL],
+    'upload a template' => ['upload', Permission::VOUCHER_TEMPLATES_CREATE],
+    'rename a template' => ['rename', Permission::VOUCHER_TEMPLATES_UPDATE],
+    'delete a template' => ['delete', Permission::VOUCHER_TEMPLATES_DELETE],
+    'show a template' => ['show', Permission::VOUCHER_TEMPLATES_VIEW],
+    'download a template image' => ['image', Permission::VOUCHER_TEMPLATES_VIEW],
+    'preview a template' => ['preview', Permission::VOUCHER_TEMPLATES_VIEW],
+    'save a layout' => ['layout', Permission::VOUCHER_TEMPLATES_UPDATE],
+    'replace a template image' => ['replace image', Permission::VOUCHER_TEMPLATES_UPDATE],
 ]);
 
 it('replaces the defaults with the role instead of adding to them', function () {

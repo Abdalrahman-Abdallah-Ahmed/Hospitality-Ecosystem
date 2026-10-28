@@ -33,6 +33,8 @@ use Laravel\Ai\Events\Reranked;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Sanctum\PersonalAccessToken;
 use Laravel\Sanctum\Sanctum;
+use Resend;
+use Resend\Client as ResendClient;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -45,6 +47,12 @@ class AppServiceProvider extends ServiceProvider
         // in-flight call between the "prompting" and "prompted" events, and a
         // fresh instance per event would have nothing to measure against.
         $this->app->singleton(RecordAiUsage::class);
+
+        // The Resend client VoucherMailSender calls directly so it can pass an
+        // idempotency key (SPEC-013, research R10). Tests bind a mock instead.
+        if (! $this->app->bound(ResendClient::class)) {
+            $this->app->singleton(ResendClient::class, fn () => Resend::client((string) config('services.resend.key')));
+        }
     }
 
     /**

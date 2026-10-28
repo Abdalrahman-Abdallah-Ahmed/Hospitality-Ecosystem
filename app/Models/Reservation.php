@@ -81,6 +81,18 @@ class Reservation extends Model
     }
 
     /**
+     * The guest marked primary in the guest list, falling back to the
+     * `guest_id` pointer when the list has none. The voucher prints, speaks
+     * to and emails this guest (SPEC-013).
+     */
+    public function primaryGuest(): ?Guest
+    {
+        $this->loadMissing(['reservationGuests.guest', 'guest']);
+
+        return $this->reservationGuests->firstWhere('is_primary', true)?->guest ?? $this->guest;
+    }
+
+    /**
      * Every booked room unit, cancelled ones included (history). Ordered so
      * the "first" line is stable: see primaryRoomId().
      */

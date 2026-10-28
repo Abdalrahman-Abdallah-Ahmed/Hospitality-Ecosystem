@@ -32,6 +32,7 @@ use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\ReservationImportController;
 use App\Http\Controllers\ReservationImportPreviewController;
+use App\Http\Controllers\ReservationVoucherController;
 use App\Http\Controllers\RoomController;
 use App\Http\Controllers\RoomHousekeepingController;
 use App\Http\Controllers\RoomOutOfOrderController;
@@ -45,6 +46,7 @@ use App\Http\Controllers\TaskIssueController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VoucherTemplateController;
 use App\Http\Controllers\WhatsAppController;
 use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
@@ -93,6 +95,12 @@ Route::middleware('api.key')->group(function () {
         Route::post('/reservation/{reservation}/check-out', [ReservationController::class, 'checkOut']);
         Route::post('/reservation/{reservation}/no-show', [ReservationController::class, 'noShow']);
         Route::post('/reservation/{reservation}/undo-no-show', [ReservationController::class, 'undoNoShow']);
+
+        // Reservation voucher (SPEC-013): a PDF rendered on the fly, emailed
+        // only on a staff request.
+        Route::post('/reservation/{reservation}/voucher', [ReservationVoucherController::class, 'generate']);
+        Route::post('/reservation/{reservation}/voucher/email', [ReservationVoucherController::class, 'email']);
+        Route::get('/reservation/{reservation}/voucher/emails', [ReservationVoucherController::class, 'emails']);
         Route::resource('/reservation', ReservationController::class)->except(['edit', 'create']);
         Route::get('/stays/arrivals', [StayController::class, 'arrivals']);
         Route::get('/stays/departures', [StayController::class, 'departures']);
@@ -133,6 +141,18 @@ Route::middleware('api.key')->group(function () {
         Route::get('/maintenance/tasks', [MaintenanceTaskController::class, 'index']);
         Route::resource('/room', RoomController::class)->except(['edit', 'create']);
         Route::resource('/room-types', RoomTypeController::class)->except(['edit', 'create']);
+
+        // Voucher templates (SPEC-013). The literal `fields` route comes first.
+        Route::get('/voucher-templates/fields', [VoucherTemplateController::class, 'fields']);
+        Route::get('/voucher-templates', [VoucherTemplateController::class, 'index']);
+        Route::post('/voucher-templates', [VoucherTemplateController::class, 'store']);
+        Route::get('/voucher-templates/{voucherTemplate}', [VoucherTemplateController::class, 'show']);
+        Route::put('/voucher-templates/{voucherTemplate}', [VoucherTemplateController::class, 'update']);
+        Route::delete('/voucher-templates/{voucherTemplate}', [VoucherTemplateController::class, 'destroy']);
+        Route::put('/voucher-templates/{voucherTemplate}/layout', [VoucherTemplateController::class, 'layout']);
+        Route::post('/voucher-templates/{voucherTemplate}/image', [VoucherTemplateController::class, 'replaceImage']);
+        Route::get('/voucher-templates/{voucherTemplate}/image', [VoucherTemplateController::class, 'image']);
+        Route::post('/voucher-templates/{voucherTemplate}/preview', [VoucherTemplateController::class, 'preview']);
         Route::put('/guest/{guest}/contact-preference', [GuestContactPreferenceController::class, 'update']);
 
         // What the AI remembers about a guest (SPEC-084). Written only by

@@ -19,6 +19,7 @@
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
         "maatwebsite/excel": "^3.1",
+        "mpdf/mpdf": "^8.2",
         "resend/resend-php": "^1.15",
         "sentry/sentry-laravel": "^4.29",
         "smalot/pdfparser": "^2.12"

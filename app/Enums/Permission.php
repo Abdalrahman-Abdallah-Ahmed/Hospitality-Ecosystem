@@ -76,6 +76,8 @@ enum Permission: string
     case RESERVATIONS_IMPORT = 'reservations.import';
     case RESERVATIONS_OVERBOOK = 'reservations.overbook';
     case RESERVATIONS_NO_SHOW = 'reservations.no_show';
+    case RESERVATIONS_VOUCHER = 'reservations.voucher';
+    case RESERVATIONS_VOUCHER_EMAIL = 'reservations.voucher_email';
 
     case ROOMS_VIEW = 'rooms.view';
     case ROOMS_CREATE = 'rooms.create';
@@ -112,6 +114,11 @@ enum Permission: string
     case TRANSACTIONS_IMPORT = 'transactions.import';
     case TRANSACTIONS_REVERSE = 'transactions.reverse';
 
+    case VOUCHER_TEMPLATES_VIEW = 'voucher_templates.view';
+    case VOUCHER_TEMPLATES_CREATE = 'voucher_templates.create';
+    case VOUCHER_TEMPLATES_UPDATE = 'voucher_templates.update';
+    case VOUCHER_TEMPLATES_DELETE = 'voucher_templates.delete';
+
     /**
      * What an employee without a staff role can do: exactly the access every
      * employee had before staff roles existed, so leaving a role unassigned
@@ -136,6 +143,9 @@ enum Permission: string
      *   grants them on purpose to its front-desk roles.
      * - Correcting a room's housekeeping status and taking rooms out of order
      *   are never defaults: both change which rooms can be sold.
+     * - Vouchers and voucher templates are never defaults: a voucher is a
+     *   document proving a booking, with guest names and dates, and emailing
+     *   it sends guest data outside the system (SPEC-013).
      * - Knowledge documents are never a default, not even viewing: whatever is
      *   uploaded, corrected or switched on is what the guest AI tells guests.
      * - Approving recommendations is never a default: it decides what the hotel

@@ -18,6 +18,7 @@
 
 $stamped = 'stamps hotel_id automatically on create when the model omits it';
 $documents = 'keeps one hotel out of another hotel knowledge documents (SPEC-008 FR-040)';
+$voucherTemplates = 'keeps one hotel out of another hotel voucher templates (SPEC-013)';
 
 return [
     'routes' => [
@@ -47,6 +48,17 @@ return [
         'POST api/knowledge-documents/{id}/reindex' => ['covered_by' => $documents],
         'POST api/knowledge-documents/{id}/restore' => ['covered_by' => $documents],
         'GET api/history/{type}/{id}' => ['covered_by' => 'hides another hotel\'s guest memory history, and unknown ids'],
+
+        // Voucher templates: bound to a model the shared fixtures cannot build
+        // (it needs an uploaded image), and a multipart create.
+        'POST api/voucher-templates' => ['covered_by' => $voucherTemplates],
+        'GET api/voucher-templates/{voucherTemplate}' => ['covered_by' => $voucherTemplates],
+        'PUT api/voucher-templates/{voucherTemplate}' => ['covered_by' => $voucherTemplates],
+        'DELETE api/voucher-templates/{voucherTemplate}' => ['covered_by' => $voucherTemplates],
+        'PUT api/voucher-templates/{voucherTemplate}/layout' => ['covered_by' => $voucherTemplates],
+        'POST api/voucher-templates/{voucherTemplate}/image' => ['covered_by' => $voucherTemplates],
+        'GET api/voucher-templates/{voucherTemplate}/image' => ['covered_by' => $voucherTemplates],
+        'POST api/voucher-templates/{voucherTemplate}/preview' => ['covered_by' => $voucherTemplates],
 
         // Bound to records the shared fixtures cannot build generically.
         'GET api/conversations/{conversation}' => ['covered_by' => 'keeps one hotel out of another hotel guest conversations (SPEC-082 FR-005)'],
@@ -89,6 +101,7 @@ return [
         'App\\Jobs\\ProcessInboundWhatsAppMessageJob' => ['scope' => 'hotel'],
         'App\\Jobs\\SendGuestRequestNoticeJob' => ['scope' => 'hotel'],
         'App\\Jobs\\SendProactiveMessageJob' => ['scope' => 'hotel'],
+        'App\\Jobs\\SendReservationVoucherEmailJob' => ['scope' => 'hotel'],
         'App\\Jobs\\StartHousekeepingDayJob' => ['scope' => 'hotel'],
         'App\\Jobs\\SyncKnowledgeChunksJob' => ['scope' => 'hotel'],
         'App\\Jobs\\WriteReservationImportJob' => ['scope' => 'hotel'],
@@ -128,6 +141,7 @@ return [
             'GET api/usage' => 'Fixed-shape usage report',
             'GET api/permissions' => 'The permission enum, a fixed list',
             'GET api/available-channels' => 'The booking channel enum, a fixed list',
+            'GET api/voucher-templates/fields' => 'The voucher field enum, a fixed list',
             'GET api/user' => 'The caller\'s own user record',
             'GET api/housekeeping/board' => 'One row per room of the hotel: bounded by its room count',
             'GET api/stays/arrivals' => 'One day\'s front-desk list: bounded by the hotel\'s rooms; overdue arrivals are cleared by no-show',

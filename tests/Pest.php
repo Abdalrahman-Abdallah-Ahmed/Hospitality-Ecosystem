@@ -89,6 +89,7 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Smalot\PdfParser\Parser;
 use Tests\TestCase;
 
 /*
@@ -2002,4 +2003,111 @@ function crossTenantForeignKeys(Route $route): array
     }
 
     return $keys;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Reservation voucher fixtures (SPEC-013)
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A confirmed reservation with `$rooms` room-type lines, a primary guest
+ * (named, with email and language) and one other guest, one child aged 7,
+ * special requests and a total.
+ *
+ * @param  array<string, mixed>  $attributes  reservation columns
+ * @param  array<string, mixed>  $primary  primary guest columns
+ */
+function vcReservation(Hotel $hotel, array $attributes = [], int $rooms = 2, array $primary = []): Reservation
+{
+    $guest = Guest::create([
+        'hotel_id' => $hotel->id,
+        'first_name' => 'Layla',
+        'last_name' => 'Haddad',
+        'email' => 'layla@example.com',
+        'preferred_language' => 'en',
+        'external_id' => 'ext-'.Str::random(8),
+        'channel' => 'booking_com',
+        ...$primary,
+    ]);
+    $other = Guest::create([
+        'hotel_id' => $hotel->id,
+        'first_name' => 'Omar',
+        'last_name' => 'Haddad',
+        'external_id' => 'ext-'.Str::random(8),
+        'channel' => 'booking_com',
+    ]);
+
+    $reservation = createReservationWithRooms($hotel, array_fill(0, $rooms, []), [
+        'guest_id' => $guest->id,
+        'reservation_id' => 'RES-'.strtoupper(Str::random(6)),
+        'arrival_date' => '2026-12-10',
+        'departure_date' => '2026-12-13',
+        'adults' => 2,
+        'children' => 1,
+        'children_ages' => [7],
+        'special_requests' => 'Late arrival around midnight',
+        'reservation_value' => 750,
+        'currency' => 'USD',
+        ...$attributes,
+    ]);
+
+    ReservationGuest::create(['hotel_id' => $hotel->id, 'reservation_id' => $reservation->id, 'guest_id' => $guest->id, 'is_primary' => true]);
+    ReservationGuest::create(['hotel_id' => $hotel->id, 'reservation_id' => $reservation->id, 'guest_id' => $other->id, 'is_primary' => false]);
+
+    return $reservation->fresh();
+}
+
+/**
+ * A real image upload of the given size and type, written with GD (the fake
+ * image helper cannot produce WebP). `$transparent` fills a PNG with a
+ * fully transparent background.
+ */
+function vcImage(int $width = 2480, int $height = 3508, string $type = 'png', bool $transparent = false): UploadedFile
+{
+    $image = imagecreatetruecolor($width, $height);
+
+    if ($transparent) {
+        imagesavealpha($image, true);
+        imagefill($image, 0, 0, imagecolorallocatealpha($image, 0, 0, 0, 127));
+    } else {
+        imagefill($image, 0, 0, imagecolorallocate($image, 230, 240, 250));
+    }
+
+    $path = tempnam(sys_get_temp_dir(), 'vc').'.'.$type;
+    match ($type) {
+        'png' => imagepng($image, $path),
+        'jpg', 'jpeg' => imagejpeg($image, $path),
+        'webp' => imagewebp($image, $path),
+        'gif' => imagegif($image, $path),
+    };
+    imagedestroy($image);
+
+    $mime = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'gif' => 'image/gif'][$type];
+
+    return new UploadedFile($path, "template.{$type}", $mime, null, true);
+}
+
+/**
+ * @param  list<Permission>  $permissions
+ */
+function vcEmployee(Hotel $hotel, array $permissions): User
+{
+    return fdEmployee($hotel, $permissions);
+}
+
+function vcPost($test, User $user, string $uri, array $payload = []): TestResponse
+{
+    return fdPost($test, $user, $uri, $payload);
+}
+
+function vcGet($test, User $user, string $uri): TestResponse
+{
+    return fdGet($test, $user, $uri);
+}
+
+function vcPdfText(string $pdf): string
+{
+    return (new Parser)->parseContent($pdf)->getText();
 }

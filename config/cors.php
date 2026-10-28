@@ -29,7 +29,9 @@ return [
     'allowed_headers' => ['*'],
 
     // Lets a browser frontend read how long to wait after a 429 on login.
-    'exposed_headers' => ['Retry-After'],
+    // Voucher downloads (SPEC-013): the file name, and which sent items the
+    // template had no place for.
+    'exposed_headers' => ['Retry-After', 'Content-Disposition', 'X-Voucher-Unplaced'],
 
     'max_age' => 0,
 

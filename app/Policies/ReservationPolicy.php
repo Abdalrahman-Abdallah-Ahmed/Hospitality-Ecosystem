@@ -44,6 +44,23 @@ class ReservationPolicy
     }
 
     /**
+     * Generate a voucher for the reservation, or preview a template with its
+     * data (SPEC-013).
+     */
+    public function voucher(User $user, Reservation $reservation): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_VOUCHER, $reservation);
+    }
+
+    /**
+     * Email the reservation's voucher to the guest (SPEC-013).
+     */
+    public function voucherEmail(User $user, Reservation $reservation): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_VOUCHER_EMAIL, $reservation);
+    }
+
+    /**
      * Determine whether the user can bulk-import reservations from a file.
      */
     public function import(User $user): bool
