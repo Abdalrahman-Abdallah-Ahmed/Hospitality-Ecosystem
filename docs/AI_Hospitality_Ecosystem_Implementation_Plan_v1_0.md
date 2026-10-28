@@ -42,7 +42,7 @@ updating this plan first.
 | D15 | Conversations | Keep the `laravel/ai` conversation tables for MVP. **Conversation search is post-MVP** (constitution amended to v2.0.0). Admin-only visibility stays in MVP. |
 | D16 | Import | Laravel `ReservationsImport` is the only MVP import path; normalization moves into Laravel. The Python ETL repo is reference only. |
 | D17 | Admin AI scope | Admin AI **reads** users, staff roles, permissions and hotel settings but cannot mutate them in MVP. PMS operations are writable, subject to permissions. |
-| D18 | Reservation voucher | A PDF **voucher** (proof of reservation), **not an invoice**. Built from a saved reservation, with optional per-request overrides of the displayed fields that never change the reservation. Rendered **on the fly**, not stored; each generation or email is an audit entry. Prices are hidden by default, and staff can choose to show the total. English or Arabic from the guest's language (RTL for Arabic) with hotel branding. Staff download it and can optionally email it to the guest. Built in Phase 2, after the restructure. |
+| D18 | Reservation voucher | A PDF **voucher** (proof of reservation), **not an invoice**. Built from a saved reservation, with optional per-request overrides of the displayed fields that never change the reservation. Rendered **on the fly**, not stored; each generation or email is an audit entry. Prices are hidden by default, and staff can choose to show the total. English or Arabic from the guest's language (RTL for Arabic) with hotel branding. Staff download it and can optionally email it to the guest. Built in Phase 2, after the restructure. *Amended 2026-10-27:* hotels may upload named, single-page **voucher templates** (PNG/JPG/WebP, ≤ 5 MB, short side ≥ 1000 px), each with a language and one default per language. Admins place field boxes on the image (normalized `x, y, width, height`, basic styling, list boxes for guests and room lines); the PDF renders the image as the page background with text in the boxes. A built-in default layout is used when a hotel has no template. Template management is gated by `voucher_templates.*` permissions. No QR code, multi-page templates or custom fonts in MVP. |
 
 ---
 
@@ -289,13 +289,29 @@ Teams & Categories, SPEC-005 Transactions Feature Flag.
       - English or Arabic follows `guest.preferred_language`, with an RTL layout for
         Arabic. The PDF engine must shape Arabic text correctly; the spec picks it.
       - Cancelled reservations cannot get a voucher; the spec confirms this.
-    - **Permissions:** `reservations.voucher` to generate and `reservations.voucher_email`
-      to email (final names in the spec). Tenant-isolation and permission tests are
-      required.
+    - **Templates (D18 amendment):**
+      - Upload named PNG/JPG/WebP templates (≤ 5 MB, short side ≥ 1000 px, private
+        storage per hotel), each with a language; one default per language, staff may
+        pick another when generating.
+      - Field boxes stored as fractions of the image (`x, y, width, height`) with font
+        size, colour, bold, alignment (start/centre/end, flipped for RTL) and an overflow
+        rule. Fields: reservation data, hotel data, free text, and list boxes (guests,
+        room lines) that shrink to fit or end with "+N more".
+      - Preview endpoint with sample or real data. Single page only; built-in default
+        layout when a hotel has no template.
+    - **Permissions:** `reservations.voucher` to generate, `reservations.voucher_email`
+      to email, and `voucher_templates.*` to manage templates (final names in the spec).
+      Tenant-isolation and permission tests are required.
 
 **Frontend:** reservation form with room-type lines × quantity, guest list with primary,
 children ages; "Voucher" action on the reservation page (preview/download, show-total
 toggle, override fields, email button).
+
+**Built (2026-10-27):** `specs/018-reservation-voucher` (SPEC-013) adds the voucher with
+uploadable templates, rendered with mPDF; mPDF's XB Riyaz font is used for Arabic.
+Constitution v2.2.0 allows the staff-initiated email, and v2.2.1 allows the PDF and image
+responses. The project owner's Arabic sign-off (SC-003) and the staging timing (SC-009)
+remain, in `specs/018-reservation-voucher/tasks.md` T060.
 
 **Specs:** SPEC-010 Reservation Rooms, SPEC-011 Reservation Guests & Party, SPEC-012
 Reservation Lifecycle, SPEC-013 Reservation Voucher (PDF).
@@ -634,7 +650,8 @@ These are recorded here so they aren't lost:
   - Which PDF engine renders Arabic correctly?
   - Which fields can be overridden?
   - Is a voucher allowed for pending and cancelled reservations?
-  - Should the voucher carry a verification reference or QR code?
+  - Should the voucher carry a verification reference or QR code? *Answered:* no QR
+    code in MVP (2026-10-27). Templates, field types and limits are settled in D18.
 - **SPEC-021:** are room-type upgrades on assignment allowed?
 - **SPEC-024:** when does the reservation become `checked_in` — when the first room checks
   in, or when all rooms do?

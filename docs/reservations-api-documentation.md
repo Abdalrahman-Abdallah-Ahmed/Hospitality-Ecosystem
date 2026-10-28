@@ -80,7 +80,7 @@ Successful custom API responses use this structure:
 
 `guest_id` and `guest` remain the primary guest for compatibility. Responses also include `guests` as full guest objects with an `is_primary` marker, plus `guest_count` and `children_ages`. Soft-deleted guest profiles are omitted from `guests` and `guest_count`; the reservation's historical `guest_id` remains unchanged.
 
-On create or update, send `guests` as the complete desired list. Each entry uses an existing `guest_id`, or contact details for a guest to resolve or create. Phone matching takes precedence; an email is reused only when it identifies one same-hotel guest. Ambiguous emails and phone/email conflicts are rejected. Exactly one entry must set `is_primary: true`; a single entry can omit it and becomes primary. If top-level `guest_id` is supplied, it must match the resolved primary. Because `guest_id` is required on create, the primary must be an existing guest there; on update, a primary named by contact details is allowed when `guest_id` is omitted, and `guest_id` then follows the resolved primary. Guest entries must belong to the reservation's hotel, cannot repeat, and cannot exceed `adults + children`. An update that includes `guests` replaces the complete list; removing a guest does not delete their profile. An update that lowers `adults` or `children` below the number of named guests is rejected with a `guests` error; remove guests first.
+On create or update, send `guests` as the complete desired list. Each entry uses an existing `guest_id`, or contact details for a guest to resolve or create. Phone matching takes precedence; an email is reused only when it identifies one same-hotel guest. Ambiguous emails and phone/email conflicts are rejected. Exactly one entry must set `is_primary: true`; a single entry can omit it and becomes primary. If top-level `guest_id` is supplied, it must match the resolved primary. On create and update, `guest_id` may be omitted when `guests` is sent: the primary entry may then be a new guest named by contact details, and `guest_id` follows the resolved primary. On create, a guest profile made this way is saved only if the reservation is; a create that fails (validation, capacity, overbooking) leaves no new guest behind. Guest entries must belong to the reservation's hotel, cannot repeat, and cannot exceed `adults + children`. An update that includes `guests` replaces the complete list; removing a guest does not delete their profile. An update that lowers `adults` or `children` below the number of named guests is rejected with a `guests` error; remove guests first.
 
 `children_ages` is an ordered integer array from 0 through 17. A new reservation with children must include one age per child. On update, if `children` or `children_ages` is supplied, the resulting ages count must equal `children`; legacy reservations with no ages can still receive unrelated updates.
 
@@ -380,7 +380,7 @@ This books three rooms: two unassigned Deluxe rooms and Suite room 501.
 | Field | Rules |
 | --- | --- |
 | `hotel_id` | **required**, string, must exist in `hotels.id` — see the hotel-scoping note below. |
-| `guest_id` | **required**, string, must exist in `guests.id`, and must belong to `hotel_id`. It remains the primary guest pointer and must match the primary entry in `guests` when that list is supplied. |
+| `guest_id` | **required unless `guests` is sent**, string, must exist in `guests.id`, and must belong to `hotel_id`. It remains the primary guest pointer and must match the primary entry in `guests` when that list is supplied. Omit it to book a new primary named by contact details in `guests`; it is set to the resolved primary. Sending neither `guest_id` nor `guests` → `422` on `guest_id`. |
 | `rooms` | **required**, array of 1–50 items. The total `quantity` across items must be ≤ 50. |
 | `rooms.*.room_type_id` | **required**, uuid. Must be an **active**, non-deleted room type of this hotel; otherwise `422` on `rooms.{i}.room_type_id` ("The selected room type is not available." — the same message whether it is inactive, deleted, or another hotel's). |
 | `rooms.*.quantity` | optional integer 1–50, default 1. Expanded into that many lines. |
@@ -453,6 +453,21 @@ the first and gets the `422`.
 
 HTTP `201 Created`. `body` is a [reservation object](#the-reservation-object).
 
+**A new primary guest (walk-in or first-time guest):** leave out `guest_id` and name the
+primary in `guests` by contact details. The guest is matched or created by the same rules as
+any other entry, and the reservation's `guest_id` is set to it:
+
+```json
+"guests": [
+  { "first_name": "Omar", "last_name": "Fathy", "phone_number": "+201001112223", "email": "omar@example.com", "is_primary": true }
+]
+```
+
+Errors on that entry use the same keys as any other entry: `guests.{i}` (no phone or email,
+ambiguous email, phone and email naming different guests), `guests.{i}.guest_id`,
+`guests.{i}.is_primary`, and `guests` (not exactly one primary, list larger than the party,
+`guest_id` sent but not matching the primary).
+
 No email is sent for reservations created through this endpoint. Only reservations the AI creates through WhatsApp (`source: "whatsapp"`) email the hotel's admins — see [AI Advisor Chat API](/D:/Hospitality%20Ecosystem/docs/ai-advisor-chat-api-documentation.md).
 
 ### Error: Missing Required Fields
@@ -464,7 +479,7 @@ HTTP `422`:
   "message": "The given data was invalid.",
   "errors": {
     "hotel_id": ["The hotel id field is required."],
-    "guest_id": ["The guest id field is required."],
+    "guest_id": ["The guest id field is required when guests is not present."],
     "reservation_id": ["The reservation id field is required."]
   }
 }
@@ -1051,6 +1066,123 @@ Another hotel's upload returns `404`. Every endpoint needs `reservations.import`
 Each run writes one `hotel.reservations_imported` event on behalf of the uploader. It
 records the import id, file name, dry-run flag, status and totals. No per-reservation
 events are written.
+
+## 7. Reservation Voucher (PDF)
+
+> **Added 2026-10-27 (SPEC-013, `specs/018-reservation-voucher`).** Not a breaking change.
+
+A voucher is a one-page PDF proving the reservation exists. It is **not an invoice**. It is
+rendered from the saved reservation on every request and never stored. The hotel's voucher
+templates (see the [voucher templates API](voucher-templates-api-documentation.md)) decide its
+design; without one, a built-in layout is used.
+
+**What it shows:** hotel name, address, phone and email; reference and status; primary guest
+and other guests; arrival, departure and nights; one line per booked room with the **room type
+only** (never a room number); adults, children and children's ages; special requests; the total
+(only when asked); a staff note (only when given); the issue date.
+
+**Language:** Arabic (right to left) when the primary guest's `preferred_language` starts with
+`ar`, English otherwise. The primary guest is the one marked primary in the guest list. A template named in the request uses its own language instead.
+
+**Statuses:** `pending`, `confirmed`, `checked_in` and `checked_out` get a voucher; `cancelled`
+and `no_show` get `409`.
+
+### Generation options
+
+Shared by download and email.
+
+| Field | Rule |
+| --- | --- |
+| `template_id` | Optional uuid of a template in the reservation's hotel. Default: the hotel's default template for the guest's language, else the built-in layout. Another hotel's or a deleted template is `404`. |
+| `show_total` | Boolean, default `false`. Prints `reservation_value` and `currency`. |
+| `staff_note` | Optional string, max 500. |
+| `overrides` | Optional object. Changes what **this PDF** shows; the reservation is never changed. Allowed keys below; any other key is `422` on `overrides.{key}`. |
+
+| Override key | Rule |
+| --- | --- |
+| `primary_guest_name` | string ≤ 200 |
+| `other_guest_names` | array (≤ 50) of string ≤ 200 |
+| `arrival_date`, `departure_date` | date; the displayed departure must be after the displayed arrival. Nights are recomputed. |
+| `room_lines` | array (≤ 50) of string ≤ 200 |
+| `adults`, `children` | integer 0–99 |
+| `children_ages` | array of integer 0–17 |
+| `special_requests` | string ≤ 2000 |
+| `hotel_name`, `hotel_address`, `hotel_phone`, `hotel_email` | string ≤ 255 |
+
+Overrides need no permission beyond the voucher permission. Every generation is audited
+(`reservation.voucher_generated`) with the overrides and note, which is the control on them.
+
+### 7.1 Download
+
+`POST /api/reservation/{id}/voucher` · permission `reservations.voucher`
+
+Body: the generation options. Query `?download=1` sets `Content-Disposition: attachment`
+(default `inline`).
+
+| Status | Meaning |
+| --- | --- |
+| `200` | `Content-Type: application/pdf`. Header `X-Voucher-Unplaced` lists data sent but not placed by the template, e.g. `voucher.staff_note`. Both it and `Content-Disposition` are exposed to the browser through CORS. |
+| `404` | Reservation or `template_id` not in your hotel |
+| `409` | Cancelled or no-show reservation |
+| `422` | Invalid options |
+
+Errors are the usual JSON `{ message, code, body }`.
+
+### 7.2 Email to the guest
+
+`POST /api/reservation/{id}/voucher/email` · permission `reservations.voucher_email`
+
+Only ever sent when staff call this endpoint; nothing emails a voucher automatically.
+
+| Field | Rule |
+| --- | --- |
+| *generation options* | as above |
+| `request_key` | **Required** string ≤ 100. Generate one per click (a UUID). A retry with the same key never sends a second email. |
+| `email` | Optional; defaults to the email of the guest marked primary (the guest the voucher is addressed to), falling back to the reservation's guest. The guest record is not changed. |
+| `overrides` | As for download, **except** `hotel_name`, `hotel_address`, `hotel_phone` and `hotel_email`, which are `422` here: an email from the hotel's sending domain must carry the hotel's real contact details. Download the voucher to change them. |
+
+| Status | Meaning |
+| --- | --- |
+| `202` | Queued. `body` is the email request (below). |
+| `200` | This `request_key` was already used for this reservation: the existing request, nothing queued. |
+| `404` / `409` | As for download |
+| `422` | No recipient (the guest has no email and none was sent), invalid email or options |
+| `429` | Five voucher emails were already requested for this reservation in the last 24 hours, or you have requested twenty across all reservations in the last hour (requests that ended `skipped` or `failed` don't count) |
+
+```json
+{
+  "message": "Voucher email queued",
+  "code": 202,
+  "body": {
+    "id": "uuid",
+    "reservation_id": "uuid",
+    "status": "queued",
+    "status_reason": null,
+    "recipient": "layla@example.com",
+    "language": "en",
+    "voucher_template_id": null,
+    "show_total": false,
+    "unplaced": [],
+    "created_at": "2026-10-27T10:00:00.000000Z",
+    "sent_at": null
+  }
+}
+```
+
+`status` moves `queued` → `sending` → `sent`, or ends `skipped` (`status_reason`
+`reservation_cancelled` / `reservation_no_show` / `reservation_deleted`: the reservation
+changed before the email went out) or `failed` (after the last retry, or
+`uncertain_delivery`: the mailer may already have delivered it and cannot drop a duplicate, so
+it is not sent again; send it again with a new `request_key` if needed). The email uses the language, template and
+options chosen when it was requested, with the reservation's data at send time.
+
+### 7.3 Email history
+
+`GET /api/reservation/{id}/voucher/emails` · permission `reservations.voucher_email`
+
+The reservation's email requests, newest first, paginated. The usual list parameters work:
+`filter[status]=sent`, `search` (recipient), `sort=-sent_at`, `per_page` (max 100). Poll it after a `202` to show
+"sent at …".
 
 ## Validation Errors
 

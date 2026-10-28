@@ -42,6 +42,8 @@ An employee with no staff role has:
 
 None of the five `knowledge_documents.*` permissions is a default, not even `view` (2026-10-07): whatever is uploaded, corrected or switched on is what the guest AI tells guests, so a hotel grants them on purpose. Global knowledge (shared by every hotel) is not a permission at all: it is managed only by super admins under `/api/admin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md).
 
+None of the six voucher permissions (`reservations.voucher`, `reservations.voucher_email`, `voucher_templates.*`) is a default (2026-10-27): a voucher is a document proving a booking, with guest names and dates, and emailing it sends guest data outside the system.
+
 `GET /api/permissions` returns this list as `employee_defaults`, so the UI does not need to hard-code it.
 
 ### Permission Reference
@@ -99,6 +101,8 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `reservations.import` | `POST /api/reservation/import`, `GET /api/reservation/imports`, `GET /api/reservation/imports/{id}`, `GET /api/reservation/imports/{id}/rows`, `GET /api/reservation/imports/{id}/report`, `POST /api/reservation/import-previews`, `GET /api/reservation/import-previews`, `GET /api/reservation/import-previews/{id}`, `POST /api/reservation/import-previews/{id}/confirm`, `DELETE /api/reservation/import-previews/{id}` |
 | `reservations.overbook` | `overbook_override: true` on `POST /api/reservation` and `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
 | `reservations.no_show` | `POST /api/reservation/{id}/no-show`, `POST /api/reservation/{id}/undo-no-show`, `POST /api/stays/{id}/no-show`, `POST /api/stays/{id}/undo-no-show`, and the Admin AI no-show tool (not a default) |
+| `reservations.voucher` | `POST /api/reservation/{id}/voucher` (not a default) |
+| `reservations.voucher_email` | `POST /api/reservation/{id}/voucher/email`, `GET /api/reservation/{id}/voucher/emails` (not a default) |
 | `rooms.view` | `GET /api/room`, `GET /api/room/{id}`, `GET /api/housekeeping/board` |
 | `rooms.create` | `POST /api/room` |
 | `rooms.update` | `PUT /api/room/{id}` |
@@ -127,6 +131,10 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 | `transactions.view` | `GET /api/transaction`, `GET /api/transaction/{id}` |
 | `transactions.import` | `POST /api/transaction/import` |
 | `transactions.reverse` | `POST /api/transaction/{id}/reverse` |
+| `voucher_templates.view` | `GET /api/voucher-templates`, `GET /api/voucher-templates/fields`, `GET /api/voucher-templates/{id}`, `GET /api/voucher-templates/{id}/image`, `POST /api/voucher-templates/{id}/preview` (with a real `reservation_id`, also `reservations.voucher`; not a default) |
+| `voucher_templates.create` | `POST /api/voucher-templates` (not a default) |
+| `voucher_templates.update` | `PUT /api/voucher-templates/{id}`, `PUT /api/voucher-templates/{id}/layout`, `POST /api/voucher-templates/{id}/image` (not a default) |
+| `voucher_templates.delete` | `DELETE /api/voucher-templates/{id}` (not a default) |
 
 ### Admin AI tools (SPEC-055)
 

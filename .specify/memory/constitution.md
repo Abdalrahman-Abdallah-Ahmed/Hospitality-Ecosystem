@@ -1,6 +1,30 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 2.2.0 → 2.2.1
+Bump rationale: PATCH — clarification in "API Design": an endpoint whose purpose is to
+deliver a file may return the binary on success; errors still use apiResponse(). This
+records existing practice (GET /knowledge-documents/{id}/download) and covers the voucher
+PDF, preview and template image endpoints (specs/018-reservation-voucher, analysis D1).
+
+Modified sections: Domain Model and Product Constraints → API Design.
+Added sections: none. Removed sections: none.
+Templates: not modified. Deferred TODOs: none.
+
+Previous (2.2.0) report follows.
+Version change: 2.1.0 → 2.2.0
+Bump rationale: MINOR — materially expanded guidance in "Guest Identity and WhatsApp": a
+staff member MAY explicitly email a guest a document generated from PMS data (such as the
+reservation voucher) whatever the WhatsApp window. It must be person-triggered, never by an
+event, job or AI agent, and audited. Sending documents by WhatsApp stays post-MVP. Decided
+in the SPEC-013 clarification Q2 (specs/018-reservation-voucher).
+
+Modified sections: Domain Model and Product Constraints → Guest Identity and WhatsApp.
+Added sections: none. Removed sections: none.
+Templates: not modified (they read the constitution at runtime).
+Deferred TODOs: none.
+
+Previous (2.1.0) report follows.
 Version change: 2.0.0 → 2.1.0
 Bump rationale: MINOR — materially expanded guidance in "Guest Identity and WhatsApp":
 guests are still contacted through their WhatsApp number whenever WhatsApp rules allow,
@@ -286,6 +310,9 @@ Implementation MUST:
   window), a transactional notice to the guest MAY be sent by email to the guest's address
   on file instead. WhatsApp template messages are not required for this. Email MUST NOT be
   used for AI conversation turns or promotional messages.
+- A staff member MAY explicitly send a guest a document generated from PMS data (such as a
+  reservation voucher) by email, whatever the state of the WhatsApp window. Such a send MUST
+  be triggered by a person, never by an event, job or AI agent, and MUST be audited.
 - Unknown numbers MUST NOT receive privileged guest operations until identity is established.
   Identity resolution MUST be conservative and never attach one guest's conversation or
   actions to another guest.
@@ -385,6 +412,9 @@ Implementation MUST:
 - The backend MUST remain a JSON API. Endpoints MUST enforce authentication where required,
   hotel scope, and authorization; validate requests; return consistent responses via
   `apiResponse()` and Resources; and avoid exposing internal implementation details.
+  An endpoint whose purpose is to deliver a file (a generated document, an uploaded file)
+  MAY return that file's binary content on success; its errors MUST still use
+  `apiResponse()`.
 - Existing API conventions SHOULD be preserved; breaking changes SHOULD be avoided and, when
   unavoidable, documented.
 
@@ -505,4 +535,4 @@ These rules MUST NOT be violated without an explicit, recorded architectural dec
   verify adherence to the Core Principles and Non-Negotiable Rules. Complexity or deviation
   MUST be justified in the plan's Complexity Tracking section.
 
-**Version**: 2.1.0 | **Ratified**: 2026-09-22 | **Last Amended**: 2026-10-06
+**Version**: 2.2.1 | **Ratified**: 2026-09-22 | **Last Amended**: 2026-10-27
