@@ -239,6 +239,7 @@ it('keeps staff roles and the permission list away from employees, whatever thei
 // permission list
 
 it('lists every permission grouped by resource, with the employee defaults', function () {
+    config(['features.transactions' => true]); // the ledger group is hidden while off (spec 019)
     [$admin] = adminWithStaffRoleHotel();
 
     $response = $this->withHeaders(staffRoleApiHeaders())->actingAs($admin, 'sanctum')

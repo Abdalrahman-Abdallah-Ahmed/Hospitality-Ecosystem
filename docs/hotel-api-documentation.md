@@ -138,6 +138,11 @@ Field notes for the UI:
 - `inspection_required` (*added 2026-10-04*, default `false`): when `true`, a completed
   clean creates an inspection task and a room counts as ready only once inspected. Rooms
   cleaned before it was turned on still count as ready.
+- `transactions_enabled` (*added 2026-10-30*, spec 019, read-only): whether the
+  [transactions ledger](transaction-api-documentation.md#feature-flag--off-by-default) is on.
+  It is a platform setting (`FEATURE_TRANSACTIONS`, off by default), the same for every hotel;
+  sending it on create or update has no effect. The frontend hides the Transactions menu and
+  settlement figures while it is `false`.
 - `guest_memories_enabled` (*added 2026-10-10*, SPEC-084, default `true`): whether the
   hotel keeps [guest memories](guest-memories-api-documentation.md) — short notes about
   returning guests extracted after check-out — and whether the Concierge uses them. Turning it

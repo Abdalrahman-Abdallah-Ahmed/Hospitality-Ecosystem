@@ -207,6 +207,8 @@ Validation errors (`422`) use Laravel's default shape `{ "message": "...", "erro
 
 Returns everything a role editor needs: all permissions grouped by resource, plus the defaults for employees without a role. Labels are English display text generated from the values.
 
+*Changed 2026-10-30 (spec 019):* while the transactions ledger is switched off (`FEATURE_TRANSACTIONS`, off by default) the `transactions` group is left out, because its endpoints answer `404`. Roles that already hold `transactions.*` keep them.
+
 HTTP `200`:
 
 ```json

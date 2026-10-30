@@ -70,6 +70,12 @@ metric becomes misleading.
 | `realisation_rate` | Did the guest actually attend? | Bookings |
 | `settlement_rate` | Did money arrive, where money was due? | The ledger |
 
+*Changed 2026-10-30 (spec 019):* `settlement_rate`, `settled_value` and
+`settled_value_by_currency` are **absent** from the response while
+the transactions ledger is switched off (`FEATURE_TRANSACTIONS`, off by default; see
+[transaction-api-documentation.md](transaction-api-documentation.md#feature-flag--off-by-default)).
+The other figures are unaffected.
+
 ### `fulfilment_gap` — the diagnostic
 
 `accepted − booked`. Guests who agreed and never ended up with a booking.

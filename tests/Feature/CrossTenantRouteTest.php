@@ -32,6 +32,9 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
+    // The ledger is off by default (spec 019); on here so its routes are
+    // actually looked up and the isolation rules test them.
+    config(['features.transactions' => true]);
 });
 
 /**

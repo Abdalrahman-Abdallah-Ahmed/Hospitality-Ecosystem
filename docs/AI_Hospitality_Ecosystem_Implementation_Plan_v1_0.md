@@ -35,7 +35,7 @@ updating this plan first.
 | D8 | Party composition | On the reservation: `adults`, `children`, `children_ages` (JSON int array; length must equal `children`). Totals across all rooms. |
 | D9 | Recommendation approval | All recommendations start `pending_approval`. The Concierge pitches (reactive and proactive) **only from approved** ones. Inline generation (`PitchRecommendationGenerator`) is kept but creates pending records for review instead of pitching them. |
 | D10 | Decline retry | After a decline, at most **one** different approved activity may be pitched within 24 h of the first pitch; after that the stay is closed to pitching. Replaces the current `DECLINED_THIS_STAY` behavior. |
-| D11 | Transactions | Isolated behind a config/per-hotel feature flag, **off by default**: routes and UI hidden, MVP flows stop writing to the ledger. Code and tables kept. |
+| D11 | Transactions | Isolated behind a platform config feature flag (no per-hotel override, clarified 2026-10-30), **off by default**: routes and UI hidden, MVP flows stop writing to the ledger. Code and tables kept. |
 | D12 | WhatsApp number | **One shared platform number** (current). Guest resolution keeps the cross-hotel order: in-house → upcoming → latest past stay → newest guest. |
 | D13 | Frontend | No separate frontend phase. Each phase lists its frontend slice; specs live in this repo, frontend tasks run in `ecosystem-frontend`. |
 | D14 | Phase 0 | The gap analysis is folded into §2 of this plan. Phase 0 shrinks to a baseline test run and a frontend inventory. |
@@ -235,10 +235,11 @@ its frontend slice delivered.
    - Starting categories:
      - Housekeeping: cleaning, inspection, linen, amenities, room issue.
      - Maintenance: HVAC, plumbing, electrical, appliance, furniture, structural, other.
-5. **Finance flag (D11):**
-   - A `features.transactions` config/per-hotel flag, off by default.
-   - Transaction routes return 404/403 when it is off.
-   - MVP flows skip ledger writes.
+5. **Finance flag (D11):** *delivered as `specs/019-transactions-feature-flag`.*
+   - A `features.transactions` platform config flag, off by default. No per-hotel
+     override and no endpoint to change it (clarified 2026-10-30).
+   - Transaction routes return 404 when it is off, for every role.
+   - MVP flows skip ledger writes (none wrote any; now covered by a test).
 6. **Guest verification:** Guest fields match §2.3. No change expected.
 
 **Frontend:**

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -55,7 +56,8 @@ class BookingResource extends JsonResource
             'activity' => ActivityResource::make($this->whenLoaded('activity')),
             'recommendation' => RecommendationResource::make($this->whenLoaded('recommendation')),
             'created_by' => UserResource::make($this->whenLoaded('createdBy')),
-            'transactions' => TransactionResource::collection($this->whenLoaded('transactions')),
+            // Never output while the ledger is off, however it got loaded (spec 019).
+            'transactions' => $this->when(Features::enabled(Features::TRANSACTIONS), fn () => TransactionResource::collection($this->whenLoaded('transactions'))),
             'outcome' => RecommendationOutcomeResource::make($this->whenLoaded('outcomeLink')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

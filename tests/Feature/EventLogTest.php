@@ -206,6 +206,7 @@ it('emits transaction.reversed on the original transaction', function () {
 });
 
 it('writes one summary event for an import, not one per row', function () {
+    config(['features.transactions' => true]); // the ledger is off by default (spec 019)
     [$admin, $hotel] = elAdminWithHotel();
 
     $header = 'item_name,line_total,transacted_at';

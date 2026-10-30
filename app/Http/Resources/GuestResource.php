@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -42,7 +43,8 @@ class GuestResource extends JsonResource
             'hotel' => HotelResource::make($this->whenLoaded('hotel')),
             'reservations' => ReservationResource::collection($this->whenLoaded('reservations')),
             'stays' => StayResource::collection($this->whenLoaded('stays')),
-            'transactions' => TransactionResource::collection($this->whenLoaded('transactions')),
+            // Never output while the ledger is off, however it got loaded (spec 019).
+            'transactions' => $this->when(Features::enabled(Features::TRANSACTIONS), fn () => TransactionResource::collection($this->whenLoaded('transactions'))),
             // Conversations belong to the AI package, which has no resource
             // of its own; they serialise as the package models define.
             'conversations' => $this->whenLoaded('conversations'),

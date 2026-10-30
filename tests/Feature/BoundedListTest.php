@@ -16,6 +16,8 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
+    // The ledger is off by default (spec 019); its list route is paged too.
+    config(['features.transactions' => true]);
 });
 
 it('pages every list route and refuses an oversized page', function () {

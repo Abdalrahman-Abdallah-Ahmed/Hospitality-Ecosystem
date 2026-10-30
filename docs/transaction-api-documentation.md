@@ -8,6 +8,25 @@ It covers four endpoints: a **bulk import** (`import`), two **read** endpoints
 (`index`, `show`), and **reverse** (the only correction path). There is
 deliberately **no create, update, or delete** — the ledger is append-only.
 
+## Feature flag — off by default
+
+*Added 2026-10-30, spec 019 (SPEC-005, D11).* Finance is not part of the MVP, so the
+ledger is switched off unless the platform setting `FEATURE_TRANSACTIONS=true` is
+configured (`config('features.transactions')`). It is platform-wide: there is no
+per-hotel value, and no endpoint or role can turn it on.
+
+While it is off, all four endpoints below answer the same way for every role (super
+admin, admin, employee) and every id, before any permission check:
+
+```json
+HTTP 404
+{ "message": "The transactions feature is not enabled.", "code": 404, "body": null }
+```
+
+Nothing is read, written or metered. An unauthenticated request still gets `401`.
+The hotel response's `transactions_enabled` tells the frontend whether to show the
+Transactions menu. Once it is on, everything below applies unchanged.
+
 ## Base URL
 
 All endpoints are defined in `routes/api.php`, served under `/api`:

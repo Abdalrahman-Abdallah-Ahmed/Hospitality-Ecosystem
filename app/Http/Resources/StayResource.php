@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Enums\StayStatus;
 use App\Models\Stay;
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -76,7 +77,8 @@ class StayResource extends JsonResource
             'guest' => GuestResource::make($this->whenLoaded('guest')),
             'reservation' => ReservationResource::make($this->whenLoaded('reservation')),
             'room' => RoomResource::make($this->whenLoaded('room')),
-            'transactions' => TransactionResource::collection($this->whenLoaded('transactions')),
+            // Never output while the ledger is off, however it got loaded (spec 019).
+            'transactions' => $this->when(Features::enabled(Features::TRANSACTIONS), fn () => TransactionResource::collection($this->whenLoaded('transactions'))),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

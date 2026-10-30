@@ -185,6 +185,7 @@ it('assigns an event at 23:59 on the last day to the closing period', function (
 });
 
 it('records one event with quantity N for a bulk import, not N events', function () {
+    config(['features.transactions' => true]); // the ledger is off by default (spec 019)
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = meteringHotel('Import Hotel');
     $admin->update(['hotel_id' => $hotel->id]);

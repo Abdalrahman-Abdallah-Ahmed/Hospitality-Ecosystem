@@ -12,6 +12,8 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     putenv('API_KEY=test-api-key');
     config(['app.api_key' => 'test-api-key']);
+    // The ledger is off by default (spec 019); these tests exercise it.
+    config(['features.transactions' => true]);
 });
 
 function txnCtrlApiHeaders(): array
