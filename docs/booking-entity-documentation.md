@@ -13,6 +13,10 @@ separate from the two events either side of it.
 | **Booking** | **A commitment exists** | `bookings` — this entity |
 | Settlement | Money moved, whenever it moved | `transactions` (WP-3) |
 
+*Changed 2026-10-30 (spec 019):* while the transactions ledger is switched off
+(`FEATURE_TRANSACTIONS`, off by default), `GET /api/booking/{id}` returns no
+`transactions` key.
+
 **The booking is the conversion.** It is the moment a recommendation has done
 its job. Whether money follows, when, and whether at all, is a separate fact
 about a separate process.
