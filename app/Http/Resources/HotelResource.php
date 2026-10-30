@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Features;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -42,6 +43,9 @@ class HotelResource extends JsonResource
             'proactive_settings' => $this->resource->proactiveSettings()->toArray(),
             // Guest memories on or off for this hotel (SPEC-084 FR-032).
             'guest_memories_enabled' => (bool) ($this->guest_memories_enabled ?? true),
+            // Platform-wide and read-only: the frontend hides the Transactions
+            // menu from it (spec 019 FR-009).
+            'transactions_enabled' => Features::enabled(Features::TRANSACTIONS),
             'owner' => UserResource::make($this->whenLoaded('owner')),
             'hotel_group' => HotelGroupResource::make($this->whenLoaded('hotelGroup')),
             'created_at' => $this->created_at,

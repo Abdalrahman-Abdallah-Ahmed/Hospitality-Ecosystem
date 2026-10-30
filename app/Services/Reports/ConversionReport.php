@@ -160,7 +160,7 @@ class ConversionReport
         ];
 
         $body['evidence_level'] = $this->weakestEvidenceLevel($outcomes);
-        $body['notes'] = $this->notes($outcomes, $observed, $attributed, $accepted, $booked, $includedBookings, $realised, $expectedValueByCurrency->count());
+        $body['notes'] = $this->notes($outcomes, $observed, $attributed, $accepted, $booked, $includedBookings, $realised, $expectedValueByCurrency->count(), $includeLedger);
 
         return $body;
     }
@@ -225,6 +225,7 @@ class ConversionReport
         int $includedBookings,
         int $realised,
         int $currencyCount,
+        bool $includeLedger,
     ): string {
         $window = config('recommendations.attribution.window_hours');
         $notes = [];
@@ -241,7 +242,8 @@ class ConversionReport
             }
         }
 
-        if ($includedBookings > 0) {
+        // Only a caveat on the settlement rate, so only when that rate is reported.
+        if ($includeLedger && $includedBookings > 0) {
             $notes[] = "{$includedBookings} bookings are all-inclusive and will never settle; excluded from the settlement rate.";
         }
 

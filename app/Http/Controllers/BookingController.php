@@ -12,6 +12,7 @@ use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Stay;
 use App\Services\BookingService;
+use App\Support\Features;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,9 +62,15 @@ class BookingController extends Controller
     {
         $this->authorize('view', $booking);
 
-        return apiResponse('Booking fetched successfully.', 200, BookingResource::make($booking->load([
-            'guest', 'activity', 'recommendation', 'stay', 'transactions',
-        ])->loadExists('openCancellationRequest as cancellation_requested')));
+        $relations = ['guest', 'activity', 'recommendation', 'stay'];
+
+        // The ledger stays out of the booking while it is switched off (spec 019).
+        if (Features::enabled(Features::TRANSACTIONS)) {
+            $relations[] = 'transactions';
+        }
+
+        return apiResponse('Booking fetched successfully.', 200, BookingResource::make($booking->load($relations)
+            ->loadExists('openCancellationRequest as cancellation_requested')));
     }
 
     /**

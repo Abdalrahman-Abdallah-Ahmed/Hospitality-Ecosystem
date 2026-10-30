@@ -128,10 +128,13 @@ Route::middleware('api.key')->group(function () {
         Route::get('/booking/{booking}', [BookingController::class, 'show']);
         Route::patch('/booking/{booking}', [BookingController::class, 'update']);
         Route::get('/analytics/conversion', [AnalyticsController::class, 'conversion']);
-        Route::post('/transaction/import', [TransactionController::class, 'import']);
-        Route::post('/transaction/{transaction}/reverse', [TransactionController::class, 'reverse']);
-        Route::get('/transaction', [TransactionController::class, 'index']);
-        Route::get('/transaction/{transaction}', [TransactionController::class, 'show']);
+        // The ledger is off unless config('features.transactions') is on (D11, spec 019).
+        Route::middleware('feature:transactions')->group(function () {
+            Route::post('/transaction/import', [TransactionController::class, 'import']);
+            Route::post('/transaction/{transaction}/reverse', [TransactionController::class, 'reverse']);
+            Route::get('/transaction', [TransactionController::class, 'index']);
+            Route::get('/transaction/{transaction}', [TransactionController::class, 'show']);
+        });
         Route::resource('/hotel', HotelController::class)->except(['edit', 'create']);
         Route::put('/room/{room}/housekeeping-status', [RoomHousekeepingController::class, 'update']);
         Route::post('/room/{room}/out-of-order', [RoomOutOfOrderController::class, 'store']);

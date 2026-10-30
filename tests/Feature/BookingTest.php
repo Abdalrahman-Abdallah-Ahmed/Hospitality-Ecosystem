@@ -171,6 +171,7 @@ it('distinguishes a recommendation-origin booking from a guest-request one', fun
 });
 
 it('links a transaction to a booking by reference and leaves walk-ups unlinked', function () {
+    config(['features.transactions' => true]); // the ledger is off by default (spec 019)
     [$admin, $hotel] = bookingAdminWithHotel();
     $booking = bookingFor($hotel);
 
@@ -193,6 +194,7 @@ it('links a transaction to a booking by reference and leaves walk-ups unlinked',
 });
 
 it('keeps an unresolvable booking reference on the row and counts it', function () {
+    config(['features.transactions' => true]); // the ledger is off by default (spec 019)
     [$admin, $hotel] = bookingAdminWithHotel();
 
     $csv = "item_name,line_total,transacted_at,booking_reference\nSunset dive,60,2026-09-03 18:00,ZZZ-9999";

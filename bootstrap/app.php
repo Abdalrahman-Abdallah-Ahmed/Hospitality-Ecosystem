@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApiKeyMiddleware;
+use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\VerifyWhatsAppWebhookSignature;
@@ -41,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.key' => ApiKeyMiddleware::class,
             'tenant' => ResolveTenant::class,
             'super_admin' => EnsureSuperAdmin::class,
+            'feature' => EnsureFeatureEnabled::class,
             'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
         ]);
 
@@ -49,6 +51,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // not found (404), instead of being loaded, validated and then
         // refused by the policy (spec 017 FR-005).
         $middleware->prependToPriorityList(SubstituteBindings::class, ResolveTenant::class);
+
+        // A switched-off feature answers before any of its records is looked
+        // up, so every id gets the same "not enabled" 404 (spec 019).
+        $middleware->prependToPriorityList(SubstituteBindings::class, EnsureFeatureEnabled::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

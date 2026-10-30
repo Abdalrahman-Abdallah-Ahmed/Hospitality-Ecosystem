@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\Permission;
 use App\Models\StaffRole;
+use App\Support\Features;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 
@@ -19,6 +20,10 @@ class PermissionController extends Controller
         $this->authorize('viewAny', StaffRole::class);
 
         $groups = collect(Permission::cases())
+            // While the ledger is off its endpoints answer 404, so the role
+            // editor does not offer them. Roles keep what they already hold.
+            ->reject(fn (Permission $permission) => $permission->group() === Features::TRANSACTIONS
+                && ! Features::enabled(Features::TRANSACTIONS))
             ->groupBy(fn (Permission $permission) => $permission->group())
             ->map(fn ($permissions, string $group) => [
                 'group' => $group,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Recommendation;
 use App\Services\Reports\ConversionReport;
+use App\Support\Features;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,7 +15,8 @@ class AnalyticsController extends Controller
      *
      * Acceptance, booking, realisation and settlement rates for the period,
      * with the fulfilment gap and the caveats that keep them honest. The
-     * figures live in ConversionReport, shared with the Admin AI.
+     * figures live in ConversionReport, shared with the Admin AI. Settlement
+     * is left out while the ledger is switched off (D11, spec 019).
      */
     public function conversion(Request $request, ConversionReport $report): JsonResponse
     {
@@ -25,6 +27,10 @@ class AnalyticsController extends Controller
             $request->filled('to') ? $request->string('to')->toString() : null,
         );
 
-        return apiResponse('Conversion analytics fetched successfully.', 200, $report->for($from, $to));
+        return apiResponse('Conversion analytics fetched successfully.', 200, $report->for(
+            $from,
+            $to,
+            includeLedger: Features::enabled(Features::TRANSACTIONS),
+        ));
     }
 }
