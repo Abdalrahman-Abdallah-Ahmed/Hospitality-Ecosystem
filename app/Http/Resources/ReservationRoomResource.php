@@ -29,6 +29,9 @@ class ReservationRoomResource extends JsonResource
             'stay_status' => $this->whenLoaded('stay', fn () => $this->stay?->status?->value),
             'room_type' => RoomTypeResource::make($this->whenLoaded('roomType')),
             'room' => RoomResource::make($this->whenLoaded('room')),
+            // The line holds a room of another type than it booked (spec 020
+            // FR-015); availability counts it against the room's type.
+            'is_upgrade' => $this->when($this->resource->relationLoaded('room'), fn () => $this->room !== null && $this->room->room_type_id !== $this->room_type_id),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -45,6 +45,13 @@ class AvailabilityService
     public const AI_MAX_NIGHTS = 31;
 
     /**
+     * The type a line counts against: the type of the room it holds, else
+     * the type it booked. They differ only on an upgrade (spec 020 FR-016),
+     * which moves the unit from the booked type to the room's.
+     */
+    private const EFFECTIVE_TYPE = 'coalesce(rooms.room_type_id, reservation_rooms.room_type_id)';
+
+    /**
      * The hotel's current date, which decides what "today" and "tonight" mean
      * for lookups and for guests staying past their departure date.
      */
@@ -102,7 +109,7 @@ class AvailabilityService
         $typeIds = $types->pluck('id')->all();
         $rooms = $this->roomCounts($hotel->id, $typeIds);
         $booked = $this->countByTypeAndNight(
-            $this->holdingNights($hotel, $nights[0], $departureDate)->whereIn('reservation_rooms.room_type_id', $typeIds)
+            $this->holdingNights($hotel, $nights[0], $departureDate)->whereIn(DB::raw(self::EFFECTIVE_TYPE), $typeIds)
         );
 
         return [
@@ -333,6 +340,10 @@ class AvailabilityService
      * from the line, not its stay, since the guard runs before the stays
      * catch up with a change. A line with no stay (legacy rows) falls back
      * to its reservation's status for the overstay rule.
+     *
+     * Each line counts against its effective type (EFFECTIVE_TYPE): the type
+     * of the room it holds, which differs from the booked type only on an
+     * upgrade (spec 020 FR-016).
      */
     private function holdingNights(Hotel $hotel, string $from, string $to): Builder
     {
@@ -345,6 +356,7 @@ class AvailabilityService
 
         return DB::table('reservation_rooms')
             ->join('reservations', 'reservations.id', '=', 'reservation_rooms.reservation_id')
+            ->leftJoin('rooms', 'rooms.id', '=', 'reservation_rooms.room_id')
             ->leftJoin('stays', function ($join) {
                 $join->on('stays.reservation_room_id', '=', 'reservation_rooms.id')->whereNull('stays.deleted_at');
             })
@@ -372,8 +384,8 @@ class AvailabilityService
     private function countByTypeAndNight(Builder $holdingNights): array
     {
         $rows = $holdingNights
-            ->groupBy('reservation_rooms.room_type_id', DB::raw('nights.night'))
-            ->selectRaw('reservation_rooms.room_type_id, nights.night::date as night, count(*) as booked')
+            ->groupBy(DB::raw(self::EFFECTIVE_TYPE), DB::raw('nights.night'))
+            ->selectRaw(self::EFFECTIVE_TYPE.' as room_type_id, nights.night::date as night, count(*) as booked')
             ->get();
 
         $counts = [];

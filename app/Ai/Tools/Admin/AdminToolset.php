@@ -34,6 +34,7 @@ use App\Ai\Tools\GetStaysTool;
 use App\Ai\Tools\GetTaskCategoriesTool;
 use App\Ai\Tools\GetTasksTool;
 use App\Ai\Tools\KnowledgeSearchTool;
+use App\Ai\Tools\MoveRoomTool;
 use App\Ai\Tools\NoShowTool;
 use App\Ai\Tools\ReportTaskIssueTool;
 use App\Ai\Tools\ReturnRoomToServiceTool;
@@ -131,10 +132,11 @@ class AdminToolset
             // Write: guests and reservations.
             self::write(new CreateGuestTool($hotel), [Permission::GUESTS_CREATE], [Guest::class]),
             self::write(new UpdateGuestTool($hotel), [Permission::GUESTS_UPDATE], [Guest::class]),
-            self::write(new CreateReservationTool($hotel), [Permission::RESERVATIONS_CREATE], [Reservation::class, ReservationRoom::class, Guest::class]),
+            self::write(new CreateReservationTool($hotel, $user), [Permission::RESERVATIONS_CREATE], [Reservation::class, ReservationRoom::class, Guest::class]),
             self::write(new UpdateReservationTool($hotel), [Permission::RESERVATIONS_UPDATE], [Reservation::class, ReservationRoom::class]),
             self::write(new CancelReservationTool($hotel), [Permission::RESERVATIONS_UPDATE], [Reservation::class, ReservationRoom::class]),
-            self::write(new AssignRoomsTool($hotel), [Permission::RESERVATIONS_UPDATE], [ReservationRoom::class]),
+            self::write(new AssignRoomsTool($hotel), [Permission::RESERVATIONS_ASSIGN_ROOM], [ReservationRoom::class]),
+            self::write(new MoveRoomTool($hotel), [Permission::RESERVATIONS_MOVE_ROOM], [Stay::class, ReservationRoom::class, Room::class]),
             self::write(new CheckInTool($hotel, $user), [Permission::STAYS_CHECK_IN], [Stay::class, Reservation::class, Room::class]),
             self::write(new CheckOutTool($hotel, $user), [Permission::STAYS_CHECK_OUT], [Stay::class, Reservation::class, Room::class]),
             self::write(new NoShowTool($hotel, $user), [Permission::RESERVATIONS_NO_SHOW], [Reservation::class, Stay::class]),

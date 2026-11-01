@@ -1,10 +1,12 @@
 <?php
 
 use App\Ai\Tools\Admin\AdminToolset;
+use App\Enums\Permission;
 use App\Enums\ReservationStatus;
 use App\Enums\UserRole;
 use App\Jobs\SyncKnowledgeChunksJob;
 use App\Models\Booking;
+use App\Models\EventLog;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\Reservation;
 use App\Models\ReservationRoom;
@@ -91,6 +93,50 @@ it('refuses a room of another type with the assignment rule\'s own words', funct
 
     expect($result)->toContain("Room 501 is not of the line's room type")
         ->and($s['reservation']->reservationRooms()->whereNotNull('room_id')->count())->toBe(0);
+});
+
+it('assigns rooms for anyone the staff endpoint lets, and names rooms on create only for them (spec 020)', function () {
+    $s = aatSeed();
+    $reservation = aatReservation($s['hotel'], $s['type'], [null]);
+
+    // reservations.assign_room alone is enough, as on PUT /reservation/{id}/rooms.
+    $assigner = aatEmployee($s['hotel'], [Permission::RESERVATIONS_ASSIGN_ROOM]);
+    aatExpectDone(aatCall(aatTool($assigner, 'AssignRoomsTool'), ['code' => $reservation->reservation_id, 'assignments' => [['room_number' => '101']]]));
+
+    // Creating with a named room needs it too, as on POST /reservation.
+    $creator = aatEmployee($s['hotel'], [Permission::RESERVATIONS_CREATE, Permission::GUESTS_VIEW]);
+    $args = [...aatArgs('CreateReservationTool', $s), 'rooms' => [['room_type' => $s['type']->name, 'room_number' => '102']]];
+
+    expect(aatCall(aatTool($creator, 'CreateReservationTool'), $args))->toContain('permission to choose a specific room')
+        ->and(Reservation::whereHas('reservationRooms', fn ($line) => $line->where('room_id', $s['rooms']['102']->id))->exists())->toBeFalse();
+});
+
+it('moves a guest in the house with the reason, through the same rules as the desk (spec 020 FR-023)', function () {
+    $s = aatSeed();
+    $reservation = aatReservation($s['hotel'], $s['type'], [$s['rooms']['101']->id]);
+    fdPost($this, $s['admin'], "/api/reservation/{$reservation->id}/check-in")->assertOk();
+    $tool = aatTool($s['admin'], 'MoveRoomTool');
+
+    expect(aatCall($tool, ['code' => $reservation->reservation_id, 'room_number' => '102', 'reason' => '']))
+        ->toContain('needs a reason');
+
+    aatExpectDone(aatCall($tool, ['code' => $reservation->reservation_id, 'room_number' => '102', 'reason' => 'Broken shower']));
+
+    $stay = $reservation->stays()->sole();
+    expect($stay->room->room_number)->toBe('102')
+        ->and(EventLog::where('event_type', 'stay.room_moved')->where('subject_id', $stay->id)->value('reason'))->toBe('Broken shower');
+});
+
+it('refuses a move into a booked room in the rule\'s own words, and never overbooks', function () {
+    $s = aatSeed();
+    $reservation = aatReservation($s['hotel'], $s['type'], [$s['rooms']['101']->id], ['reservation_id' => 'RES-MOVE']);
+    fdPost($this, $s['admin'], "/api/reservation/{$reservation->id}/check-in")->assertOk();
+    aatReservation($s['hotel'], $s['type'], [$s['rooms']['102']->id], ['reservation_id' => 'RES-HELD']);
+
+    $result = aatCall(aatTool($s['admin'], 'MoveRoomTool'), ['code' => 'RES-MOVE', 'room_number' => '102', 'reason' => 'Noise']);
+
+    expect($result)->toContain('Room 102 is booked for RES-HELD on overlapping nights')
+        ->and($reservation->stays()->sole()->room->room_number)->toBe('101');
 });
 
 it('changes a reservation\'s dates and party but has no way to change its status (FR-012)', function () {

@@ -5,7 +5,6 @@ use App\Enums\RoomStatusesEnum;
 use App\Jobs\StartHousekeepingDayJob;
 use App\Models\Guest;
 use App\Models\Reservation;
-use App\Models\ReservationRoom;
 use App\Models\Room;
 use App\Models\Stay;
 use App\Services\HousekeepingService;
@@ -179,10 +178,11 @@ it('frees the old room and occupies the new one when a checked-in guest moves ro
             'status' => 'checked_in',
         ])->json('body.id');
 
-    $lineId = ReservationRoom::where('reservation_id', $reservationId)->value('id');
+    $stayId = Stay::where('reservation_id', $reservationId)->value('id');
 
+    // A guest in the house moves through the room move (spec 020).
     $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
-        ->putJson("/api/reservation/{$reservationId}", ['rooms' => [['id' => $lineId, 'room_id' => $newRoom->id]]])
+        ->postJson("/api/stays/{$stayId}/move-room", ['room_id' => $newRoom->id, 'reason' => 'Noise'])
         ->assertOk();
 
     expect($oldRoom->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)

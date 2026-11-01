@@ -20,6 +20,14 @@ class Reservation extends Model
 {
     use BelongsToHotel, Filterable, HasUuids, RecordsEvents, SoftDeletes;
 
+    /**
+     * Notes from the last edit about rooms taken off its lines (spec 020:
+     * un-cancelling when a room was given away meanwhile). Not stored.
+     *
+     * @var list<string>
+     */
+    public array $roomWarnings = [];
+
     protected $keyType = 'string';
 
     public $incrementing = false;

@@ -499,7 +499,11 @@ it('moves a checked-in guest to another room of the same type', function () {
     $line = ReservationRoom::where('reservation_id', $id)->value('id');
     expect($room101->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
 
-    rrUpdate($this, $admin, $id, ['rooms' => [['id' => $line, 'room_id' => $room105->id]]])->assertOk();
+    // A guest in the house moves through the room move (spec 020).
+    $stayId = Stay::where('reservation_room_id', $line)->value('id');
+    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($admin, 'sanctum')
+        ->postJson("/api/stays/{$stayId}/move-room", ['room_id' => $room105->id, 'reason' => 'Noise'])
+        ->assertOk();
 
     expect($room101->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
         ->and($room105->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);

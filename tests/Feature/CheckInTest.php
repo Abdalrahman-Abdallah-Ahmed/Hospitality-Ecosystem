@@ -85,7 +85,7 @@ it('refuses a named room of another type, another hotel, or booked by someone el
 
     fdPost($this, $hotel->owner, checkInUri($stay), ['room_id' => $suiteRoom->id])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(["stays.{$stay->id}.room_id" => "Room {$suiteRoom->room_number} is not of the line's room type."]);
+        ->assertJsonValidationErrors(["stays.{$stay->id}.room_id" => "Room {$suiteRoom->room_number} is not of the line's room type; send upgrade to place it anyway."]);
 
     fdPost($this, $hotel->owner, checkInUri($stay), ['room_id' => $foreignRoom->id])
         ->assertUnprocessable()
@@ -124,14 +124,15 @@ it('refuses a room that is out of order', function (array $roomState) {
 
 it('refuses a room that another guest is in', function () {
     [$hotel, $type, [$room]] = fdHotel();
-    $first = fdBook($hotel, $type, [$room->id], ['departure_date' => now()->addDay()->toDateString()]);
+    // Yesterday's guest is still in the room on their departure day.
+    $first = fdBook($hotel, $type, [$room->id], ['arrival_date' => now()->subDay()->toDateString(), 'departure_date' => now()->toDateString()]);
+    $this->travel(-1)->days();
     fdPost($this, $hotel->owner, checkInUri(fdStays($first)[0]))->assertOk();
+    $this->travelBack();
 
-    // A second booking that was put in the same room outside the rules (legacy data).
-    $second = fdBook($hotel, $type, [null], ['arrival_date' => now()->toDateString()]);
+    // Today's booking of the same room is back-to-back, so it may hold the room.
+    $second = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($second);
-    $second->reservationRooms()->sole()->update(['room_id' => $room->id]);
-    $stay->update(['room_id' => $room->id]);
 
     fdPost($this, $hotel->owner, checkInUri($stay))
         ->assertUnprocessable()

@@ -4,18 +4,34 @@ namespace App\Http\Controllers;
 
 use App\Enums\HousekeepingStatusesEnum;
 use App\Enums\RoomStatusesEnum;
+use App\Http\Controllers\Concerns\HandlesFrontDeskActions;
+use App\Http\Requests\AssignRoomsRequest;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\StoreRoomRequest;
+use App\Http\Requests\UnassignedArrivalsRequest;
 use App\Http\Requests\UpdateRoomRequest;
+use App\Http\Resources\ReservationResource;
 use App\Http\Resources\RoomResource;
 use App\Http\Resources\RoomTypeResource;
+use App\Http\Resources\UnassignedArrivalResource;
 use App\Models\Hotel;
+use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Services\Reservations\RoomAssignmentService;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Http\JsonResponse;
 
 class RoomController extends Controller
 {
+    use HandlesFrontDeskActions;
+
+    private const RESERVATION_RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room.roomType', 'reservationRooms.stay'];
+
+    public function __construct(
+        private readonly RoomAssignmentService $assignments,
+    ) {}
+
     /**
      * Display a listing of the resource.
      */
@@ -131,5 +147,57 @@ class RoomController extends Controller
         $roomTypeId = $validated['room_type_id'] ?? null;
 
         return $roomTypeId !== null && RoomType::onlyTrashed()->whereKey($roomTypeId)->exists();
+    }
+
+    /**
+     * Puts physical rooms on a reservation's lines, changes or removes them,
+     * ahead of arrival (spec 020). Moving a guest who is in the house is a
+     * stay action (StayController::moveRoom).
+     */
+    public function assign(AssignRoomsRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('assignRoom', $reservation);
+
+        $result = $this->assignments->assign(
+            $reservation,
+            array_map(fn (array $item) => [
+                'line_id' => strtolower($item['line_id']),
+                'room_id' => isset($item['room_id']) ? strtolower($item['room_id']) : null,
+                'upgrade' => (bool) ($item['upgrade'] ?? false),
+            ], $request->validated('assignments')),
+            $this->overbookOverride($request),
+        );
+
+        return apiResponse('Rooms updated.', 200, [
+            'reservation' => ReservationResource::make($result['reservation']->load(self::RESERVATION_RELATIONS)),
+            'warnings' => $result['warnings'],
+        ]);
+    }
+
+    /**
+     * Lines with no room yet whose guest has not arrived, on reservations
+     * arriving in the window (FR-018), plus late arrivals that can still
+     * come (arrival passed, departure not), marked `is_late`. A multi-room
+     * reservation is checked in once its first room is, so its rooms still
+     * on the way are listed too.
+     */
+    public function unassignedArrivals(UnassignedArrivalsRequest $request): JsonResponse
+    {
+        $this->authorize('assignRoom', Reservation::class);
+
+        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        if (! $hotel) {
+            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+        }
+
+        $lines = $this->assignments->unassignedArrivals(
+            $hotel,
+            $request->validated('from'),
+            $request->validated('to'),
+            $request->validated('sort') ?? 'arrival_date',
+            $request->integer('per_page', 15),
+        );
+
+        return apiResponse('Unassigned arrivals fetched successfully.', 200, UnassignedArrivalResource::collection($lines));
     }
 }

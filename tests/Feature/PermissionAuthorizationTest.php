@@ -149,6 +149,7 @@ it('lets an employee read a resource only when their role grants it', function (
     'recommendations' => ['/api/recommendation', Permission::RECOMMENDATIONS_VIEW],
     'reservations' => ['/api/reservation', Permission::RESERVATIONS_VIEW],
     'reservation imports' => ['/api/reservation/imports', Permission::RESERVATIONS_IMPORT],
+    'unassigned arrivals' => ['/api/reservation/unassigned-arrivals', Permission::RESERVATIONS_ASSIGN_ROOM],
     'rooms' => ['/api/room', Permission::ROOMS_VIEW],
     'room types' => ['/api/room-types', Permission::ROOM_TYPES_VIEW],
     'stays' => ['/api/stays', Permission::STAYS_VIEW],
@@ -228,6 +229,33 @@ it('lets an employee check guests in and out only when their role grants it', fu
     'check-out a room' => ['check-out', 'room'],
     'check-out a reservation' => ['check-out', 'reservation'],
 ]);
+
+it('never gives employees without a role the room assignment or room move permissions', function () {
+    expect(Permission::employeeDefaults())
+        ->not->toContain(Permission::RESERVATIONS_ASSIGN_ROOM)
+        ->not->toContain(Permission::RESERVATIONS_MOVE_ROOM);
+});
+
+it('lets an employee assign rooms and move guests only when their role grants it', function (string $action) {
+    [$hotel, $type, $rooms] = fdHotel(3);
+    $reservation = fdBook($hotel, $type, [$rooms[0]->id]);
+    [$stay] = fdStays($reservation);
+    $line = $reservation->reservationRooms()->sole();
+
+    if ($action === 'move') {
+        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    }
+
+    $call = fn ($user) => match ($action) {
+        'assign' => $this->withHeaders(permissionApiHeaders())->actingAs($user, 'sanctum')
+            ->putJson("/api/reservation/{$reservation->id}/rooms", ['assignments' => [['line_id' => $line->id, 'room_id' => $rooms[1]->id]]]),
+        'move' => fdPost($this, $user, "/api/stays/{$stay->id}/move-room", ['room_id' => $rooms[1]->id, 'reason' => 'Noise']),
+    };
+    $permission = $action === 'assign' ? Permission::RESERVATIONS_ASSIGN_ROOM : Permission::RESERVATIONS_MOVE_ROOM;
+
+    $call(fdEmployee($hotel, Permission::employeeDefaults()))->assertForbidden();
+    $call(fdEmployee($hotel, [$permission]))->assertOk();
+})->with(['assign', 'move']);
 
 it('never gives employees without a role the no-show permission', function () {
     expect(Permission::employeeDefaults())->not->toContain(Permission::RESERVATIONS_NO_SHOW);

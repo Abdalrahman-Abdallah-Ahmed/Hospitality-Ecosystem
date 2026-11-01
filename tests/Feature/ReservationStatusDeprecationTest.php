@@ -154,7 +154,9 @@ it('moves an in-house guest to another room and leaves the old one dirty', funct
     [$stay] = fdStays($reservation);
     fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
 
-    putReservation($this, $hotel->owner, $reservation, ['rooms' => [['id' => $stay->reservation_room_id, 'room_id' => $b->id]]])->assertOk();
+    // Through the room move now (spec 020); the general edit refuses it.
+    putReservation($this, $hotel->owner, $reservation, ['rooms' => [['id' => $stay->reservation_room_id, 'room_id' => $b->id]]])->assertUnprocessable();
+    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/move-room", ['room_id' => $b->id, 'reason' => 'Noise'])->assertOk();
 
     expect($stay->fresh()->room_id)->toBe($b->id)
         ->and($b->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED)

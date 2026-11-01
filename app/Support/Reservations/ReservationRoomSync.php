@@ -112,10 +112,14 @@ class ReservationRoomSync
      * name any of the reservation's lines and reinstates it, items without
      * `id` are new lines, and lines left out simply stay cancelled.
      *
+     * `$upgradeLineIds` are lines RoomAssignmentService has cleared to take a
+     * room of another type (spec 020 FR-015); the general edit passes none.
+     *
      * @param  array<int, array<string, mixed>>  $items
+     * @param  list<string>  $upgradeLineIds
      * @return array{moves: array<string, string|null>, create: array<int, array{index: int, room_type_id: mixed, room_id: mixed}>, cancel: Collection<int, ReservationRoom>, reinstate: array<int, string>}
      */
-    public static function diff(Reservation $reservation, array $items, ReservationStatus $statusBefore, bool $reactivating = false): array
+    public static function diff(Reservation $reservation, array $items, ReservationStatus $statusBefore, bool $reactivating = false, array $upgradeLineIds = []): array
     {
         if (! $reactivating && in_array($statusBefore, [ReservationStatus::CHECKED_OUT, ReservationStatus::CANCELLED], true)) {
             self::fail('rooms', "Rooms cannot be changed on a {$statusBefore->value} reservation.");
@@ -164,7 +168,7 @@ class ReservationRoomSync
                     self::fail("rooms.{$index}.room_id", "A checked-in guest's room can be changed but not cleared.");
                 }
             } else {
-                self::assertRoomFits($reservation->hotel_id, $item['room_id'], $line->room_type_id, "rooms.{$index}.room_id");
+                self::assertRoomFits($reservation->hotel_id, $item['room_id'], in_array($lineId, $upgradeLineIds, true) ? null : $line->room_type_id, "rooms.{$index}.room_id");
             }
 
             $moves[$lineId] = $item['room_id'];
@@ -269,7 +273,7 @@ class ReservationRoomSync
             self::fail($key, 'The selected room is not available.');
         }
 
-        if ($room->room_type_id !== $roomTypeId) {
+        if ($roomTypeId !== null && $room->room_type_id !== $roomTypeId) {
             self::fail($key, "Room {$room->room_number} is not of the line's room type.");
         }
     }

@@ -254,11 +254,12 @@ it('carries reservation edits through to its stay without touching what actually
     $checkedInAt = Stay::where('reservation_id', $reservation->id)->first()->checked_in_at;
     $line = $reservation->reservationRooms()->sole();
 
+    // The room move's own path (RoomAssignmentService::move, spec 020).
     ReservationCreator::update($reservation, [
         'departure_date' => '2026-09-06',
         'adults' => 2,
         'reservation_value' => 500,
-    ], [['id' => $line->id, 'room_id' => $secondRoom->id]]);
+    ], [['id' => $line->id, 'room_id' => $secondRoom->id]], allowInHouseMove: true);
 
     $stay = Stay::where('reservation_id', $reservation->id)->first();
 
