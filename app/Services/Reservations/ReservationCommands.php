@@ -4,8 +4,8 @@ namespace App\Services\Reservations;
 
 use App\Enums\ReservationStatus;
 use App\Models\Reservation;
-use App\Models\ReservationRoom;
 use App\Support\Reservations\ReservationCreator;
+use App\Support\Reservations\RoomHoldConflict;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,10 +23,12 @@ class ReservationCommands
     /**
      * @param  array<string, mixed>  $attributes
      * @param  array<int, array<string, mixed>>|null  $rooms  the full desired list of live lines, or null to leave them
+     * @param  bool  $allowInHouseMove  only RoomAssignmentService::move() moves a guest in the house
+     * @param  list<string>  $upgradeLineIds  lines RoomAssignmentService cleared for a room of another type
      */
-    public function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false, bool $overbookOverride = false): Reservation
+    public function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false, bool $overbookOverride = false, bool $allowInHouseMove = false, array $upgradeLineIds = []): Reservation
     {
-        return DB::transaction(fn () => ReservationCreator::update($reservation, $attributes, $rooms, $capacityOverride, $overbookOverride));
+        return RoomHoldConflict::rethrow(fn () => DB::transaction(fn () => ReservationCreator::update($reservation, $attributes, $rooms, $capacityOverride, $overbookOverride, $allowInHouseMove, $upgradeLineIds)));
     }
 
     /**
@@ -38,22 +40,24 @@ class ReservationCommands
     }
 
     /**
-     * Put rooms on (or take them off) existing lines. `$roomByLine` maps a
-     * live line's id to a room id, or null to clear it; lines not named keep
-     * their room. Every live line is passed on, so none is cancelled.
+     * Put rooms on (or take them off) existing lines through the room
+     * assignment rules (spec 020). `$roomByLine` maps a live line's id to a
+     * room id, or null to clear it; lines not named keep their room.
+     * `$upgradeLineIds` may take a room of another type.
      *
      * @param  array<string, string|null>  $roomByLine
+     * @param  list<string>  $upgradeLineIds
+     * @return array{reservation: Reservation, warnings: list<string>}
      */
-    public function assignRooms(Reservation $reservation, array $roomByLine): Reservation
+    public function assignRooms(Reservation $reservation, array $roomByLine, array $upgradeLineIds = []): array
     {
-        $rooms = $reservation->reservationRooms()->active()->get()
-            ->map(fn (ReservationRoom $line) => [
-                'id' => $line->id,
-                'room_id' => array_key_exists($line->id, $roomByLine) ? $roomByLine[$line->id] : $line->room_id,
+        return app(RoomAssignmentService::class)->assign($reservation, collect($roomByLine)
+            ->map(fn (?string $roomId, string $lineId) => [
+                'line_id' => $lineId,
+                'room_id' => $roomId,
+                'upgrade' => in_array($lineId, $upgradeLineIds, true),
             ])
             ->values()
-            ->all();
-
-        return $this->update($reservation, [], $rooms);
+            ->all());
     }
 }

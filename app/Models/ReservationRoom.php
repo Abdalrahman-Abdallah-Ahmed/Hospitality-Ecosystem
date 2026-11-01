@@ -44,6 +44,12 @@ class ReservationRoom extends Model
         'cancelled_with_reservation',
     ];
 
+    /**
+     * `held_nights` is kept by database triggers (spec 020 migration
+     * add_room_overlap_guarantee): never written here, never sent out.
+     */
+    protected $hidden = ['held_nights'];
+
     protected $casts = [
         'status' => ReservationRoomStatus::class,
         'cancelled_with_reservation' => 'boolean',

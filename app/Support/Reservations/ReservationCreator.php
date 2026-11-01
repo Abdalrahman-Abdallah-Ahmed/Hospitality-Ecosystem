@@ -19,6 +19,8 @@ use App\Services\GuestIdentityService;
 use App\Services\HousekeepingService;
 use App\Services\StayService;
 use App\Support\Audit\EventLogger;
+use DateTimeInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -123,7 +125,7 @@ class ReservationCreator
             ReservationLifecycle::assertCreate(self::statusOf($attributes['status']));
         }
 
-        return DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport, $overbookOverride, $guests) {
+        return RoomHoldConflict::rethrow(fn () => DB::transaction(function () use ($attributes, $units, $capacityOverride, $fromImport, $overbookOverride, $guests) {
             // A primary named only by contact details: found or created here,
             // so it is rolled back with a reservation that fails.
             if (empty($attributes['guest_id']) && $guests !== null) {
@@ -138,13 +140,19 @@ class ReservationCreator
                 ->where('reservation_id', $attributes['reservation_id'])
                 ->first();
 
+            if (! $fromImport) {
+                self::assertNewRoomsFree($attributes, $units, $reservation?->id);
+            }
+
             $previousRoomIds = [];
 
             if ($reservation) {
                 $previousRoomIds = self::roomIdsOf($reservation);
+                // Before restoring: a restored reservation would make its old
+                // lines hold their rooms again, clashing with today's bookings.
+                self::cancelLines($reservation->reservationRooms()->active()->get());
                 $reservation->restore();
                 $reservation->update($attributes);
-                self::cancelLines($reservation->reservationRooms()->active()->get());
             } else {
                 $reservation = Reservation::create($attributes);
             }
@@ -171,7 +179,7 @@ class ReservationCreator
             self::syncRoomOccupancy([...$previousRoomIds, ...self::roomIdsOf($reservation)]);
 
             return $reservation;
-        });
+        }));
     }
 
     /**
@@ -190,7 +198,7 @@ class ReservationCreator
      *
      * @param  array<int, array<string, mixed>>|null  $rooms
      */
-    public static function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false, bool $overbookOverride = false): Reservation
+    public static function update(Reservation $reservation, array $attributes, ?array $rooms, bool $capacityOverride = false, bool $overbookOverride = false, bool $allowInHouseMove = false, array $upgradeLineIds = []): Reservation
     {
         $guests = $attributes['guests'] ?? null;
         unset($attributes['room_id'], $attributes['guests']);
@@ -214,10 +222,10 @@ class ReservationCreator
         $reactivating = $statusBefore === ReservationStatus::CANCELLED && $statusAfter !== ReservationStatus::CANCELLED;
 
         $plan = $rooms !== null
-            ? ReservationRoomSync::diff($reservation, $rooms, $statusBefore, $reactivating)
+            ? ReservationRoomSync::diff($reservation, $rooms, $statusBefore, $reactivating, $upgradeLineIds)
             : null;
 
-        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating, $overbookOverride, $guests, $statusBefore) {
+        return DB::transaction(function () use ($reservation, $attributes, $plan, $capacityOverride, $reactivating, $overbookOverride, $guests, $statusBefore, $statusAfter, $allowInHouseMove) {
             // Every line's type, cancelled ones too: reactivating the
             // reservation brings its cancelled lines back into inventory.
             $availability = app(AvailabilityService::class);
@@ -237,7 +245,15 @@ class ReservationCreator
             $footprintBefore = $availability->footprint($reservation);
 
             $roomIdsBefore = self::roomIdsOf($reservation);
-            $vacatedRooms = self::guardInHouse($reservation, $attributes, $plan);
+            $vacatedRooms = self::guardInHouse($reservation, $attributes, $plan, $allowInHouseMove);
+            $reservation->roomWarnings = self::checkRoomHolds($reservation, $attributes, $plan, $reactivating, $statusAfter);
+
+            // Rooms the edit gives up are let go before the dates or status
+            // change, so the overlap constraint, checked row by row, never
+            // sees a room this edit is moving away from (research R3).
+            if ($plan) {
+                self::releaseRooms($plan);
+            }
 
             $reservation->update($attributes);
             $partyChanged = $reservation->wasChanged(['adults', 'children']);
@@ -302,30 +318,38 @@ class ReservationCreator
     }
 
     /**
-     * Writes a planned line update in an order the database accepts. One
-     * room may sit on only one live line of a reservation, and the unique
-     * index is checked after every row, so: removed lines give their rooms
-     * up first, every moving line then lets go of its old room, and only
-     * then do moves, reinstated lines and new lines take theirs. Swapping
-     * two lines' rooms, or moving into a room a removed line held, works.
+     * The first half of a planned line update, in an order the database
+     * accepts. One room may sit on only one live line of a reservation and
+     * on one booking per night, and both are checked after every row, so:
+     * removed lines give their rooms up first and every moving line then
+     * lets go of its old room. applyPlan() then lets moves, reinstated lines
+     * and new lines take theirs. Swapping two lines' rooms, or moving into a
+     * room a removed line held, works.
+     *
+     * @param  array{moves: array<string, string|null>, create: array<int, array<string, mixed>>, cancel: iterable<ReservationRoom>, reinstate: array<int, string>}  $plan
+     */
+    private static function releaseRooms(array $plan): void
+    {
+        self::cancelLines($plan['cancel']);
+
+        // Let go of old rooms quietly; the audited change is the final one.
+        ReservationRoom::withoutGlobalScope('hotel')
+            ->whereIn('id', array_keys($plan['moves']))
+            ->whereNotNull('room_id')
+            ->update(['room_id' => null]);
+    }
+
+    /**
+     * The second half of a planned line update (see releaseRooms()).
      *
      * @param  array{moves: array<string, string|null>, create: array<int, array<string, mixed>>, cancel: iterable<ReservationRoom>, reinstate: array<int, string>}  $plan
      */
     private static function applyPlan(Reservation $reservation, array $plan): void
     {
-        self::cancelLines($plan['cancel']);
-
         $lines = ReservationRoom::withoutGlobalScope('hotel')
             ->whereIn('id', [...array_keys($plan['moves']), ...$plan['reinstate']])
             ->get()
             ->keyBy('id');
-
-        // Let go of old rooms quietly; the audited change is the final one.
-        foreach (array_keys($plan['moves']) as $lineId) {
-            if ($lines[$lineId]->room_id !== null) {
-                ReservationRoom::withoutGlobalScope('hotel')->whereKey($lineId)->update(['room_id' => null]);
-            }
-        }
 
         self::reinstateLines($lines->only($plan['reinstate']));
 
@@ -522,9 +546,123 @@ class ReservationCreator
                 throw ValidationException::withMessages(['reservation' => 'Check out the in-house rooms first.']);
             }
 
-            Stay::withoutGlobalScope('hotel')->where('reservation_id', $locked->id)->get()->each->delete();
+            // The reservation first: once it is deleted its lines hold no room,
+            // so deleting a departed or no-show stay cannot make its line take
+            // back a room another booking has since been given.
+            $stays = Stay::withoutGlobalScope('hotel')->where('reservation_id', $locked->id)->get();
             $locked->delete();
+            $stays->each->delete();
         });
+    }
+
+    /**
+     * Rooms named on new lines must be free on the new reservation's nights
+     * (spec 020 FR-002). A reservation that holds no inventory holds no room.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  array<int, array{index: int, room_type_id: mixed, room_id: mixed}>  $units
+     *
+     * @throws ValidationException
+     */
+    private static function assertNewRoomsFree(array $attributes, array $units, ?string $reservationId): void
+    {
+        $status = isset($attributes['status']) ? self::statusOf($attributes['status']) : ReservationStatus::PENDING;
+
+        if (! in_array($status, ReservationStatus::holdingInventory(), true)) {
+            return;
+        }
+
+        $nights = [self::dateOf($attributes['arrival_date']), self::dateOf($attributes['departure_date'])];
+
+        foreach ($units as $unit) {
+            if ($unit['room_id'] !== null && ($clash = RoomAssignmentRules::clash($unit['room_id'], $nights, $reservationId))) {
+                throw ValidationException::withMessages(["rooms.{$unit['index']}.room_id" => $clash]);
+            }
+        }
+    }
+
+    /**
+     * Checks the rooms the reservation will hold after this edit against
+     * every other booking (spec 020 FR-002, FR-011), before anything is
+     * written. A room the edit puts on a line, or one kept while the dates
+     * move, must be free on the new nights. Bringing a cancelled reservation
+     * back is different: a room given away meanwhile comes off its line, and
+     * the returned warning says so, as on a no-show undo.
+     *
+     * A clash on a room and dates the edit does not touch is left alone, so
+     * an unrelated edit is never blocked by older data. A line whose guest
+     * has left or never came holds no room any more (holdingLines()), so its
+     * old room is not checked either.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, mixed>|null  $plan
+     * @return list<string>
+     *
+     * @throws ValidationException
+     */
+    private static function checkRoomHolds(Reservation $reservation, array $attributes, ?array $plan, bool $reactivating, ReservationStatus $statusAfter): array
+    {
+        if (! in_array($statusAfter, ReservationStatus::holdingInventory(), true)) {
+            return [];
+        }
+
+        $current = [$reservation->arrival_date->toDateString(), $reservation->departure_date->toDateString()];
+        $nights = [
+            isset($attributes['arrival_date']) ? self::dateOf($attributes['arrival_date']) : $current[0],
+            isset($attributes['departure_date']) ? self::dateOf($attributes['departure_date']) : $current[1],
+        ];
+        $datesChanged = $nights !== $current;
+
+        $lines = $reservation->reservationRooms()->get()->keyBy('id');
+        $keptIds = match (true) {
+            $reactivating && $plan !== null => $plan['reinstate'],
+            $reactivating => $lines->where('cancelled_with_reservation', true)->keys()->all(),
+            default => $lines->where('status', '!=', ReservationRoomStatus::CANCELLED)->keys()
+                ->diff(collect($plan['cancel'] ?? [])->pluck('id'))->values()->all(),
+        };
+        $released = Stay::withoutGlobalScope('hotel')
+            ->where('reservation_id', $reservation->id)
+            ->whereIn('status', [StayStatus::DEPARTED, StayStatus::NO_SHOW])
+            ->pluck('reservation_room_id')
+            ->all();
+        $keptIds = array_values(array_diff($keptIds, $released));
+
+        // [line or null, room id, changed by this edit, error key]
+        $holds = [];
+        foreach ($keptIds as $lineId) {
+            $moved = array_key_exists($lineId, $plan['moves'] ?? []);
+            $holds[] = [$lines[$lineId], $moved ? $plan['moves'][$lineId] : $lines[$lineId]->room_id, $moved, 'rooms'];
+        }
+        foreach ($plan['create'] ?? [] as $unit) {
+            $holds[] = [null, $unit['room_id'], true, "rooms.{$unit['index']}.room_id"];
+        }
+
+        $warnings = [];
+
+        foreach ($holds as [$line, $roomId, $changed, $key]) {
+            if ($roomId === null || (! $changed && ! $datesChanged && ! $reactivating)) {
+                continue;
+            }
+
+            if (! $message = RoomAssignmentRules::clash($roomId, $nights, $reservation->id)) {
+                continue;
+            }
+
+            if ($changed || ! $reactivating) {
+                throw ValidationException::withMessages([$key => $message]);
+            }
+
+            // Through the model, so taking the room off is audited.
+            $line->update(['room_id' => null]);
+            $warnings[] = "{$message} It was taken off this booking; assign another room before check-in.";
+        }
+
+        return $warnings;
+    }
+
+    private static function dateOf(mixed $date): string
+    {
+        return $date instanceof DateTimeInterface ? $date->format('Y-m-d') : Carbon::parse($date)->toDateString();
     }
 
     /**
@@ -539,7 +677,7 @@ class ReservationCreator
      *
      * @throws ValidationException
      */
-    private static function guardInHouse(Reservation $reservation, array $attributes, ?array $plan): array
+    private static function guardInHouse(Reservation $reservation, array $attributes, ?array $plan, bool $allowInHouseMove = false): array
     {
         $inHouse = self::inHouseStays($reservation)->keyBy('reservation_room_id');
 
@@ -568,6 +706,15 @@ class ReservationCreator
             $stay = $inHouse->get($lineId);
 
             if ($stay && $stay->room_id && $stay->room_id !== $roomId) {
+                // A guest in the house changes room only through the room
+                // move, which asks for a reason and its own permission
+                // (spec 020 FR-013, research R5).
+                if (! $allowInHouseMove) {
+                    $room = Room::withoutGlobalScope('hotel')->whereKey($stay->room_id)->value('room_number');
+
+                    throw ValidationException::withMessages(['rooms' => "Room {$room} is checked in; move the guest with the room-move action."]);
+                }
+
                 $vacated[] = $stay->room_id;
             }
         }

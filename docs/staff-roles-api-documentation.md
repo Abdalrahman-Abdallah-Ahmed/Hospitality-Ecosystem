@@ -36,6 +36,8 @@ An employee with no staff role has:
 
 `reservations.no_show` is never a default either: a no-show releases rooms and records a lost booking, so a hotel grants it on purpose.
 
+`reservations.assign_room` and `reservations.move_room` are never defaults (2026-10-30): they decide where guests sleep and which rooms can be given to others.
+
 `stays.view`, `stays.check_in` and `stays.check_out` are never defaults: the stays lists show guest names, rooms and dates, and check-in/out change room status and occupancy, so a hotel grants them on purpose to its front-desk roles.
 
 `rooms.update_housekeeping_status` and `rooms.set_out_of_order` are never defaults either: both change which rooms can be sold. A housekeeper who should report faults and complete inspections needs `tasks.update`; one who should also be able to take a room off sale when reporting needs `rooms.set_out_of_order`.
@@ -102,6 +104,8 @@ None of the six voucher permissions (`reservations.voucher`, `reservations.vouch
 | `reservations.overbook` | `overbook_override: true` on `POST /api/reservation` and `PUT /api/reservation/{id}` (on top of `reservations.create` / `reservations.update`; not a default) |
 | `reservations.no_show` | `POST /api/reservation/{id}/no-show`, `POST /api/reservation/{id}/undo-no-show`, `POST /api/stays/{id}/no-show`, `POST /api/stays/{id}/undo-no-show`, and the Admin AI no-show tool (not a default) |
 | `reservations.voucher` | `POST /api/reservation/{id}/voucher` (not a default) |
+| `reservations.assign_room` | `PUT /api/reservation/{id}/rooms` (assign, change, remove, upgrade), `GET /api/reservation/unassigned-arrivals`, and setting or changing `rooms[].room_id` on `POST /api/reservation` / `PUT /api/reservation/{id}` (on top of create / update); the Admin AI room tool (*added 2026-10-30*; not a default) |
+| `reservations.move_room` | `POST /api/stays/{id}/move-room`, and the Admin AI room move tool (*added 2026-10-30*; not a default) |
 | `reservations.voucher_email` | `POST /api/reservation/{id}/voucher/email`, `GET /api/reservation/{id}/voucher/emails` (not a default) |
 | `rooms.view` | `GET /api/room`, `GET /api/room/{id}`, `GET /api/housekeeping/board` |
 | `rooms.create` | `POST /api/room` |
@@ -143,7 +147,9 @@ The AI advisor itself stays admin-only, but each of its tools checks, every time
 | Permission | Advisor tools that check it |
 | --- | --- |
 | `guests.view` / `.create` / `.update` | guest search and lookup, guest messages / create a guest / update a guest |
-| `reservations.view` / `.create` / `.update` | reservation list and lookup / create a reservation / change, cancel, assign rooms |
+| `reservations.view` / `.create` / `.update` | reservation list and lookup / create a reservation / change, cancel |
+| `reservations.assign_room` | assign, change or remove rooms, and upgrade when the admin asks; also needed to name a specific room when creating a reservation (*2026-10-30*) |
+| `reservations.move_room` | move a guest in the house to another room (*2026-10-30*) |
 | `room_types.view`, `rooms.view`, `rooms.create` | room types / rooms and the housekeeping board / add a room |
 | `rooms.update_housekeeping_status` | set a room's housekeeping status |
 | `rooms.set_out_of_order` | take out of order, update, return to service |

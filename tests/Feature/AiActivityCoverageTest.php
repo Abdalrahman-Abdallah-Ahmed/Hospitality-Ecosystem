@@ -165,6 +165,11 @@ function coverageArgs(string $name, array $s): array
 
     return match ($name) {
         'CheckInTool' => $assign,
+        'MoveRoomTool' => (function () use ($s, $assign) {
+            aatCall(aatTool($s['admin'], 'CheckInTool'), $assign);
+
+            return ['code' => $s['code'], 'room_number' => '102', 'reason' => 'Noise'];
+        })(),
         'CheckOutTool' => (function () use ($s, $assign) {
             aatCall(aatTool($s['admin'], 'CheckInTool'), $assign);
 

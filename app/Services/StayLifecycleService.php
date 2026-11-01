@@ -13,6 +13,7 @@ use App\Models\Task;
 use App\Support\Reservations\ReservationCreator;
 use App\Support\Reservations\ReservationLock;
 use App\Support\Reservations\RoomAssignmentRules;
+use App\Support\Reservations\RoomHoldConflict;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -87,7 +88,7 @@ class StayLifecycleService
     {
         $hotel = Hotel::findOrFail($reservation->hotel_id);
 
-        return DB::transaction(function () use ($reservation, $stayIds, $roomsByStayId, $at, $hotel) {
+        return RoomHoldConflict::rethrow(fn () => DB::transaction(function () use ($reservation, $stayIds, $roomsByStayId, $at, $hotel) {
             [$reservation, $stays] = ReservationLock::lock($reservation);
             $reasons = [];
 
@@ -156,7 +157,7 @@ class StayLifecycleService
             }
 
             return $this->checkInResult($reservation, $stayIds === null ? $this->liveStays($reservation) : $targets->values(), $warnings);
-        });
+        }));
     }
 
     /**

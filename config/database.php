@@ -97,6 +97,10 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Seconds to wait for a connection (PDO's own default is 30).
+            // Parallel tests raise it: every worker creates its database at
+            // start, and Postgres runs CREATE DATABASE one at a time.
+            'options' => [PDO::ATTR_TIMEOUT => (int) env('DB_CONNECT_TIMEOUT', 30)],
         ],
 
         'sqlsrv' => [

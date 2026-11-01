@@ -28,6 +28,7 @@ use App\Services\StayLifecycleService;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -110,6 +111,8 @@ class ReservationController extends Controller
             throw $this->reservationIdTaken();
         }
 
+        $this->authorizeRoomChoice($request, new Reservation(['hotel_id' => $hotel->id]));
+
         $lifecycle = $this->lifecycleStatus($validated['status'] ?? null);
 
         if ($lifecycle === ReservationStatus::CHECKED_OUT) {
@@ -177,6 +180,8 @@ class ReservationController extends Controller
             throw $this->reservationIdTaken();
         }
 
+        $this->authorizeRoomChoice($request, $reservation);
+
         // Deprecated (D4, FR-020): checking in or out by setting the status.
         // It runs the real check-in or check-out, with its rules and audit.
         $lifecycle = $this->lifecycleStatus($validated['status'] ?? null);
@@ -209,10 +214,39 @@ class ReservationController extends Controller
         $reservation->refresh();
 
         return $this->deprecated(
-            apiResponse('Reservation updated successfully.'.$this->deprecationNote($reservation, $lifecycle), 200, ReservationResource::make($reservation->load(self::RELATIONS))),
+            apiResponse(
+                'Reservation updated successfully.'.$this->deprecationNote($reservation, $lifecycle).collect($reservation->roomWarnings)->map(fn (string $warning) => " {$warning}")->implode(''),
+                200,
+                ReservationResource::make($reservation->load(self::RELATIONS)),
+            ),
             $reservation,
             $lifecycle,
         );
+    }
+
+    /**
+     * Choosing, changing or clearing a line's physical room on create or
+     * edit needs reservations.assign_room too (spec 020 FR-020). Echoing a
+     * line's current room back changes nothing and needs nothing more.
+     */
+    private function authorizeRoomChoice(Request $request, Reservation $reservation): void
+    {
+        $current = $reservation->exists ? $reservation->reservationRooms()->pluck('room_id', 'id') : collect();
+
+        $choosesRoom = collect((array) $request->input('rooms', []))->contains(function ($item) use ($current) {
+            $item = (array) $item;
+            $roomId = isset($item['room_id']) ? strtolower((string) $item['room_id']) : null;
+
+            if (! isset($item['id'])) {
+                return $roomId !== null;
+            }
+
+            return array_key_exists('room_id', $item) && $roomId !== $current->get(strtolower((string) $item['id']));
+        });
+
+        if ($choosesRoom) {
+            $this->authorize('assignRoom', $reservation);
+        }
     }
 
     /**

@@ -159,6 +159,10 @@ it('gives a reservation that had no stay one stay per line', function () {
 });
 
 it('stops with the rooms listed when a room already has two in-house stays', function () {
+    // Data from before spec 020: the room overlap constraint would now refuse
+    // it. Dropped inside the test transaction, so it comes back afterwards.
+    DB::statement('ALTER TABLE reservation_rooms DROP CONSTRAINT reservation_rooms_no_overlap');
+
     [$hotel, $type] = migrationFixture();
     [$room] = avRooms($hotel, $type, 1);
 

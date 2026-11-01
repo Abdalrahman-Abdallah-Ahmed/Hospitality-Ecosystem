@@ -213,6 +213,11 @@ its frontend slice delivered.
 
 **Output:** `docs/baseline-2026-09.md`. No domain changes.
 
+**Closed (2026-10-30):** not carried out. `specs/001-baseline-test-suite` is marked
+superseded: Phases 1–14 shipped without the baseline, and its checks are covered by
+`specs/017-hardening-production-readiness` and `docs/production-readiness-checklist.md`.
+`docs/baseline-2026-09.md` will not be written.
+
 ### Phase 1 — Inventory Foundation
 
 1. **Room types (D1):**
@@ -340,6 +345,14 @@ Reservation Lifecycle, SPEC-013 Reservation Voucher (PDF).
 
 **Specs:** SPEC-020 Room-Type Availability, SPEC-021 Physical Room Assignment &
 Reassignment.
+
+**Built (2026-10-30):** SPEC-021 as `specs/020-room-assignment`. A PostgreSQL exclusion
+constraint (`reservation_rooms_no_overlap`, kept by triggers) makes a double-booked room
+impossible on every path; staff assign, swap and upgrade rooms with
+`PUT /reservation/{id}/rooms`, move in-house guests with `POST /stays/{id}/move-room`
+(reason required), and see unassigned arrivals. Permissions `reservations.assign_room` and
+`reservations.move_room`. Upgrades are allowed to anyone who may assign rooms. Run
+`rooms:overlaps` before deploying it.
 
 ### Phase 4 — Stay Lifecycle + Check-in/out
 
@@ -653,7 +666,8 @@ These are recorded here so they aren't lost:
   - Is a voucher allowed for pending and cancelled reservations?
   - Should the voucher carry a verification reference or QR code? *Answered:* no QR
     code in MVP (2026-10-27). Templates, field types and limits are settled in D18.
-- **SPEC-021:** are room-type upgrades on assignment allowed?
+- **SPEC-021:** are room-type upgrades on assignment allowed? *Answered:* yes, by anyone
+  with `reservations.assign_room`; no separate permission (specs/020, 2026-10-30).
 - **SPEC-024:** when does the reservation become `checked_in` — when the first room checks
   in, or when all rooms do?
 - **SPEC-030:** is inspection mandatory per hotel? What is the stay-over cleaning rule?

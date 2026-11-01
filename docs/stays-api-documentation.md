@@ -247,6 +247,64 @@ out. A no-show room never blocks the check-out.
 
 ---
 
+## Room move (2026-10-30)
+
+> **Added 2026-10-30 (SPEC-021, `specs/020-room-assignment`).** Before this, an in-house
+> guest's room could be changed through `PUT /api/reservation/{id}`; that now answers
+> `422` and points here.
+
+### `POST /api/stays/{stay}/move-room` — move a guest in the house
+
+Permission: `reservations.move_room` (not a default; `overbook_override: true` also needs
+`reservations.overbook`).
+
+```json
+{ "room_id": "<room 210>", "reason": "Air conditioning failed in 204", "upgrade": false }
+```
+
+| Field | Rule |
+| --- | --- |
+| `room_id` | required uuid, a room of this hotel |
+| `reason` | required, 1–500 characters; stored on the audit entry |
+| `upgrade` | optional boolean; `true` to move into a room of another type (see [upgrades](reservations-api-documentation.md#8-room-assignment-2026-10-30)) |
+| `overbook_override` | optional boolean |
+
+The stay and its line move to the new room together; the check-in time and the
+reservation's dates are unchanged. The new room becomes `occupied`; the old one is freed
+and marked housekeeping `dirty` with a cleaning task, as on check-out. The move is audited
+as `stay.room_moved` (`from_room`, `to_room`, `reason`). **Nothing is sent to the guest**;
+staff tell them.
+
+Response `200`:
+
+```json
+{
+  "stay": "<stay object, room = the new room>",
+  "vacated_room": { "id": "…", "room_number": "204", "housekeeping_status": "dirty" },
+  "cleaning_task_id": "…",
+  "open_room_change_requests": ["<task objects>"],
+  "warnings": []
+}
+```
+
+`open_room_change_requests` lists the guest's open room-change requests for this stay
+(made through the Concierge). They are not closed automatically: complete them when the
+guest has been told.
+
+Errors (`422`):
+
+| Field | Message |
+| --- | --- |
+| `stay` | "Only a guest in the house can be moved to another room." |
+| `reason` | missing or longer than 500 characters |
+| `room_id` | "The selected room is not available." (missing or another hotel's) |
+| `room_id` | "The guest is already in room 204." |
+| `room_id` | "Room 210 is out of order." / "Room 210 is occupied." |
+| `room_id` | "Room 210 is booked for RES-0042 on overlapping nights." (any night of the stay) |
+| `room_id` | "Room 501 is not of the line's room type; send upgrade to place it anyway." |
+
+Another hotel's stay → `404`.
+
 ## No-show (2026-10-21)
 
 ### `POST /api/stays/{stay}/no-show` — one room never arrived

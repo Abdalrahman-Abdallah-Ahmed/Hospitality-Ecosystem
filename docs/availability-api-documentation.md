@@ -109,3 +109,13 @@ The same numbers are available to the AI through two read tools:
 - **Guest Concierge**: only whether each active room type can be booked for the guest's
   dates, with its description and capacity. It never gives room counts, room numbers or
   other guests' bookings.
+
+## Upgrades (2026-10-30)
+
+A reservation line placed in a room of another type as an upgrade
+(`PUT /api/reservation/{id}/rooms` with `upgrade: true`, see
+[room assignment](reservations-api-documentation.md#8-room-assignment-2026-10-30)) counts
+against the **room's** type for its nights, not the type it booked: upgrading a Deluxe
+booking into a Suite frees one Deluxe and uses one Suite. Every other line, assigned or
+not, still counts against its booked type, so nothing changes for hotels that do not
+upgrade.

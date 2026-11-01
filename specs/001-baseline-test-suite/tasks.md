@@ -1,5 +1,7 @@
 # Tasks: Baseline Test Suite & Frontend Inventory
 
+> **Superseded (2026-10-30)**: not carried out; see `spec.md` Status. Do not implement.
+
 **Input**: Design documents from `specs/001-baseline-test-suite/`
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, quickstart.md

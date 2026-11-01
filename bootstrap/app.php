@@ -5,7 +5,9 @@ use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\VerifyWhatsAppWebhookSignature;
+use App\Support\Reservations\RoomHoldConflict;
 use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -60,6 +62,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        // A room double-booking that reached the database (a race, or a path
+        // without RoomHoldConflict) is the user's 422, never a 500 (spec 020
+        // FR-010), with the same body as a ValidationException on `rooms`.
+        $exceptions->render(fn (QueryException $e, Request $request) => RoomHoldConflict::matches($e)
+            ? response()->json(['message' => RoomHoldConflict::MESSAGE, 'errors' => ['rooms' => [RoomHoldConflict::MESSAGE]]], 422)
+            : null);
 
         // Unhandled errors go to Sentry once each, scrubbed (spec 017 FR-027).
         // With no DSN configured Sentry is off and this does nothing.

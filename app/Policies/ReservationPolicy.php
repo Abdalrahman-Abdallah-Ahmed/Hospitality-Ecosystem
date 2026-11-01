@@ -89,6 +89,17 @@ class ReservationPolicy
     }
 
     /**
+     * Determine whether the user can put physical rooms on a reservation's
+     * lines, change or remove them, including upgrades, and see the arrivals
+     * that still need a room (spec 020). Checked on top of create or update
+     * when those name a room.
+     */
+    public function assignRoom(User $user, ?Reservation $reservation = null): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_ASSIGN_ROOM, $reservation);
+    }
+
+    /**
      * Determine whether the user can update the model.
      */
     public function update(User $user, Reservation $reservation): bool

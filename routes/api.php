@@ -79,6 +79,7 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
         Route::get('/availability', [AvailabilityController::class, 'index']);
         Route::get('/available-channels', [ReservationController::class, 'availableChannels']);
+        Route::get('/reservation/unassigned-arrivals', [RoomController::class, 'unassignedArrivals']);
         Route::post('/reservation/import', [ReservationController::class, 'import']);
         // Before the /reservation resource, so "imports" is never bound as a reservation id.
         Route::get('/reservation/imports', [ReservationImportController::class, 'index']);
@@ -98,6 +99,7 @@ Route::middleware('api.key')->group(function () {
 
         // Reservation voucher (SPEC-013): a PDF rendered on the fly, emailed
         // only on a staff request.
+        Route::put('/reservation/{reservation}/rooms', [RoomController::class, 'assign']);
         Route::post('/reservation/{reservation}/voucher', [ReservationVoucherController::class, 'generate']);
         Route::post('/reservation/{reservation}/voucher/email', [ReservationVoucherController::class, 'email']);
         Route::get('/reservation/{reservation}/voucher/emails', [ReservationVoucherController::class, 'emails']);
@@ -111,6 +113,7 @@ Route::middleware('api.key')->group(function () {
         Route::post('/stays/{stay}/check-out', [StayController::class, 'checkOut']);
         Route::post('/stays/{stay}/no-show', [StayController::class, 'noShow']);
         Route::post('/stays/{stay}/undo-no-show', [StayController::class, 'undoNoShow']);
+        Route::post('/stays/{stay}/move-room', [StayController::class, 'moveRoom']);
         Route::post('/reservation/{reservation}/recommendations', [RecommendationController::class, 'generate']);
         Route::post('/recommendation/{recommendation}/outcome', [RecommendationController::class, 'recordOutcome']);
         Route::post('/recommendation/{recommendation}/approve', [RecommendationController::class, 'approve']);

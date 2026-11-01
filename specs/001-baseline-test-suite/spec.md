@@ -4,7 +4,11 @@
 
 **Created**: 2026-09-22
 
-**Status**: Draft
+**Status**: Superseded (2026-10-30). Not carried out. Phases 1–14 were built without a
+recorded baseline, so a pre-change snapshot can no longer be taken. The health checks it
+planned (suite on Postgres, migrate + seed from scratch, webhook/queue/scheduler smoke
+tests, readiness) are covered by `specs/017-hardening-production-readiness` and
+`docs/production-readiness-checklist.md`. Kept for history; do not implement.
 
 **Input**: User description: "read phase 0 from docs/AI_Hospitality_Ecosystem_Implementation_Plan_v1_0.md and according to the best practice of the githubs speckit create the first spec"
 

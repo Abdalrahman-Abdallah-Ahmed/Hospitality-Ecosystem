@@ -3,10 +3,12 @@
 namespace App\Ai\Tools;
 
 use App\Ai\Tools\Contracts\WritesData;
+use App\Enums\Permission;
 use App\Enums\ReservationStatus;
 use App\Models\Hotel;
 use App\Models\Room;
 use App\Models\RoomType;
+use App\Models\User;
 use App\Services\CreationNotificationService;
 use App\Support\Audit\EventLogger;
 use App\Support\Reservations\ReservationCreator;
@@ -32,6 +34,7 @@ class CreateReservationTool implements Tool, WritesData
 {
     public function __construct(
         private readonly Hotel $hotel,
+        private readonly ?User $user = null,
     ) {}
 
     /**
@@ -140,6 +143,12 @@ class CreateReservationTool implements Tool, WritesData
             $room = null;
 
             if ($roomNumber !== '') {
+                // Naming a room is room assignment (spec 020 FR-020), as on
+                // POST /reservation.
+                if ($this->user && ! $this->user->hasPermission(Permission::RESERVATIONS_ASSIGN_ROOM)) {
+                    return 'You do not have permission to choose a specific room. Book the room type, and someone who can assign rooms will place the guest.';
+                }
+
                 if ($quantity > 1) {
                     return 'A room number can only be given for a single room, not for a quantity above 1.';
                 }

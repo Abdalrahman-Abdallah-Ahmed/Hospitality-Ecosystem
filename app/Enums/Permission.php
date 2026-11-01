@@ -78,6 +78,8 @@ enum Permission: string
     case RESERVATIONS_NO_SHOW = 'reservations.no_show';
     case RESERVATIONS_VOUCHER = 'reservations.voucher';
     case RESERVATIONS_VOUCHER_EMAIL = 'reservations.voucher_email';
+    case RESERVATIONS_ASSIGN_ROOM = 'reservations.assign_room';
+    case RESERVATIONS_MOVE_ROOM = 'reservations.move_room';
 
     case ROOMS_VIEW = 'rooms.view';
     case ROOMS_CREATE = 'rooms.create';
@@ -143,6 +145,9 @@ enum Permission: string
      *   grants them on purpose to its front-desk roles.
      * - Correcting a room's housekeeping status and taking rooms out of order
      *   are never defaults: both change which rooms can be sold.
+     * - Assigning rooms and moving guests between rooms are never defaults:
+     *   they decide where guests sleep and which rooms can be given to others
+     *   (spec 020).
      * - Vouchers and voucher templates are never defaults: a voucher is a
      *   document proving a booking, with guest names and dates, and emailing
      *   it sends guest data outside the system (SPEC-013).

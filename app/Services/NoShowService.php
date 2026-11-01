@@ -14,6 +14,7 @@ use App\Support\Audit\EventLogger;
 use App\Support\Reservations\ReservationLifecycle;
 use App\Support\Reservations\ReservationLock;
 use App\Support\Reservations\RoomAssignmentRules;
+use App\Support\Reservations\RoomHoldConflict;
 use App\Support\Stays\FrontDeskLists;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -128,7 +129,7 @@ class NoShowService
      */
     public function undoReservation(Reservation $reservation, ?string $reason = null, bool $overbook = false): array
     {
-        return DB::transaction(function () use ($reservation, $reason, $overbook) {
+        return RoomHoldConflict::rethrow(fn () => DB::transaction(function () use ($reservation, $reason, $overbook) {
             [$reservation, $stays] = $this->lock($reservation);
             $live = $stays->filter(fn (Stay $stay) => $stay->isLive());
 
@@ -146,7 +147,7 @@ class NoShowService
             EventLogger::record($reservation, 'no_show_undone', changes: ['stays' => $restored->modelKeys()], reason: $reason);
 
             return $this->result($reservation, $live, $warnings);
-        });
+        }));
     }
 
     /**
@@ -158,7 +159,7 @@ class NoShowService
      */
     public function undoStay(Stay $stay, ?string $reason = null, bool $overbook = false): array
     {
-        return DB::transaction(function () use ($stay, $reason, $overbook) {
+        return RoomHoldConflict::rethrow(fn () => DB::transaction(function () use ($stay, $reason, $overbook) {
             [$reservation, $stays] = $this->lock($stay->reservationOrFail());
             $stay = $stays->get($stay->id);
 
@@ -194,7 +195,7 @@ class NoShowService
             EventLogger::record($reservation, 'no_show_undone', changes: ['stays' => [$stay->id]], reason: $reason);
 
             return $this->result($reservation, collect([$stay]), $warnings);
-        });
+        }));
     }
 
     /**

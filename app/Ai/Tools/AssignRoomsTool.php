@@ -15,10 +15,12 @@ use Stringable;
 
 /**
  * Puts physical rooms on a reservation's room lines, moves them, or takes
- * them off, through ReservationCommands::assignRooms, so the same room
- * assignment rules as the reservation screen apply (right type, free for the
- * nights, not out of order). All the assignments in one call happen
- * together or not at all (FR-013).
+ * them off, through RoomAssignmentService, so the same rules as the staff
+ * endpoint apply (spec 020): the line's room type unless the admin asked for
+ * an upgrade, free on every night, and no change once the guest is in the
+ * house (that is MoveRoomTool) or has left. An out-of-order room is assigned
+ * with a warning. All the assignments in one call happen together or not at
+ * all (FR-013).
  */
 class AssignRoomsTool implements Tool, WritesData
 {
@@ -30,9 +32,11 @@ class AssignRoomsTool implements Tool, WritesData
 
     public function description(): Stringable|string
     {
-        return 'Assign physical rooms to a reservation\'s room lines, change them, or remove them. For each assignment give '
-            .'the room number (or null to remove the room from a line) and, when the reservation has several room types or '
-            .'lines, the room type or the line id (from the reservation lookup). Only use room numbers the admin named. '
+        return 'Assign physical rooms to a reservation\'s room lines, change them, or remove them, before the guest checks in. '
+            .'For each assignment give the room number (or null to remove the room from a line) and, when the reservation has '
+            .'several room types or lines, the room type or the line id (from the reservation lookup). Only use room numbers the '
+            .'admin named. A room must be of the line\'s type, unless the admin asked to upgrade the guest to it (set upgrade), '
+            .'and free on every night of the stay. To move a guest who is already in the house, use the room move tool. '
             .'If any assignment breaks a rule, none is made and the reason comes back.';
     }
 
@@ -52,6 +56,7 @@ class AssignRoomsTool implements Tool, WritesData
 
         $lines = $reservation->reservationRooms()->active()->with(['roomType', 'room'])->get();
         $roomByLine = [];
+        $upgrades = [];
         $summary = [];
 
         foreach ($assignments as $item) {
@@ -73,16 +78,25 @@ class AssignRoomsTool implements Tool, WritesData
             }
 
             $roomByLine[$line->id] = $room?->id;
+
+            if (! empty(((array) $item)['upgrade'])) {
+                $upgrades[] = $line->id;
+            }
+
             $summary[] = ['line_id' => $line->id, 'room_type' => $line->roomType?->name, 'room_number' => $room?->room_number];
         }
 
-        $result = $this->attempt(fn () => app(ReservationCommands::class)->assignRooms($reservation, $roomByLine));
+        $result = $this->attempt(fn () => app(ReservationCommands::class)->assignRooms($reservation, $roomByLine, $upgrades));
 
         if (is_string($result)) {
             return $result;
         }
 
-        return $this->done(['reservation_id' => $reservation->id, 'code' => $reservation->reservation_id], ['rooms' => $summary]);
+        return $this->done(
+            ['reservation_id' => $reservation->id, 'code' => $reservation->reservation_id],
+            ['rooms' => $summary],
+            $result['warnings'] === [] ? null : implode(' ', $result['warnings']),
+        );
     }
 
     public function schema(JsonSchema $schema): array
@@ -93,6 +107,7 @@ class AssignRoomsTool implements Tool, WritesData
                 'room_number' => $schema->string()->description('The physical room to assign, or null to remove the room from the line.'),
                 'room_type' => $schema->string()->description('Which line by room type, when the reservation has several types.'),
                 'line_id' => $schema->string()->description('Exactly which line, from the reservation lookup.'),
+                'upgrade' => $schema->boolean()->description('True only when the admin explicitly asked to give the guest a room of another type.'),
             ]))->required(),
         ];
     }

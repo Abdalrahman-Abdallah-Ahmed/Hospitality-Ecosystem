@@ -41,4 +41,12 @@ class StayPolicy
     {
         return $this->allows($user, Permission::STAYS_CHECK_OUT, $record);
     }
+
+    /**
+     * Moving a guest in the house to another room (spec 020 FR-013).
+     */
+    public function moveRoom(User $user, Stay $stay): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_MOVE_ROOM, $stay);
+    }
 }
