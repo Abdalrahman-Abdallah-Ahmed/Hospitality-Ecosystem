@@ -1,5 +1,7 @@
 # Implementation Plan: Baseline Test Suite & Frontend Inventory
 
+> **Superseded (2026-10-30)**: not carried out; see `spec.md` Status. Do not implement.
+
 **Branch**: `001-baseline-test-suite` | **Date**: 2026-09-22 | **Spec**: `specs/001-baseline-test-suite/spec.md`
 
 **Input**: Feature specification from `specs/001-baseline-test-suite/spec.md`

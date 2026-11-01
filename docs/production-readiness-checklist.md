@@ -25,6 +25,7 @@ Owner: the platform owner signs off every row.
 | Workers and scheduler survive a reboot (FR-031) | Reboot staging, then `systemctl status 'queue-worker@*' scheduler` and `swapon --show` | _record date_ | open |
 | Production configuration complete (FR-032) | `php artisan ops:readiness` on production exits 0 | 2026-10-26: all checks pass once the Sentry DSN is set | proven |
 | Frontend states and build (FR-034) | Checklist in `docs/frontend-changes-2026-10-25.md`; `next build` clean | _frontend sign-off_ | open |
+| No room double-booked before the overlap constraint (spec 020 FR-012) | `php artisan rooms:overlaps` on production exits 0 **before** deploying spec 020; its migration refuses to run otherwise. Resolve any listed booking by hand. | _record date and output_ | open |
 | Breaking changes documented (FR-035) | `docs/latest-changes-2026-10-25.md`, `docs/frontend-changes-2026-10-25.md` | Written 2026-10-25 | proven |
 
 ## Known post-MVP items

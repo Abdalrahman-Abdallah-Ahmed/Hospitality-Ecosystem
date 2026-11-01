@@ -256,7 +256,7 @@ in `message`. **A later release will reject it: move to the check-in/out endpoin
 - Each room of a multi-room reservation is occupied when **its** guest checks in.
 - Once nobody is in the room (checked out, or the guest moved rooms), an `occupied` room is **freed back to `available`** automatically. A room a guest moved out of is also marked housekeeping `dirty`.
 - A room in `maintenance` is left alone unless a guest actually checks into it.
-- A room move (changing a line's `room_id`) re-syncs **both** rooms: the old one is freed if nobody else is checked into it.
+- A room move re-syncs **both** rooms: the old one is freed if nobody else is checked into it. Since 2026-10-30 a guest in the house is moved only with `POST /api/stays/{id}/move-room` (see [Room assignment](#8-room-assignment-2026-10-30)).
 - Lines with no room have nothing to sync.
 - Edits to a reservation's dates, party size, value, currency or source, and a line's room, are carried through to the lines' stays. Check-in and check-out times are never changed by an edit.
 
@@ -384,7 +384,7 @@ This books three rooms: two unassigned Deluxe rooms and Suite room 501.
 | `rooms` | **required**, array of 1–50 items. The total `quantity` across items must be ≤ 50. |
 | `rooms.*.room_type_id` | **required**, uuid. Must be an **active**, non-deleted room type of this hotel; otherwise `422` on `rooms.{i}.room_type_id` ("The selected room type is not available." — the same message whether it is inactive, deleted, or another hotel's). |
 | `rooms.*.quantity` | optional integer 1–50, default 1. Expanded into that many lines. |
-| `rooms.*.room_id` | optional uuid. A room of this hotel whose type equals `room_type_id`; only allowed when `quantity` is 1. The same room can't appear on two lines. |
+| `rooms.*.room_id` | optional uuid. A room of this hotel whose type equals `room_type_id`; only allowed when `quantity` is 1. The same room can't appear on two lines. It must be free on every night of the stay (no other booking holds it then). Setting it also needs `reservations.assign_room` (*2026-10-30*). |
 | `capacity_override` | optional boolean, default `false`. See capacity below. |
 | `overbook_override` | optional boolean, default `false`. Save even if a room type is short. Needs `reservations.overbook`. See [Overbooking](#overbooking). |
 | `room_id` (top level) | **no longer accepted** — `422` "Use rooms[] instead." |
@@ -511,7 +511,8 @@ These use the standard validation-error shape, keyed by the index of the item in
 | More than 50 rooms | `rooms` | "A reservation can hold at most 50 rooms." |
 | Room type inactive, deleted, or of another hotel | `rooms.{i}.room_type_id` | "The selected room type is not available." |
 | Room of another hotel, or missing | `rooms.{i}.room_id` | "The selected room is not available." |
-| Room of a different type than the line | `rooms.{i}.room_id` | "Room 501 is not of the line's room type." |
+| Room of a different type than the line | `rooms.{i}.room_id` | "Room 501 is not of the line's room type; send upgrade to place it anyway." (upgrades only through [room assignment](#8-room-assignment-2026-10-30)) |
+| Room held by another booking on a shared night (*2026-10-30*) | `rooms.{i}.room_id` | "Room 501 is booked for RES-0042 on overlapping nights." |
 | `room_id` with `quantity` > 1 | `rooms.{i}.room_id` | "A physical room can only be set on a line with a quantity of 1." |
 | Same room on two lines | `rooms.{i}.room_id` | "The same room cannot be on two lines of one reservation." |
 | Party over capacity, no override | `rooms` | see Capacity above |
@@ -603,17 +604,19 @@ What can change depends on the reservation's status **before** the update:
 
 | Status | Add line | Remove line | Set / change / clear a line's room |
 | --- | --- | --- | --- |
-| `pending`, `confirmed` | yes | yes (not the last one) | yes (room must match the line's type) |
-| `checked_in` | no | only a line whose guest never checked in (to close the reservation, see [check-out](stays-api-documentation.md#check-out)) | **room move only**: change to another room of the same type; can't clear |
+| `pending`, `confirmed` | yes | yes (not the last one) | yes (room must match the line's type and be free on every night) |
+| `checked_in` | no | only a line whose guest never checked in (to close the reservation, see [check-out](stays-api-documentation.md#check-out)) | for a room whose guest has not arrived yet; **a guest in the house is moved with `POST /api/stays/{id}/move-room`** (2026-10-30), never here |
 | `checked_out`, `cancelled` | no | no | no |
 
 Setting `status` to `cancelled` cancels every line and releases their rooms. It is refused while any guest is in the house, and so is removing a line whose guest is in: `422` "Check out the in-house rooms first." / "Room 204 is checked in; check it out first."
 
-**Bringing a cancelled reservation back.** Changing a `cancelled` reservation to any other status restores the lines it had when it was cancelled; lines staff had removed before the cancellation stay removed. To choose different lines instead, send `rooms` in the same request: an item with `id` may name any of the reservation's lines (it is reinstated, optionally with a new `room_id`), items without `id` add lines, and lines left out stay cancelled. The capacity check runs either way.
+**Setting, changing or clearing a room here needs `reservations.assign_room`** as well as `reservations.update` (`403` without it, *2026-10-30*). Sending a line's current `room_id` back unchanged needs nothing more. Moving the dates is checked too: if a room the reservation keeps is held by another booking on one of the new nights → `422` on `rooms` "Room 204 is booked for RES-0042 on overlapping nights." Changing the dates and moving that line to a free room in the same request works.
+
+**Bringing a cancelled reservation back.** Changing a `cancelled` reservation to any other status restores the lines it had when it was cancelled; lines staff had removed before the cancellation stay removed. A restored line whose room another booking took in the meantime comes back **without** that room (*2026-10-30*): the response `message` ends with "Room 204 is booked for RES-0042 on overlapping nights. It was taken off this booking; assign another room before check-in." To choose different lines instead, send `rooms` in the same request: an item with `id` may name any of the reservation's lines (it is reinstated, optionally with a new `room_id`), items without `id` add lines, and lines left out stay cancelled. The capacity check runs either way.
 
 Line ids, `room_type_id` and `room_id` are accepted in any letter case.
 
-Errors (standard validation shape): an unknown or already-cancelled line `id` → `rooms.{i}.id`; an empty list → `rooms` "A reservation needs at least one room; cancel the reservation instead."; a disallowed change for the status → `rooms`, e.g. "Rooms cannot be changed on a checked_out reservation." or "Rooms cannot be added to a checked-in reservation; only room moves are allowed."; clearing a checked-in guest's room → `rooms.{i}.room_id` "A checked-in guest's room can be changed but not cleared."; plus every [room line error](#errors-room-lines) from create.
+Errors (standard validation shape): changing the room of a guest in the house → `rooms` "Room 204 is checked in; move the guest with the room-move action." (*2026-10-30*); an unknown or already-cancelled line `id` → `rooms.{i}.id`; an empty list → `rooms` "A reservation needs at least one room; cancel the reservation instead."; a disallowed change for the status → `rooms`, e.g. "Rooms cannot be changed on a checked_out reservation." or "Rooms cannot be added to a checked-in reservation; only room moves are allowed."; clearing a checked-in guest's room → `rooms.{i}.room_id` "A checked-in guest's room can be changed but not cleared."; plus every [room line error](#errors-room-lines) from create.
 
 ### Success Response
 
@@ -1267,3 +1270,120 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - Room status follows who is actually in the room: occupied while any checked-in reservation has it on a live line (every room of a multi-room reservation), freed back to `available` once none does, and `maintenance` left alone. A future booking never frees an occupied room. See [Status Values](#status-values).
 - `reservation_id` is unique per hotel, not across the platform. A row in an import whose code the hotel already uses is skipped with `Reservation id … already exists.`
 - `POST /api/reservation/import` queues an import of an `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB) and returns `202` with an import record. Poll `GET /api/reservation/imports/{id}` until it completes, then read `/rows` or download `/report`. Every row gets an outcome and a reason, re-imports are safe, and `dry_run=1` previews without writing. A super admin passes `hotel_id`. See [§6](#6-import-reservations-bulk-upload).
+
+## 8. Room assignment (2026-10-30)
+
+> **Added 2026-10-30 (SPEC-021, `specs/020-room-assignment`).** Breaking changes are
+> listed in `docs/latest-changes-2026-10-30.md`.
+
+A line's physical room is assigned, changed or removed ahead of arrival here. Moving a
+guest who is already in the house is a stay action:
+[`POST /api/stays/{id}/move-room`](stays-api-documentation.md#room-move-2026-10-30).
+
+**One room, one booking per night.** The database itself refuses a second booking of a
+room on a night it is already held, whichever screen, tool or import writes it, even when
+two people try at the same moment. A room is held from the arrival date up to (not
+including) the departure date by every live line of a `pending`, `confirmed` or
+`checked_in` reservation, unless that room's guest has already left or was a no-show. So a
+room can go to a booking that arrives on the day the previous one departs. If two requests
+race, the loser gets `422` on `rooms` (or `assignments`): "A room on this booking was just
+taken by another reservation for overlapping nights. Reload and choose another room."
+
+### 8.1 Assign, change or remove rooms — `PUT /api/reservation/{id}/rooms`
+
+Permission: `reservations.assign_room` (`overbook_override: true` also needs
+`reservations.overbook`).
+
+```json
+{
+  "assignments": [
+    { "line_id": "<line A>", "room_id": "<room 204>" },
+    { "line_id": "<line B>", "room_id": null },
+    { "line_id": "<line C>", "room_id": "<suite 501>", "upgrade": true }
+  ],
+  "overbook_override": false
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `assignments` | required, 1–50 items |
+| `assignments.*.line_id` | required uuid, a line of this reservation, each line once |
+| `assignments.*.room_id` | required key, uuid or `null` (`null` removes the room) |
+| `assignments.*.upgrade` | optional boolean; must be `true` to place a room of another type |
+| `overbook_override` | optional boolean |
+
+Lines not named keep their room. Everything is applied together or nothing is, checked on
+the final result, so two lines can swap rooms in one call. Sending a line's current room
+again changes nothing.
+
+Response `200`: `body = { "reservation": <reservation object>, "warnings": [] }`.
+Assigning a room that is out of order today is allowed, with a warning: "Room 305 is out
+of order; return it to service before check-in." (check-in still refuses it).
+
+Errors (`422`, field `assignments.{i}.room_id` unless noted):
+
+| Case | Message |
+| --- | --- |
+| Room of another hotel, or missing | "The selected room is not available." |
+| Room of another type without `upgrade` | "Room 501 is not of the line's room type; send upgrade to place it anyway." |
+| Room held by another booking on a shared night | "Room 204 is booked for RES-0042 on overlapping nights." |
+| The line's guest is in the house | "Room 204 is checked in; move the guest with the room-move action." |
+| The line's guest left or was a no-show | "Room changes are closed for this room (departed)." / "(no_show)" |
+| Reservation `cancelled`, `checked_out` or `no_show` | "Room changes are closed for this reservation (cancelled)." |
+| Cancelled line | "This room line is cancelled." |
+| Line not on this reservation (`assignments.{i}.line_id`) | "This room line is not on the reservation." |
+| An upgrade would oversell the room's type | the [overbooking](#overbooking) shortfall, unless overridden |
+
+Another hotel's reservation → `404`.
+
+**Upgrades.** With `upgrade: true` a line may take a room of another type. The line keeps
+its booked type (`room_type_id`); `rooms[].is_upgrade` is `true` while it holds a room of
+another type, and availability counts the line against the **room's** type for those
+nights (Deluxe frees one, Suite uses one). Moving the line back to a room of its booked
+type, or removing the room, ends the upgrade. Each upgrade is audited as
+`reservation_room.room_upgraded` with both type names. The general reservation edit never
+upgrades.
+
+### 8.2 Arrivals that still need a room — `GET /api/reservation/unassigned-arrivals`
+
+Permission: `reservations.assign_room`.
+
+| Query | Rule |
+| --- | --- |
+| `from`, `to` | `Y-m-d`, both or neither; default the hotel's today through 7 days later; at most 31 days |
+| `sort` | `arrival_date` (default), `reservation_code`, `room_type`; prefix `-` for descending |
+| `per_page`, `page` | standard paging (max 100 per page) |
+| `hotel_id` | super admin only |
+
+Lists every live line with no room whose guest has not arrived yet, on `pending`,
+`confirmed` or `checked_in` reservations (a multi-room reservation is checked in once its
+first room is) arriving in the window, plus late arrivals that can still come (arrival
+passed, departure not), with `is_late: true`.
+
+```json
+{
+  "data": [
+    {
+      "line_id": "…",
+      "reservation_id": "…",
+      "reservation_code": "RES-0042",
+      "reservation_status": "confirmed",
+      "primary_guest": { "id": "…", "name": "Lina Haddad" },
+      "arrival_date": "2026-11-02",
+      "departure_date": "2026-11-05",
+      "room_type": { "id": "…", "name": "Deluxe" },
+      "is_late": false
+    }
+  ],
+  "links": { "…": "…" },
+  "meta": { "current_page": 1, "per_page": 15, "total": 1 }
+}
+```
+
+### 8.3 Admin AI
+
+The advisor's room tool follows the same rules (it upgrades only when the admin asks) and
+needs `reservations.assign_room`, like the staff endpoint. Naming a specific room when the
+advisor creates a reservation needs it too. Moving a guest in the house is
+its own tool, gated by `reservations.move_room`. Neither ever overbooks.
