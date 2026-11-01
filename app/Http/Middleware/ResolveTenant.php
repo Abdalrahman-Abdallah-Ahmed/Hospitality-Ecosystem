@@ -39,13 +39,9 @@ class ResolveTenant
         try {
             return $next($request);
         } finally {
-            // TenantContext is process-static. On a persistent worker (Octane)
-            // or any process serving more than one request, leaving the
-            // context set would let the next request's early queries -- the
-            // ones before this middleware runs -- see the previous request's
-            // tenant. Hand the process back in the state we found it. (Route-
-            // model binding itself now runs after this middleware: see the
-            // priority set in bootstrap/app.php, spec 017 FR-005.)
+            // TenantContext is static, so it outlives the request on a process
+            // that serves several (Octane, the test suite). Clear it, even on
+            // an exception, so the next request starts without this tenant.
             TenantContext::reset();
         }
     }
