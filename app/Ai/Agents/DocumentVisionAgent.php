@@ -20,10 +20,6 @@ use Stringable;
  *
  * No tools and no conversation: one attachment in, one structured
  * transcription out. The indexing job does all the writing.
- *
- * Limits: verbatim transcription, so temperature 0 (it runs on Gemini,
- * which accepts it). VisionExtractor passes the provider, model and timeout
- * from config/knowledge.php, which win over these attributes.
  */
 #[UseCheapestModel]
 #[MaxSteps(1)]

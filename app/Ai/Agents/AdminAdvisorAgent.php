@@ -15,9 +15,6 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Promptable;
 use Stringable;
 
-/**
- * Limits: 12 steps of 25 s fit the 300 s job.
- */
 #[UseCheapestModel]
 #[MaxSteps(12)]
 #[Timeout(25)]

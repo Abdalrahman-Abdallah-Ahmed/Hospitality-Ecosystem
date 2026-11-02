@@ -19,8 +19,6 @@ use Stringable;
  * Deliberately separate from the concierge: the agent told it may suggest an
  * activity is the wrong judge of whether this guest is too unhappy to be sold
  * to. Its output is a gate, never a ranking.
- *
- * Limits: one quick classification, run before the guest's reply.
  */
 #[UseCheapestModel]
 #[MaxSteps(1)]
