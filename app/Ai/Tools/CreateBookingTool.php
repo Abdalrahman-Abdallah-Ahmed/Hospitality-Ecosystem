@@ -51,7 +51,7 @@ class CreateBookingTool implements Tool, WritesData
 
     public function description(): Stringable|string
     {
-        return 'Record a booking once the guest has actually agreed to an activity — a real commitment, not just interest. Check the date with the activities tool first. The booking is refused if the activity is closed, outside its hours, full, or the date is outside the guest\'s reservation; you then get the reason and the nearest available dates to offer instead. If the booking follows a recommendation you showed them, pass its id so the recommendation can be credited.';
+        return 'Record a booking once the guest has actually agreed to an activity — a real commitment, not just interest. Check the date with the activities tool first. The booking is refused if the activity is closed, outside its hours, full, or the date is outside the guest\'s reservation; you then get the reason and the nearest available dates to offer instead. If the booking follows a recommendation you showed them, pass its id so the recommendation can be credited. Give the guest the reference code it returns and ask them to quote it at the desk.';
     }
 
     public function handle(Request $request): Stringable|string

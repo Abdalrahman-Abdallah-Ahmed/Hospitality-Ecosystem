@@ -34,7 +34,8 @@ class GetGuestAvailabilityTool implements ReadsData, Tool
         return "Check whether this hotel's room types can be booked for the guest's dates. Returns every room type with "
             .'its description, capacity and available (true or false for the whole stay), the requested type first. '
             .'At most '.AvailabilityService::AI_MAX_NIGHTS.' nights per call. Use it for every availability question; '
-            .'never guess, and never tell the guest how many rooms are left.';
+            .'never guess, and never tell the guest how many rooms are left. If the type the guest asked for is not '
+            .'available, offer the ones that are.';
     }
 
     /**

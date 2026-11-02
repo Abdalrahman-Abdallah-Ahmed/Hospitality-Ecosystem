@@ -32,7 +32,7 @@ class EscalateToHumanTool implements Tool, WritesData
      */
     public function description(): Stringable|string
     {
-        return 'Flag this conversation for a staff member to take over directly — use when the guest is frustrated, asking for something outside what you can help with, explicitly asks for a human, or hotel policy says the topic needs a person.';
+        return 'Flag this conversation for a staff member to take over directly — use when the guest is frustrated, asking for something outside what you can help with, explicitly asks for a human, or hotel policy says the topic needs a person. It works with or without a reservation, and if staff already have the guest\'s request for a person, it adds the new detail to it.';
     }
 
     /**
