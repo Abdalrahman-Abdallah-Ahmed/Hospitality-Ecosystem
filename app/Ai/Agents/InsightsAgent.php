@@ -9,6 +9,9 @@ use App\Ai\Tools\InsightKnowledgeSearchTool;
 use App\Enums\AiInsightCategories;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasStructuredOutput;
@@ -18,6 +21,12 @@ use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Stringable;
 
+/**
+ * Limits: 4 read tools, usually 2-3 steps; 6 steps of 15 s fit the 90 s worker timeout.
+ */
+#[UseCheapestModel]
+#[MaxSteps(6)]
+#[Timeout(15)]
 class InsightsAgent implements Agent, Conversational, HasStructuredOutput, HasTools
 {
     use Promptable;

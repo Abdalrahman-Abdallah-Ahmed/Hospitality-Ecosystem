@@ -4,6 +4,9 @@ namespace App\Ai\Agents;
 
 use App\Enums\PitchOpening;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
@@ -16,7 +19,12 @@ use Stringable;
  * Deliberately separate from the concierge: the agent told it may suggest an
  * activity is the wrong judge of whether this guest is too unhappy to be sold
  * to. Its output is a gate, never a ranking.
+ *
+ * Limits: one quick classification, run before the guest's reply.
  */
+#[UseCheapestModel]
+#[MaxSteps(1)]
+#[Timeout(10)]
 class TurnSignalAgent implements Agent, HasStructuredOutput
 {
     use Promptable;

@@ -12,6 +12,9 @@ use App\Enums\AiAgentName;
 use App\Enums\RecommendationSource;
 use App\Models\Hotel;
 use App\Models\Reservation;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
@@ -19,6 +22,12 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Promptable;
 use Stringable;
 
+/**
+ * Limits: reads, then up to 3 creates; 6 steps of 15 s fit the 90 s worker timeout.
+ */
+#[UseCheapestModel]
+#[MaxSteps(6)]
+#[Timeout(15)]
 class RecommendationAgent implements Agent, Conversational, HasTools
 {
     use Promptable;

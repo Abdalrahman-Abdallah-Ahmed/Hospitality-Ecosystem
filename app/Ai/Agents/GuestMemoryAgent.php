@@ -5,6 +5,9 @@ namespace App\Ai\Agents;
 use App\Enums\GuestMemoryCategory;
 use App\Enums\GuestMemoryConfidence;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
@@ -15,7 +18,12 @@ use Stringable;
  * what is worth remembering about the guest (SPEC-084). It only proposes:
  * GuestMemoryService decides what is kept, and enforces every rule below in
  * code as well.
+ *
+ * Limits: one extraction, no tools.
  */
+#[UseCheapestModel]
+#[MaxSteps(1)]
+#[Timeout(30)]
 class GuestMemoryAgent implements Agent, HasStructuredOutput
 {
     use Promptable;

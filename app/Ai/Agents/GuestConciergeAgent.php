@@ -31,6 +31,9 @@ use App\Models\ProactiveMessage;
 use App\Models\Reservation;
 use App\Services\Guests\GuestMemoryService;
 use App\Support\Pitching\PitchTurn;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
@@ -38,6 +41,12 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Promptable;
 use Stringable;
 
+/**
+ * Limits: a guest is waiting on WhatsApp, so 10 steps of 30 s fit the 300 s job.
+ */
+#[UseCheapestModel]
+#[MaxSteps(10)]
+#[Timeout(30)]
 class GuestConciergeAgent implements Agent, Conversational, HasTools
 {
     use Promptable, RemembersWholeTurns;

@@ -5,6 +5,9 @@ namespace App\Ai\Agents;
 use App\Ai\Agents\Concerns\RemembersWholeTurns;
 use App\Ai\Tools\Admin\AdminToolset;
 use App\Models\User;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
@@ -12,6 +15,12 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Promptable;
 use Stringable;
 
+/**
+ * Limits: 12 steps of 25 s fit the 300 s job.
+ */
+#[UseCheapestModel]
+#[MaxSteps(12)]
+#[Timeout(25)]
 class AdminAdvisorAgent implements Agent, Conversational, HasTools
 {
     use Promptable, RemembersWholeTurns;

@@ -3,6 +3,10 @@
 namespace App\Ai\Agents;
 
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\MaxSteps;
+use Laravel\Ai\Attributes\Temperature;
+use Laravel\Ai\Attributes\Timeout;
+use Laravel\Ai\Attributes\UseCheapestModel;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Promptable;
@@ -16,7 +20,15 @@ use Stringable;
  *
  * No tools and no conversation: one attachment in, one structured
  * transcription out. The indexing job does all the writing.
+ *
+ * Limits: verbatim transcription, so temperature 0 (it runs on Gemini,
+ * which accepts it). VisionExtractor passes the provider, model and timeout
+ * from config/knowledge.php, which win over these attributes.
  */
+#[UseCheapestModel]
+#[MaxSteps(1)]
+#[Timeout(120)]
+#[Temperature(0)]
 class DocumentVisionAgent implements Agent, HasStructuredOutput
 {
     use Promptable;
