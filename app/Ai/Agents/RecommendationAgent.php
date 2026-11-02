@@ -81,7 +81,7 @@ class RecommendationAgent implements Agent, Conversational, HasTools
             new GetActivitiesTool($this->hotel),
             new KnowledgeSearchTool($this->hotel),
             new GetOwnReservationTool($this->reservation),
-            new GetGuestMessagesTool($this->hotel),
+            new GetGuestMessagesTool($this->hotel, $this->reservation->guest),
             // Audited once per recommendation (SPEC-083). The agent holds no
             // user, so nobody is named as the one it acted for.
             new AuditedTool(new CreateRecommendationTool($this->hotel, $this->reservation, $this->source), AiAgentName::RECOMMENDATION),

@@ -23,7 +23,7 @@ return [
     'naturally_bounded' => [
         'App\\Ai\\Tools\\GetAvailabilityTool' => 'One row per room type per night of the asked range',
         'App\\Ai\\Tools\\GetGuestAvailabilityTool' => 'One row per room type per night of the asked range',
-        'App\\Ai\\Tools\\GetGuestMessagesTool' => 'The last 20 messages of one guest',
+        'App\\Ai\\Tools\\GetGuestMessagesTool' => 'The last 20 guest messages of the last 48 hours, of one guest or one hotel',
         'App\\Ai\\Tools\\GetGuestTool' => 'One guest, with a fixed number of history rows',
         'App\\Ai\\Tools\\GetHotelSettingsTool' => 'One hotel\'s settings',
         'App\\Ai\\Tools\\GetOwnBookingsTool' => 'One guest\'s upcoming bookings and a fixed number of past ones',
