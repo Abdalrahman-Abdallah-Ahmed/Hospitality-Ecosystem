@@ -42,7 +42,7 @@ class ReservationController extends Controller
 {
     use ExportsLists, HandlesFrontDeskActions;
 
-    private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room', 'reservationRooms.stay'];
+    private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room.roomType', 'reservationRooms.stay'];
 
     public function __construct(
         private readonly StayLifecycleService $lifecycle,
