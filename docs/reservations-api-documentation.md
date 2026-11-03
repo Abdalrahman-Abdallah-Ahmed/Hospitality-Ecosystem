@@ -337,6 +337,64 @@ HTTP `422`:
 }
 ```
 
+## Export Reservations
+
+*Added 2026-11-03 (spec 021).* Downloads the list as a file, filtered and sorted exactly as the list is, every page included.
+
+### Endpoint
+
+```
+GET /api/reservation/export
+```
+
+Requires `reservations.export` (admins and super admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `format` | string | `csv` (default), `xlsx` or `sql` |
+| `hotel_id` | uuid | Super admin only, and required for them: the hotel to export. Ignored for everyone else |
+| `search`, `sort`, `filter[...]` | | Same as the list, including `filter[room_type_id]` and `filter[room_id]` |
+| `page`, `per_page` | | Accepted and ignored: the export covers every page |
+
+### Success Response — `200 OK`
+
+The file itself, not the JSON envelope, named `<module>-<hotel>-<YYYYMMDD-HHMM>.<ext>` (`Content-Disposition: attachment`).
+
+| Format | Content-Type | Content |
+|--------|--------------|---------|
+| `csv` | `text/csv; charset=UTF-8` | UTF-8 with BOM, header row, one row per record. Text starting with `=` or `@`, or with `+`/`-` followed by anything other than a number (so phone numbers and negative amounts are left alone), is prefixed with `'` so spreadsheet programs never run it as a formula. Date-times are in the hotel's time zone |
+| `xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | One sheet. Dates are real dates, date-times are in the hotel's time zone, amounts and counts are numbers, text is stored as text |
+| `sql` | `application/sql; charset=UTF-8` | PostgreSQL: a `--` comment header, one `INSERT` per record inside `BEGIN; … COMMIT;`, and a closing `-- Rows written: N`. Every stored column as stored (timestamps in UTC), ids and foreign keys included |
+
+No matching records gives a header row only (CSV/Excel) or no `INSERT`s (SQL).
+
+Columns (CSV and Excel), in order: Reservation Number, Guest Name, Guest Email, Guest Phone, Arrival Date, Departure Date, Nights, Adults, Children, Room Types, Rooms, Party Guests, Status, Source, Reservation Value, Currency, Special Requests, Created At.
+
+One row per reservation: Room Types and Rooms list the live room lines (cancelled lines left out), and Party Guests every guest on the reservation, each joined with `, `. Rooms is empty until a room is assigned.
+
+### Errors
+
+| Code | When |
+|------|------|
+| `403` | No `reservations.export`; or a super admin without a valid `hotel_id` |
+| `422` | Unknown `format`, filter column or sort column (standard validation error shape). Checked after the permission, so a user without it only ever sees `403` |
+| `422` | More records match than the export limit (10,000 by default, `EXPORT_MAX_ROWS`). Nothing is cut short: narrow the filters. Body: `{ "matching": 12345, "max_rows": 10000 }` |
+| `429` | More than 10 exports by this user in the last minute |
+
+```json
+{
+  "message": "This export matches 12345 records; the limit is 10000. Narrow the filters and try again.",
+  "code": 422,
+  "body": { "matching": 12345, "max_rows": 10000 }
+}
+```
+
+### Audit
+
+Each export writes a `hotel.<module>_exported` entry (who, hotel, format, the search/sort/filters used, `row_count`) when the download starts, so it records an export that was started; `row_count` is the records matching at that moment (a record written while a CSV or SQL file streams can make the file differ by that record; the SQL file's last line says how many it holds). A refusal over the limit writes `hotel.<module>_export_refused` with `matching` and `max_rows`. No record content is stored in either.
+
 ## 2. Create a Reservation
 
 ### Endpoint

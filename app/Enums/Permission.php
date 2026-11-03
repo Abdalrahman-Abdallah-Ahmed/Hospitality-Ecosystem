@@ -15,6 +15,7 @@ enum Permission: string
     case ACTIVITIES_CREATE = 'activities.create';
     case ACTIVITIES_UPDATE = 'activities.update';
     case ACTIVITIES_DELETE = 'activities.delete';
+    case ACTIVITIES_EXPORT = 'activities.export';
 
     case ACTIVITY_CATEGORIES_VIEW = 'activity_categories.view';
     case ACTIVITY_CATEGORIES_CREATE = 'activity_categories.create';
@@ -31,6 +32,7 @@ enum Permission: string
     case BOOKINGS_UPDATE = 'bookings.update';
     case BOOKINGS_UPDATE_STATUS = 'bookings.update_status';
     case BOOKINGS_OVERRIDE_CAPACITY = 'bookings.override_capacity';
+    case BOOKINGS_EXPORT = 'bookings.export';
 
     case CONVERSATIONS_VIEW = 'conversations.view';
 
@@ -40,6 +42,7 @@ enum Permission: string
     case GUESTS_CREATE = 'guests.create';
     case GUESTS_UPDATE = 'guests.update';
     case GUESTS_DELETE = 'guests.delete';
+    case GUESTS_EXPORT = 'guests.export';
 
     case GUEST_MEMORIES_VIEW = 'guest_memories.view';
     case GUEST_MEMORIES_DELETE = 'guest_memories.delete';
@@ -80,6 +83,7 @@ enum Permission: string
     case RESERVATIONS_VOUCHER_EMAIL = 'reservations.voucher_email';
     case RESERVATIONS_ASSIGN_ROOM = 'reservations.assign_room';
     case RESERVATIONS_MOVE_ROOM = 'reservations.move_room';
+    case RESERVATIONS_EXPORT = 'reservations.export';
 
     case ROOMS_VIEW = 'rooms.view';
     case ROOMS_CREATE = 'rooms.create';
@@ -159,6 +163,9 @@ enum Permission: string
      *   never defaults: both are protected guest data, which regular staff must
      *   not receive automatically (constitution, Conversations and Guest
      *   Memories).
+     * - Exporting reservations, activities, bookings or guests is never a
+     *   default, not even with the matching view permission: an export takes
+     *   guest data out of the system in bulk (spec 021).
      *
      * @return list<self>
      */

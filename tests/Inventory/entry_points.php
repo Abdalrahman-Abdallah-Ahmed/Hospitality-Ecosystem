@@ -147,6 +147,11 @@ return [
             'GET api/stays/arrivals' => 'One day\'s front-desk list: bounded by the hotel\'s rooms; overdue arrivals are cleared by no-show',
             'GET api/stays/departures' => 'One day\'s front-desk list: bounded by the hotel\'s rooms',
             'GET api/stays/in-house' => 'Stays in house now: bounded by the hotel\'s rooms',
+            // List exports (spec 021): a file, not a page; bounded by exports.max_rows.
+            'GET api/reservation/export' => 'A file download, refused above exports.max_rows (spec 021)',
+            'GET api/activity/export' => 'A file download, refused above exports.max_rows (spec 021)',
+            'GET api/booking/export' => 'A file download, refused above exports.max_rows (spec 021)',
+            'GET api/guest/export' => 'A file download, refused above exports.max_rows (spec 021)',
         ],
     ],
 ];

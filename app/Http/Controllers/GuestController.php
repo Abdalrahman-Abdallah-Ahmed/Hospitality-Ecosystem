@@ -2,17 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ExportFormat;
+use App\Http\Controllers\Concerns\ExportsLists;
+use App\Http\Requests\Generic\GenericExportRequest;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\GuestResource;
 use App\Models\Guest;
 use App\Services\Guests\GuestRegistrar;
+use App\Support\Export\GuestsExport;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 
 class GuestController extends Controller
 {
+    use ExportsLists;
+
     /**
      * Display a listing of the resource.
      */
@@ -20,11 +27,28 @@ class GuestController extends Controller
     {
         $this->authorize('viewAny', Guest::class);
 
-        $query = Guest::with(['hotel', 'reservations', 'conversations', 'stays']);
-
-        $guests = GenericQuery::apply($query, $request);
+        $guests = GenericQuery::paginate($this->listQuery($request), $request);
 
         return apiResponse('Guests fetched successfully.', 200, GuestResource::collection($guests));
+    }
+
+    /**
+     * The filtered, sorted list without pagination. Shared by index() and
+     * export(), so an export holds exactly what the list shows.
+     */
+    private function listQuery(GenericIndexRequest $request): Builder
+    {
+        return GenericQuery::query(Guest::with(['hotel', 'reservations', 'conversations', 'stays']), $request);
+    }
+
+    /**
+     * Download the guest list as Excel, CSV or SQL, filtered and sorted exactly
+     * as the list is (spec 021).
+     */
+    public function export(GenericExportRequest $request)
+    {
+        return $this->exportList('guests', Guest::class, $this->listQuery($request), $request,
+            fn (Builder $query, ExportFormat $format) => new GuestsExport($query, $format));
     }
 
     /**

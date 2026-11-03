@@ -28,6 +28,14 @@ class ReservationPolicy
     }
 
     /**
+     * Download the reservation list as a file (spec 021). Viewing it is not enough.
+     */
+    public function export(User $user): bool
+    {
+        return $this->allows($user, Permission::RESERVATIONS_EXPORT);
+    }
+
+    /**
      * Determine whether the user can view the model.
      */
     public function view(User $user, Reservation $reservation): bool

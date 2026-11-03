@@ -266,6 +266,64 @@ The generic `filter`, `search`, `sort` and pagination parameters, plus:
 Without `sort`, bookings come in `scheduled_date`, then `scheduled_time` order.
 Each booking carries `cancellation_requested` (bool).
 
+### Export bookings
+
+*Added 2026-11-03 (spec 021).* Downloads the list as a file, filtered and sorted exactly as the list is, every page included.
+
+#### Endpoint
+
+```
+GET /api/booking/export
+```
+
+Requires `bookings.export` (admins and super admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
+
+#### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `format` | string | `csv` (default), `xlsx` or `sql` |
+| `hotel_id` | uuid | Super admin only, and required for them: the hotel to export. Ignored for everyone else |
+| `search`, `sort`, `filter[...]` | | Same as the list, plus `activity_id`, `reservation_id`, `scheduled_from`, `scheduled_to` and `cancellation_requested`; default order is the list's (scheduled date, time) |
+| `page`, `per_page` | | Accepted and ignored: the export covers every page |
+
+#### Success Response — `200 OK`
+
+The file itself, not the JSON envelope, named `<module>-<hotel>-<YYYYMMDD-HHMM>.<ext>` (`Content-Disposition: attachment`).
+
+| Format | Content-Type | Content |
+|--------|--------------|---------|
+| `csv` | `text/csv; charset=UTF-8` | UTF-8 with BOM, header row, one row per record. Text starting with `=` or `@`, or with `+`/`-` followed by anything other than a number (so phone numbers and negative amounts are left alone), is prefixed with `'` so spreadsheet programs never run it as a formula. Date-times are in the hotel's time zone |
+| `xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | One sheet. Dates are real dates, date-times are in the hotel's time zone, amounts and counts are numbers, text is stored as text |
+| `sql` | `application/sql; charset=UTF-8` | PostgreSQL: a `--` comment header, one `INSERT` per record inside `BEGIN; … COMMIT;`, and a closing `-- Rows written: N`. Every stored column as stored (timestamps in UTC), ids and foreign keys included. `context` (internal AI/recommendation context) is left out |
+
+No matching records gives a header row only (CSV/Excel) or no `INSERT`s (SQL).
+
+Columns (CSV and Excel), in order: Reference, Item Name, Activity, Guest Name, Reservation Number, Status, Scheduled For, Guests (Pax), Charge Model, Expected Value, Currency, Origin, Channel, Created By, Confirmed At, Realised At, Cancelled At, Cancellation Reason, Notes.
+
+A removed activity leaves the Activity cell empty; Item Name still shows what was booked.
+
+#### Errors
+
+| Code | When |
+|------|------|
+| `403` | No `bookings.export`; or a super admin without a valid `hotel_id` |
+| `422` | Unknown `format`, filter column or sort column (standard validation error shape). Checked after the permission, so a user without it only ever sees `403` |
+| `422` | More records match than the export limit (10,000 by default, `EXPORT_MAX_ROWS`). Nothing is cut short: narrow the filters. Body: `{ "matching": 12345, "max_rows": 10000 }` |
+| `429` | More than 10 exports by this user in the last minute |
+
+```json
+{
+  "message": "This export matches 12345 records; the limit is 10000. Narrow the filters and try again.",
+  "code": 422,
+  "body": { "matching": 12345, "max_rows": 10000 }
+}
+```
+
+#### Audit
+
+Each export writes a `hotel.<module>_exported` entry (who, hotel, format, the search/sort/filters used, `row_count`) when the download starts, so it records an export that was started; `row_count` is the records matching at that moment (a record written while a CSV or SQL file streams can make the file differ by that record; the SQL file's last line says how many it holds). A refusal over the limit writes `hotel.<module>_export_refused` with `matching` and `max_rows`. No record content is stored in either.
+
 ### `POST /api/booking`
 
 ```json

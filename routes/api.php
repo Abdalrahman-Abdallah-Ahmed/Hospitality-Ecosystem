@@ -74,10 +74,14 @@ Route::middleware('api.key')->group(function () {
         Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
+        // List exports (spec 021). Each sits above its resource routes so
+        // `export` is never bound as a record id.
+        Route::get('/activity/export', [ActivityController::class, 'export'])->middleware('throttle:exports');
         Route::get('/activity/{activity}/availability', ActivityAvailabilityController::class);
         Route::resource('/activity', ActivityController::class)->except(['edit', 'create']);
         Route::resource('/activity-category', ActivityCategoryController::class)->except(['edit', 'create']);
         Route::get('/availability', [AvailabilityController::class, 'index']);
+        Route::get('/reservation/export', [ReservationController::class, 'export'])->middleware('throttle:exports');
         Route::get('/available-channels', [ReservationController::class, 'availableChannels']);
         Route::get('/reservation/unassigned-arrivals', [RoomController::class, 'unassignedArrivals']);
         Route::post('/reservation/import', [ReservationController::class, 'import']);
@@ -122,6 +126,7 @@ Route::middleware('api.key')->group(function () {
         Route::get('/proactive-messages', [ProactiveMessageController::class, 'index']);
         Route::get('/proactive-messages/{proactiveMessage}', [ProactiveMessageController::class, 'show']);
         Route::resource('/recommendation', RecommendationController::class)->except(['edit', 'create', 'store']);
+        Route::get('/booking/export', [BookingController::class, 'export'])->middleware('throttle:exports');
         Route::get('/booking/cancellation-requests', [BookingCancellationRequestController::class, 'index']);
         Route::post('/booking/{booking}/cancellation-request/approve', [BookingCancellationRequestController::class, 'approve']);
         Route::post('/booking/{booking}/cancellation-request/decline', [BookingCancellationRequestController::class, 'decline']);
@@ -159,6 +164,7 @@ Route::middleware('api.key')->group(function () {
         Route::post('/voucher-templates/{voucherTemplate}/image', [VoucherTemplateController::class, 'replaceImage']);
         Route::get('/voucher-templates/{voucherTemplate}/image', [VoucherTemplateController::class, 'image']);
         Route::post('/voucher-templates/{voucherTemplate}/preview', [VoucherTemplateController::class, 'preview']);
+        Route::get('/guest/export', [GuestController::class, 'export'])->middleware('throttle:exports');
         Route::put('/guest/{guest}/contact-preference', [GuestContactPreferenceController::class, 'update']);
 
         // What the AI remembers about a guest (SPEC-084). Written only by

@@ -24,6 +24,14 @@ class BookingPolicy
         return $this->allows($user, Permission::BOOKINGS_VIEW);
     }
 
+    /**
+     * Download the booking list as a file (spec 021). Viewing it is not enough.
+     */
+    public function export(User $user): bool
+    {
+        return $this->allows($user, Permission::BOOKINGS_EXPORT);
+    }
+
     public function view(User $user, Booking $booking): bool
     {
         return $this->allows($user, Permission::BOOKINGS_VIEW, $booking);

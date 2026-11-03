@@ -2,16 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ExportFormat;
 use App\Enums\ImportDateOrder;
 use App\Enums\ImportDecimalMark;
 use App\Enums\ImportStatus;
 use App\Enums\ReservationChannels;
 use App\Enums\ReservationStatus;
+use App\Http\Controllers\Concerns\ExportsLists;
 use App\Http\Controllers\Concerns\HandlesFrontDeskActions;
 use App\Http\Requests\CheckInRequest;
 use App\Http\Requests\CheckOutRequest;
 use App\Http\Requests\ImportReservationsRequest;
 use App\Http\Requests\NoShowRequest;
+use App\Http\Requests\ReservationExportRequest;
 use App\Http\Requests\ReservationIndexRequest;
 use App\Http\Requests\StoreReservationRequest;
 use App\Http\Requests\UpdateReservationRequest;
@@ -25,8 +28,10 @@ use App\Models\Stay;
 use App\Services\NoShowService;
 use App\Services\Reservations\ReservationCommands;
 use App\Services\StayLifecycleService;
+use App\Support\Export\ReservationsExport;
 use App\Support\RequestRules\GenericQuery;
 use App\Support\Reservations\ReservationCreator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +40,7 @@ use Illuminate\Validation\ValidationException;
 
 class ReservationController extends Controller
 {
-    use HandlesFrontDeskActions;
+    use ExportsLists, HandlesFrontDeskActions;
 
     private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room', 'reservationRooms.stay'];
 
@@ -52,6 +57,17 @@ class ReservationController extends Controller
     {
         $this->authorize('viewAny', Reservation::class);
 
+        $reservations = GenericQuery::paginate($this->listQuery($request), $request);
+
+        return apiResponse('Reservations fetched successfully.', 200, ReservationResource::collection($reservations));
+    }
+
+    /**
+     * The filtered, sorted reservation list without pagination. Shared by
+     * index() and export(), so an export holds exactly what the list shows.
+     */
+    private function listQuery(ReservationIndexRequest $request): Builder
+    {
         $query = Reservation::with(self::RELATIONS);
 
         // Room type and room live on the lines, not the reservation: match any
@@ -80,9 +96,17 @@ class ReservationController extends Controller
 
         $request->merge(['filter' => $filters]);
 
-        $reservations = GenericQuery::apply($query, $request);
+        return GenericQuery::query($query, $request);
+    }
 
-        return apiResponse('Reservations fetched successfully.', 200, ReservationResource::collection($reservations));
+    /**
+     * Download the reservation list as Excel, CSV or SQL, filtered and sorted exactly
+     * as the list is (spec 021).
+     */
+    public function export(ReservationExportRequest $request)
+    {
+        return $this->exportList('reservations', Reservation::class, $this->listQuery($request), $request,
+            fn (Builder $query, ExportFormat $format) => new ReservationsExport($query, $format));
     }
 
     /**

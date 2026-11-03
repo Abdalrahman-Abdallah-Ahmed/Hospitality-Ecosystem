@@ -256,5 +256,5 @@ it('lists every permission grouped by resource, with the employee defaults', fun
     expect($groups->flatMap(fn (array $group) => collect($group['permissions'])->pluck('value'))->count())
         ->toBe(count(Permission::cases()))
         ->and($guests['label'])->toBe('Guests')
-        ->and(collect($guests['permissions'])->pluck('action')->all())->toBe(['view', 'create', 'update', 'delete']);
+        ->and(collect($guests['permissions'])->pluck('action')->all())->toBe(['view', 'create', 'update', 'delete', 'export']);
 });
