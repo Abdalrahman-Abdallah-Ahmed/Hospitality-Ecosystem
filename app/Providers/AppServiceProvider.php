@@ -126,6 +126,11 @@ class AppServiceProvider extends ServiceProvider
         // several widgets, tight enough that one token cannot flood the API.
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(240)
             ->by($request->user()?->getAuthIdentifier() ?: $request->ip()));
+
+        // List exports (spec 021), on top of `api`: one budget per user shared
+        // by all four export endpoints, so guest data cannot be pulled in bulk.
+        RateLimiter::for('exports', fn (Request $request) => Limit::perMinute(10)
+            ->by($request->user()?->getAuthIdentifier() ?: $request->ip()));
     }
 
     /**

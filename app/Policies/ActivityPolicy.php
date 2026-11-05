@@ -28,6 +28,14 @@ class ActivityPolicy
     }
 
     /**
+     * Download the activity catalogue as a file (spec 021). Viewing it is not enough.
+     */
+    public function export(User $user): bool
+    {
+        return $this->allows($user, Permission::ACTIVITIES_EXPORT);
+    }
+
+    /**
      * Determine whether the user can view the model.
      */
     public function view(User $user, Activity $activity): bool

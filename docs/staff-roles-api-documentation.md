@@ -46,6 +46,8 @@ None of the five `knowledge_documents.*` permissions is a default, not even `vie
 
 None of the six voucher permissions (`reservations.voucher`, `reservations.voucher_email`, `voucher_templates.*`) is a default (2026-10-27): a voucher is a document proving a booking, with guest names and dates, and emailing it sends guest data outside the system.
 
+None of the four export permissions (`reservations.export`, `activities.export`, `bookings.export`, `guests.export`) is a default (2026-11-03), and viewing a list does not allow exporting it: an export takes guest data out of the system in bulk. See [reservations](reservations-api-documentation.md#export-reservations), [activities](activity-api-documentation.md#export-activities), [bookings](booking-entity-documentation.md#export-bookings) and [guests](guest-api-documentation.md#export-guests).
+
 `GET /api/permissions` returns this list as `employee_defaults`, so the UI does not need to hard-code it.
 
 ### Permission Reference
@@ -56,6 +58,7 @@ None of the six voucher permissions (`reservations.voucher`, `reservations.vouch
 | `activities.create` | `POST /api/activity` |
 | `activities.update` | `PUT /api/activity/{id}` |
 | `activities.delete` | `DELETE /api/activity/{id}` |
+| `activities.export` | `GET /api/activity/export` (*added 2026-11-03*; not a default) |
 | `activity_categories.view` | `GET /api/activity-category`, `GET /api/activity-category/{id}` |
 | `activity_categories.create` | `POST /api/activity-category` |
 | `activity_categories.update` | `PUT /api/activity-category/{id}` |
@@ -68,12 +71,14 @@ None of the six voucher permissions (`reservations.voucher`, `reservations.vouch
 | `bookings.update` | `PATCH /api/booking/{id}` (an employee default) |
 | `bookings.update_status` | `POST /api/booking/{id}/status`, `POST /api/booking/{id}/cancellation-request/approve`, `POST /api/booking/{id}/cancellation-request/decline` |
 | `bookings.override_capacity` | `capacity_override: true` on `POST /api/booking` and `PATCH /api/booking/{id}` (never a default) |
+| `bookings.export` | `GET /api/booking/export` (*added 2026-11-03*; not a default) |
 | `conversations.view` | `GET /api/conversations`, `GET /api/conversations/{id}` (*added 2026-10-10*; never an employee default — guest conversations are protected guest data) |
 | `dashboard.view` | `GET /api/dashboard` |
 | `guests.view` | `GET /api/guest`, `GET /api/guest/{id}` |
 | `guests.create` | `POST /api/guest` |
 | `guests.update` | `PUT /api/guest/{id}`, `PUT /api/guest/{id}/contact-preference` |
 | `guests.delete` | `DELETE /api/guest/{id}` |
+| `guests.export` | `GET /api/guest/export` (*added 2026-11-03*; not a default) |
 | `guest_memories.view` | `GET /api/guest/{id}/memories` (*added 2026-10-10*; never an employee default) |
 | `guest_memories.delete` | `DELETE /api/guest/{id}/memories/{memory}` (*added 2026-10-10*; never an employee default) |
 | `history.view` | `GET /api/history/{type}/{id}`, `GET /api/ai-activity` (*AI activity added 2026-10-10*) |
@@ -107,6 +112,7 @@ None of the six voucher permissions (`reservations.voucher`, `reservations.vouch
 | `reservations.assign_room` | `PUT /api/reservation/{id}/rooms` (assign, change, remove, upgrade), `GET /api/reservation/unassigned-arrivals`, and setting or changing `rooms[].room_id` on `POST /api/reservation` / `PUT /api/reservation/{id}` (on top of create / update); the Admin AI room tool (*added 2026-10-30*; not a default) |
 | `reservations.move_room` | `POST /api/stays/{id}/move-room`, and the Admin AI room move tool (*added 2026-10-30*; not a default) |
 | `reservations.voucher_email` | `POST /api/reservation/{id}/voucher/email`, `GET /api/reservation/{id}/voucher/emails` (not a default) |
+| `reservations.export` | `GET /api/reservation/export` (*added 2026-11-03*; not a default) |
 | `rooms.view` | `GET /api/room`, `GET /api/room/{id}`, `GET /api/housekeeping/board` |
 | `rooms.create` | `POST /api/room` |
 | `rooms.update` | `PUT /api/room/{id}` |

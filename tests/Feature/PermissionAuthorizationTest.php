@@ -164,7 +164,41 @@ it('lets an employee read a resource only when their role grants it', function (
     'maintenance list' => ['/api/maintenance/tasks', Permission::TASKS_VIEW],
     'voucher templates' => ['/api/voucher-templates', Permission::VOUCHER_TEMPLATES_VIEW],
     'voucher fields' => ['/api/voucher-templates/fields', Permission::VOUCHER_TEMPLATES_VIEW],
+    'reservation export' => ['/api/reservation/export', Permission::RESERVATIONS_EXPORT],
+    'activity export' => ['/api/activity/export', Permission::ACTIVITIES_EXPORT],
+    'booking export' => ['/api/booking/export', Permission::BOOKINGS_EXPORT],
+    'guest export' => ['/api/guest/export', Permission::GUESTS_EXPORT],
 ]);
+
+it('does not let viewing a list export it, and gives no export by default (spec 021)', function () {
+    $exports = [
+        '/api/reservation/export' => Permission::RESERVATIONS_VIEW,
+        '/api/activity/export' => Permission::ACTIVITIES_VIEW,
+        '/api/booking/export' => Permission::BOOKINGS_VIEW,
+        '/api/guest/export' => Permission::GUESTS_VIEW,
+    ];
+
+    foreach ([Permission::RESERVATIONS_EXPORT, Permission::ACTIVITIES_EXPORT, Permission::BOOKINGS_EXPORT, Permission::GUESTS_EXPORT] as $permission) {
+        expect(Permission::employeeDefaults())->not->toContain($permission);
+    }
+
+    $hotel = hotelForPermissions();
+    $viewer = employeeWithPermissions($hotel, array_values($exports));
+    $noRole = employeeWithPermissions($hotel);
+
+    foreach (array_keys($exports) as $endpoint) {
+        $this->withHeaders(permissionApiHeaders())->actingAs($viewer, 'sanctum')
+            ->getJson($endpoint)->assertForbidden();
+
+        $this->withHeaders(permissionApiHeaders())->actingAs($noRole, 'sanctum')
+            ->getJson($endpoint)->assertForbidden();
+    }
+
+    $listed = collect($this->withHeaders(permissionApiHeaders())->actingAs(User::find($hotel->owner_id), 'sanctum')
+        ->getJson('/api/permissions')->assertOk()->json('body'))->flatten()->all();
+
+    expect($listed)->toContain('reservations.export', 'activities.export', 'bookings.export', 'guests.export');
+});
 
 it('never gives employees without a role the housekeeping or out-of-order permissions', function () {
     expect(Permission::employeeDefaults())

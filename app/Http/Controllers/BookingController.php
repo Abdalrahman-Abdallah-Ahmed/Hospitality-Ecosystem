@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BookingStatus;
+use App\Enums\ExportFormat;
+use App\Http\Controllers\Concerns\ExportsLists;
+use App\Http\Requests\BookingExportRequest;
 use App\Http\Requests\BookingIndexRequest;
 use App\Http\Requests\StoreBookingRequest;
 use App\Http\Requests\UpdateBookingRequest;
@@ -12,8 +15,10 @@ use App\Models\Activity;
 use App\Models\Booking;
 use App\Models\Stay;
 use App\Services\BookingService;
+use App\Support\Export\BookingsExport;
 use App\Support\Features;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -36,6 +41,8 @@ use RuntimeException;
  */
 class BookingController extends Controller
 {
+    use ExportsLists;
+
     /**
      * The booking list and calendar: by activity, reservation and date range,
      * and the ones a guest has asked to cancel.
@@ -44,6 +51,17 @@ class BookingController extends Controller
     {
         $this->authorize('viewAny', Booking::class);
 
+        return apiResponse('Bookings fetched successfully.', 200, BookingResource::collection(
+            GenericQuery::paginate($this->listQuery($request), $request)
+        ));
+    }
+
+    /**
+     * The filtered, sorted booking list without pagination. Shared by
+     * index() and export(), so an export holds exactly what the list shows.
+     */
+    private function listQuery(BookingIndexRequest $request): Builder
+    {
         $query = Booking::with(['guest', 'activity', 'recommendation'])
             ->withExists('openCancellationRequest as cancellation_requested')
             ->when($request->filled('activity_id'), fn ($query) => $query->where('activity_id', $request->input('activity_id')))
@@ -55,7 +73,17 @@ class BookingController extends Controller
                 : $query->whereDoesntHave('openCancellationRequest'))
             ->when(! $request->filled('sort'), fn ($query) => $query->orderBy('scheduled_date')->orderBy('scheduled_time')->orderBy('scheduled_for'));
 
-        return apiResponse('Bookings fetched successfully.', 200, BookingResource::collection(GenericQuery::apply($query, $request)));
+        return GenericQuery::query($query, $request);
+    }
+
+    /**
+     * Download the booking list as Excel, CSV or SQL, filtered and sorted exactly
+     * as the list is (spec 021).
+     */
+    public function export(BookingExportRequest $request)
+    {
+        return $this->exportList('bookings', Booking::class, $this->listQuery($request), $request,
+            fn (Builder $query, ExportFormat $format) => new BookingsExport($query, $format));
     }
 
     public function show(Booking $booking)

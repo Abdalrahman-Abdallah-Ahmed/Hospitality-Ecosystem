@@ -2,15 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ExportFormat;
+use App\Http\Controllers\Concerns\ExportsLists;
+use App\Http\Requests\Generic\GenericExportRequest;
 use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\StoreActivityRequest;
 use App\Http\Requests\UpdateActivityRequest;
 use App\Http\Resources\ActivityResource;
 use App\Models\Activity;
+use App\Support\Export\ActivitiesExport;
 use App\Support\RequestRules\GenericQuery;
+use Illuminate\Database\Eloquent\Builder;
 
 class ActivityController extends Controller
 {
+    use ExportsLists;
+
     /**
      * Display a listing of the resource.
      */
@@ -18,11 +25,28 @@ class ActivityController extends Controller
     {
         $this->authorize('viewAny', Activity::class);
 
-        $query = Activity::with('category');
-
-        $activities = GenericQuery::apply($query, $request);
+        $activities = GenericQuery::paginate($this->listQuery($request), $request);
 
         return apiResponse('Activities fetched successfully.', 200, ActivityResource::collection($activities));
+    }
+
+    /**
+     * The filtered, sorted list without pagination. Shared by index() and
+     * export(), so an export holds exactly what the list shows.
+     */
+    private function listQuery(GenericIndexRequest $request): Builder
+    {
+        return GenericQuery::query(Activity::with('category'), $request);
+    }
+
+    /**
+     * Download the activity catalogue as Excel, CSV or SQL, filtered and sorted exactly
+     * as the list is (spec 021).
+     */
+    public function export(GenericExportRequest $request)
+    {
+        return $this->exportList('activities', Activity::class, $this->listQuery($request), $request,
+            fn (Builder $query, ExportFormat $format) => new ActivitiesExport($query, $format));
     }
 
     /**

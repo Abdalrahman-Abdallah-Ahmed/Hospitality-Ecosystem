@@ -14,6 +14,23 @@ class GenericQuery
 {
     public static function apply(Builder $query, GenericIndexRequest $request): LengthAwarePaginator
     {
+        return self::paginate(self::query($query, $request), $request);
+    }
+
+    /**
+     * One page of an already filtered query, at the requested page size.
+     */
+    public static function paginate(Builder $query, GenericIndexRequest $request): LengthAwarePaginator
+    {
+        return $query->paginate($request->integer('per_page', 15));
+    }
+
+    /**
+     * The filters, search and sort without the pagination: what a list
+     * export reads, so it selects exactly what the list shows (spec 021).
+     */
+    public static function query(Builder $query, GenericIndexRequest $request): Builder
+    {
         $query->filter((array) $request->input('filter', []))
             ->search($request->string('search')->toString() ?: null);
 
@@ -21,6 +38,6 @@ class GenericQuery
             $query->orderBy(ltrim($sort, '-'), str_starts_with($sort, '-') ? 'desc' : 'asc');
         }
 
-        return $query->paginate($request->integer('per_page', 15));
+        return $query;
     }
 }

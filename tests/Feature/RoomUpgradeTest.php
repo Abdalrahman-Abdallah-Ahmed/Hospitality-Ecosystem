@@ -65,6 +65,21 @@ it('upgrades: keeps the booked type, shows the upgrade, audits both types, moves
         ->and(ugBooked($this, $this->admin, $this->nights))->toBe(['Deluxe' => 0, 'Suite' => 1]);
 });
 
+it('names the held room\'s own type on the reservation show and list responses', function () {
+    ugPut($this, $this->admin, $this->reservation, [['line_id' => $this->line->id, 'room_id' => $this->suiteRooms[0]->id, 'upgrade' => true]])
+        ->assertOk();
+
+    fdGet($this, $this->admin, "/api/reservation/{$this->reservation->id}")
+        ->assertOk()
+        ->assertJsonPath('body.rooms.0.is_upgrade', true)
+        ->assertJsonPath('body.rooms.0.room_type.name', 'Deluxe')
+        ->assertJsonPath('body.rooms.0.room.room_type.name', 'Suite');
+
+    fdGet($this, $this->admin, '/api/reservation')
+        ->assertOk()
+        ->assertJsonPath('body.data.0.rooms.0.room.room_type.name', 'Suite');
+});
+
 it('refuses an upgrade into a full type unless overbooking is allowed and asked for', function () {
     fdBook($this->hotel, $this->suite, [null], $this->nights);
     $assignment = [['line_id' => $this->line->id, 'room_id' => $this->suiteRooms[0]->id, 'upgrade' => true]];

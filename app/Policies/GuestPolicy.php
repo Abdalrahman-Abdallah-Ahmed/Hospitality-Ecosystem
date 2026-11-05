@@ -28,6 +28,14 @@ class GuestPolicy
     }
 
     /**
+     * Download the guest list as a file (spec 021). Viewing it is not enough.
+     */
+    public function export(User $user): bool
+    {
+        return $this->allows($user, Permission::GUESTS_EXPORT);
+    }
+
+    /**
      * Determine whether the user can view the model.
      */
     public function view(User $user, Guest $guest): bool
