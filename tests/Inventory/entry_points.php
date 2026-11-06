@@ -32,7 +32,6 @@ return [
         'POST api/room-types' => ['covered_by' => $stamped],
         'POST api/staff-roles' => ['covered_by' => $stamped],
         'POST api/team' => ['covered_by' => $stamped],
-        'POST api/hotel' => ['covered_by' => 'rejects a non-super-admin from creating a hotel'],
         'POST api/ai-insights' => ['covered_by' => 'generates insights for the caller\'s own hotel only (spec 017)'],
 
         // Records addressed by a plain {id} rather than a bound model.
@@ -67,7 +66,6 @@ return [
         'GET api/hotel/{hotel}' => ['covered_by' => 'rejects an admin viewing a hotel they do not own'],
         'PUT api/hotel/{hotel}' => ['covered_by' => 'rejects an admin updating a hotel they do not own'],
         'PATCH api/hotel/{hotel}' => ['covered_by' => 'rejects an admin updating a hotel they do not own'],
-        'DELETE api/hotel/{hotel}' => ['covered_by' => 'rejects the owning admin from deleting their own hotel'],
         'GET api/users/{user}' => ['covered_by' => 'rejects an admin viewing a user belonging to a different hotel'],
         'PUT api/users/{user}' => ['covered_by' => 'rejects an admin updating a user belonging to a different hotel'],
         'PATCH api/users/{user}' => ['covered_by' => 'rejects an admin updating a user belonging to a different hotel'],

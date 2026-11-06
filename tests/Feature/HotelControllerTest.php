@@ -2,6 +2,7 @@
 
 use App\Enums\UserRole;
 use App\Models\Hotel;
+use App\Models\HotelGroup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -57,47 +58,28 @@ it('lets a super admin list every hotel regardless of owner', function () {
     expect($response->json('body.data'))->toHaveCount(2);
 });
 
-// store
+// Creating and deleting a hotel moved to /api/superadmin (spec 023), where
+// Superadmin/HotelAdministrationTest covers them.
 
-it('rejects a non-super-admin from creating a hotel', function () {
-    $admin = User::factory()->role(UserRole::ADMIN)->create();
-
-    $this->withHeaders(hotelApiHeaders())->actingAs($admin, 'sanctum')
-        ->postJson('/api/hotel', [
-            'owner_id' => $admin->id,
-            'name' => 'Grand Harbor Hotel',
-            'slug' => 'grand-harbor-hotel',
-            'currency' => 'USD',
-        ])
-        ->assertStatus(403);
-});
-
-it('lets a super admin create a hotel for another user', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+it('has no way to create or delete a hotel on the tenant endpoints, for anyone', function (UserRole $role) {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = hotelFor($owner);
+    $caller = $role === UserRole::ADMIN ? $owner : User::factory()->role($role)->create();
 
-    $response = $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->postJson('/api/hotel', [
-            'owner_id' => $owner->id,
-            'name' => 'Grand Harbor Hotel',
-            'slug' => 'grand-harbor-hotel',
-            'currency' => 'USD',
-        ]);
+    $this->withHeaders(hotelApiHeaders())->actingAs($caller, 'sanctum')
+        ->postJson('/api/hotel', ['name' => 'New', 'slug' => 'new'])
+        ->assertStatus(405);
 
-    $response->assertStatus(201)
-        ->assertJsonPath('body.owner_id', $owner->id);
+    $this->withHeaders(hotelApiHeaders())->actingAs($caller, 'sanctum')
+        ->deleteJson("/api/hotel/{$hotel->id}")
+        ->assertStatus(405);
 
-    expect(Hotel::where('slug', 'grand-harbor-hotel')->exists())->toBeTrue();
-});
-
-it('rejects a hotel missing required fields', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->postJson('/api/hotel', ['slug' => 'no-name-hotel'])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors(['name']);
-});
+    expect(Hotel::find($hotel->id))->not->toBeNull()
+        ->and(Hotel::where('slug', 'new')->exists())->toBeFalse();
+})->with([
+    'an admin' => UserRole::ADMIN,
+    'a super admin' => UserRole::SUPER_ADMIN,
+]);
 
 // show
 
@@ -174,6 +156,45 @@ it('rejects an admin updating a hotel they do not own', function () {
     expect($hotel->fresh()->name)->not->toBe('Hijacked');
 });
 
+it('ignores owner and account on a tenant hotel update, for every caller', function (UserRole $role) {
+    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = hotelFor($owner);
+    $account = $hotel->hotel_group_id;
+    $elsewhere = HotelGroup::create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $caller = $role === UserRole::ADMIN ? $owner : $superAdmin;
+
+    $this->withHeaders(hotelApiHeaders())->actingAs($caller, 'sanctum')
+        ->putJson("/api/hotel/{$hotel->id}", [
+            'name' => 'Renamed',
+            'hotel_group_id' => $elsewhere->id,
+            'owner_id' => $superAdmin->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('body.name', 'Renamed');
+
+    $fresh = $hotel->fresh();
+
+    expect($fresh->hotel_group_id)->toBe($account)
+        ->and($fresh->owner_id)->toBe($owner->id);
+})->with([
+    'the owning admin' => UserRole::ADMIN,
+    'a super admin' => UserRole::SUPER_ADMIN,
+]);
+
+it('refuses a slug a soft-deleted hotel holds, without a server error', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = hotelFor($admin);
+    hotelFor(User::factory()->role(UserRole::ADMIN)->create(), ['slug' => 'gone'])->delete();
+
+    $this->withHeaders(hotelApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/hotel/{$hotel->id}", ['slug' => 'gone'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['slug']);
+
+    expect($hotel->fresh()->slug)->not->toBe('gone');
+});
+
 it('lets a super admin update a hotel they do not own', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
     $owner = User::factory()->role(UserRole::ADMIN)->create();
@@ -183,30 +204,4 @@ it('lets a super admin update a hotel they do not own', function () {
         ->putJson("/api/hotel/{$hotel->id}", ['name' => 'Reassigned'])
         ->assertOk()
         ->assertJsonPath('body.name', 'Reassigned');
-});
-
-// destroy
-
-it('rejects the owning admin from deleting their own hotel', function () {
-    $admin = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = hotelFor($admin);
-
-    $this->withHeaders(hotelApiHeaders())->actingAs($admin, 'sanctum')
-        ->deleteJson("/api/hotel/{$hotel->id}")
-        ->assertStatus(403);
-
-    expect(Hotel::find($hotel->id))->not->toBeNull();
-});
-
-it('lets a super admin delete any hotel', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = hotelFor($owner);
-
-    $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->deleteJson("/api/hotel/{$hotel->id}")
-        ->assertOk();
-
-    expect(Hotel::find($hotel->id))->toBeNull();
-    expect(Hotel::withTrashed()->find($hotel->id))->not->toBeNull();
 });
