@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class HotelGroup extends Model
@@ -35,6 +38,47 @@ class HotelGroup extends Model
         'is_active' => 'boolean',
         'contract_value_monthly' => 'decimal:2',
     ];
+
+    /**
+     * What ?search= reads. A list, because Filterable would otherwise search
+     * every text column, contract_currency included.
+     *
+     * @var list<string>
+     */
+    public array $searchable = ['name', 'slug'];
+
+    /**
+     * Adds users_count: every user who is not a super admin and is attached
+     * through the account, a live home hotel or a live membership. Counted on
+     * the users table with no join, so a user attached three ways counts once.
+     *
+     * Differs from the metering seat count on purpose, which ignores
+     * memberships.
+     */
+    public function scopeWithUserCount(Builder $query): Builder
+    {
+        // selectSub alone would leave the account's own columns unselected.
+        if ($query->getQuery()->columns === null) {
+            $query->select($query->getModel()->getTable().'.*');
+        }
+
+        return $query->selectSub(
+            User::query()
+                ->selectRaw('count(*)')
+                ->where('users.role', '!=', UserRole::SUPER_ADMIN->value)
+                ->where(fn (Builder $attached) => $attached
+                    ->whereColumn('users.hotel_group_id', 'hotel_groups.id')
+                    ->orWhereIn('users.hotel_id', Hotel::query()
+                        ->select('hotels.id')
+                        ->whereColumn('hotels.hotel_group_id', 'hotel_groups.id'))
+                    ->orWhereExists(Hotel::query()
+                        ->select(DB::raw(1))
+                        ->join('hotel_user', 'hotel_user.hotel_id', '=', 'hotels.id')
+                        ->whereColumn('hotel_user.user_id', 'users.id')
+                        ->whereColumn('hotels.hotel_group_id', 'hotel_groups.id'))),
+            'users_count',
+        );
+    }
 
     /**
      * Build the single-property group that a hotel arriving without one gets

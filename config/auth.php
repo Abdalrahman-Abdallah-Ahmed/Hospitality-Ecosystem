@@ -103,6 +103,15 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+
+        // A new user's first password link (spec 023). Its own table, so a
+        // normal reset token can never be checked against this longer life.
+        'invitations' => [
+            'provider' => 'users',
+            'table' => 'user_invitation_tokens',
+            'expire' => 4320,
+            'throttle' => 60,
+        ],
     ],
 
     /*

@@ -27,6 +27,8 @@ class UserResource extends JsonResource
             'group_role' => $this->group_role,
             'staff_role_id' => $this->staff_role_id,
             'email_verified_at' => $this->email_verified_at,
+            // Hotel memberships. Only the super admin endpoints load them.
+            'hotel_ids' => $this->whenLoaded('hotels', fn () => $this->hotels->pluck('id')->all()),
             'staff_role' => StaffRoleResource::make($this->whenLoaded('staffRole')),
             // Only once staffRole is loaded, so a listing never lazy-loads a
             // role per user just to work out permissions.
