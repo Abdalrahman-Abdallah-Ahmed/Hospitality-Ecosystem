@@ -39,11 +39,17 @@ class MeteringService
      *
      * Keeping the try/catch here rather than at each call site means no
      * future call site can forget it.
+     *
+     * Inside a caller's transaction the work runs in a savepoint. On Postgres
+     * a failed statement aborts the whole transaction, so without one the
+     * caller's next statement would fail even though the error was caught.
      */
     public function safely(callable $callback): void
     {
         try {
-            $callback($this);
+            DB::transactionLevel() > 0
+                ? DB::transaction(fn () => $callback($this))
+                : $callback($this);
         } catch (\Throwable $e) {
             report($e);
         }
