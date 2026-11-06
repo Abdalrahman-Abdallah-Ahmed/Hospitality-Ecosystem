@@ -275,7 +275,7 @@ Login and register tokens **expire 7 days after they are issued** (server settin
 | `POST /api/login` | 5 attempts per minute per email + IP, and 20 per minute per IP across all emails. |
 | `POST /api/register` | 5 attempts per minute per IP. |
 | `POST /api/pair` | 10 requests per minute per IP. |
-| Every authenticated route (`auth:sanctum`), including `/api/admin/*` | 240 requests per minute per user. |
+| Every authenticated route (`auth:sanctum`), including `/api/superadmin/*` | 240 requests per minute per user. |
 
 Every attempt counts, successful or not. Over the limit the API returns HTTP `429` with a `Retry-After` header (seconds):
 

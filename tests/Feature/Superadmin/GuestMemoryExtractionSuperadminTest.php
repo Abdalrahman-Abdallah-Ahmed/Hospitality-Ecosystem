@@ -47,7 +47,7 @@ it('lists extractions for a super admin, by hotel and status', function () {
     adminExtraction($hotelA, 'extracted');
     adminExtraction($hotelB, 'failed');
 
-    $response = cmaRequest($this, superAdminUser(), 'GET', "/api/admin/guest-memory-extractions?hotel_id={$hotelA->id}&status=failed")->assertOk();
+    $response = cmaRequest($this, superAdminUser(), 'GET', "/api/superadmin/guest-memory-extractions?hotel_id={$hotelA->id}&status=failed")->assertOk();
 
     expect(collect($response->json('body.data'))->pluck('id')->all())->toBe([$failed->id])
         ->and($response->json('body.data.0.last_error'))->toBe('RuntimeException');
@@ -56,7 +56,7 @@ it('lists extractions for a super admin, by hotel and status', function () {
 it('re-runs a failed or ceiling-stopped extraction once', function (string $status) {
     $extraction = adminExtraction(cmaHotel(), $status);
 
-    cmaRequest($this, superAdminUser(), 'POST', "/api/admin/guest-memory-extractions/{$extraction->id}/rerun")
+    cmaRequest($this, superAdminUser(), 'POST', "/api/superadmin/guest-memory-extractions/{$extraction->id}/rerun")
         ->assertStatus(202)
         ->assertJsonPath('body.status', 'pending_retry');
 
@@ -69,7 +69,7 @@ it('re-runs a failed or ceiling-stopped extraction once', function (string $stat
 it('refuses to re-run an extraction that ended any other way', function (string $status) {
     $extraction = adminExtraction(cmaHotel(), $status);
 
-    cmaRequest($this, superAdminUser(), 'POST', "/api/admin/guest-memory-extractions/{$extraction->id}/rerun")->assertUnprocessable();
+    cmaRequest($this, superAdminUser(), 'POST', "/api/superadmin/guest-memory-extractions/{$extraction->id}/rerun")->assertUnprocessable();
 
     expect($extraction->fresh()->status->value)->toBe($status);
     Queue::assertNothingPushed();
@@ -79,6 +79,6 @@ it('keeps the extraction routes from hotel admins', function () {
     $hotel = cmaHotel();
     $extraction = adminExtraction($hotel, 'failed');
 
-    cmaRequest($this, cmaAdmin($hotel), 'GET', '/api/admin/guest-memory-extractions')->assertForbidden();
-    cmaRequest($this, cmaAdmin($hotel), 'POST', "/api/admin/guest-memory-extractions/{$extraction->id}/rerun")->assertForbidden();
+    cmaRequest($this, cmaAdmin($hotel), 'GET', '/api/superadmin/guest-memory-extractions')->assertForbidden();
+    cmaRequest($this, cmaAdmin($hotel), 'POST', "/api/superadmin/guest-memory-extractions/{$extraction->id}/rerun")->assertForbidden();
 });

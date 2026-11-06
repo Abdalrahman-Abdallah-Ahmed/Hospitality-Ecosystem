@@ -311,7 +311,7 @@ it('lets only the cost-owning classes touch cost data', function () {
         'app/Support/Audit/EventLogger.php',        // excludes AiUsageLog from auditing
         'app/Listeners/RecordAiUsage.php',
         'app/Services/Metering/AiUsageSummary.php', // counts and tokens only
-        'app/Http/Controllers/Admin/',              // super-admin stack
+        'app/Http/Controllers/Superadmin/',         // super-admin stack
         'app/Http/Controllers/AiActivityController.php', // run cost, super admins only
         'app/Http/Resources/AiActivityResource.php',
         'app/Models/',
@@ -358,7 +358,7 @@ it('never shows cost, price, margin, model or provider on any hotel-facing route
     $routes = collect(Route::getRoutes()->getRoutes())
         ->filter(fn ($route) => in_array('GET', $route->methods(), true))
         ->map(fn ($route) => $route->uri())
-        ->filter(fn (string $uri) => str_starts_with($uri, 'api/') && ! str_starts_with($uri, 'api/admin'))
+        ->filter(fn (string $uri) => str_starts_with($uri, 'api/') && ! str_starts_with($uri, 'api/superadmin'))
         ->unique()
         ->values();
 
@@ -490,7 +490,7 @@ it('still shows super admins the cost and the model', function () {
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
     $cost = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertOk()
         ->getContent();
 

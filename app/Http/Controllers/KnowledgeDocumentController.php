@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 /**
  * A hotel's own knowledge documents. Always one hotel: a scoped user's own,
  * or the one a super admin names. Global documents never appear here — they
- * are managed from routes/admin.php.
+ * are managed from routes/superadmin.php.
  */
 class KnowledgeDocumentController extends Controller
 {

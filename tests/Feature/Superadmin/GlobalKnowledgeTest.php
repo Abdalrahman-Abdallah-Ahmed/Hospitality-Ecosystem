@@ -18,7 +18,7 @@ beforeEach(function () {
 function knAdminUpload($test, $user, string $fixture, array $fields = [])
 {
     return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')
-        ->post('/api/admin/knowledge-documents', ['file' => knUpload($fixture), 'title' => 'Standard practice', ...$fields], ['Accept' => 'application/json']);
+        ->post('/api/superadmin/knowledge-documents', ['file' => knUpload($fixture), 'title' => 'Standard practice', ...$fields], ['Accept' => 'application/json']);
 }
 
 it('lets a super admin run the whole life of a global document from the admin area', function () {
@@ -35,20 +35,20 @@ it('lets a super admin run the whole life of a global document from the admin ar
         ->path->toStartWith("knowledge/global/{$id}/")
         ->status->value->toBe('indexed');
 
-    $call = fn (string $method, string $uri, array $payload = []) => knRequest($this, $super, $method, "/api/admin/knowledge-documents{$uri}", $payload);
+    $call = fn (string $method, string $uri, array $payload = []) => knRequest($this, $super, $method, "/api/superadmin/knowledge-documents{$uri}", $payload);
 
     $call('GET', '')->assertOk()->assertJsonCount(1, 'body.data');
     $call('GET', "/{$id}")->assertOk()->assertJsonPath('body.title', 'Standard practice');
     $call('PUT', "/{$id}", ['title' => 'Standard check-out practice'])->assertOk();
     $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->get("/api/admin/knowledge-documents/{$id}/download")->assertOk();
+        ->get("/api/superadmin/knowledge-documents/{$id}/download")->assertOk();
     $text = $call('GET', "/{$id}/text")->assertOk()->json('body.segments');
     $text[0]['text'] = 'Corrected welcome text for every hotel.';
     $call('PUT', "/{$id}/text", ['segments' => $text])->assertStatus(202);
     $call('DELETE', "/{$id}/text")->assertStatus(202);
     $call('POST', "/{$id}/reindex")->assertStatus(202);
     $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->post("/api/admin/knowledge-documents/{$id}/file", ['file' => knUpload('notes.md')], ['Accept' => 'application/json'])
+        ->post("/api/superadmin/knowledge-documents/{$id}/file", ['file' => knUpload('notes.md')], ['Accept' => 'application/json'])
         ->assertStatus(202);
     $call('DELETE', "/{$id}")->assertOk();
     expect($call('GET', '/deleted')->assertOk()->json('body.data.0.id'))->toBe($id);
@@ -77,11 +77,11 @@ it('never lists or serves a hotel document from the admin area', function () {
     $hotelDocument = knDocument($hotel, ['title' => 'Hotel only']);
     knDocument(null, ['title' => 'Global']);
 
-    expect(collect(knRequest($this, $super, 'GET', '/api/admin/knowledge-documents')->json('body.data'))->pluck('title')->all())
+    expect(collect(knRequest($this, $super, 'GET', '/api/superadmin/knowledge-documents')->json('body.data'))->pluck('title')->all())
         ->toBe(['Global']);
-    knRequest($this, $super, 'GET', "/api/admin/knowledge-documents/{$hotelDocument->id}")->assertNotFound();
-    knRequest($this, $super, 'PUT', "/api/admin/knowledge-documents/{$hotelDocument->id}", ['title' => 'x'])->assertNotFound();
-    knRequest($this, $super, 'DELETE', "/api/admin/knowledge-documents/{$hotelDocument->id}")->assertNotFound();
+    knRequest($this, $super, 'GET', "/api/superadmin/knowledge-documents/{$hotelDocument->id}")->assertNotFound();
+    knRequest($this, $super, 'PUT', "/api/superadmin/knowledge-documents/{$hotelDocument->id}", ['title' => 'x'])->assertNotFound();
+    knRequest($this, $super, 'DELETE', "/api/superadmin/knowledge-documents/{$hotelDocument->id}")->assertNotFound();
 });
 
 it('checks duplicates among global documents only', function () {
@@ -102,7 +102,7 @@ it('manages global articles in the admin area, including ones created before it 
     $legacy = KnowledgeBaseArticle::create(['hotel_id' => null, 'title' => 'Legacy global', 'content' => 'Greet guests warmly.', 'status' => 'published']);
     KnowledgeBaseArticle::create(['hotel_id' => $hotel->id, 'title' => 'Hotel article', 'content' => 'Hotel only.', 'status' => 'published']);
 
-    $call = fn (string $method, string $uri, array $payload = []) => knRequest($this, $super, $method, "/api/admin/knowledge-base-articles{$uri}", $payload);
+    $call = fn (string $method, string $uri, array $payload = []) => knRequest($this, $super, $method, "/api/superadmin/knowledge-base-articles{$uri}", $payload);
 
     expect(collect($call('GET', '')->assertOk()->json('body.data'))->pluck('title')->all())->toBe(['Legacy global']);
 
@@ -128,12 +128,12 @@ it('refuses hotel admins and employees on every admin knowledge route, whatever 
     $global = knDocument(null);
 
     foreach ([$admin, $employee] as $user) {
-        knRequest($this, $user, 'GET', '/api/admin/knowledge-documents')->assertForbidden();
-        knRequest($this, $user, 'POST', '/api/admin/knowledge-documents', ['title' => 'x'])->assertForbidden();
-        knRequest($this, $user, 'PUT', "/api/admin/knowledge-documents/{$global->id}", ['title' => 'x'])->assertForbidden();
-        knRequest($this, $user, 'DELETE', "/api/admin/knowledge-documents/{$global->id}")->assertForbidden();
-        knRequest($this, $user, 'GET', '/api/admin/knowledge-base-articles')->assertForbidden();
-        knRequest($this, $user, 'POST', '/api/admin/knowledge-base-articles', ['title' => 'x', 'content' => 'y'])->assertForbidden();
+        knRequest($this, $user, 'GET', '/api/superadmin/knowledge-documents')->assertForbidden();
+        knRequest($this, $user, 'POST', '/api/superadmin/knowledge-documents', ['title' => 'x'])->assertForbidden();
+        knRequest($this, $user, 'PUT', "/api/superadmin/knowledge-documents/{$global->id}", ['title' => 'x'])->assertForbidden();
+        knRequest($this, $user, 'DELETE', "/api/superadmin/knowledge-documents/{$global->id}")->assertForbidden();
+        knRequest($this, $user, 'GET', '/api/superadmin/knowledge-base-articles')->assertForbidden();
+        knRequest($this, $user, 'POST', '/api/superadmin/knowledge-base-articles', ['title' => 'x', 'content' => 'y'])->assertForbidden();
     }
 
     expect($global->fresh()->title)->toBe('House Rules');

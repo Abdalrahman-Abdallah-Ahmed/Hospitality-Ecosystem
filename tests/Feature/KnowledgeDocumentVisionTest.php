@@ -132,7 +132,7 @@ it('fails an image with no readable text', function () {
 it('meters nothing for a global document, whose cost stays with the platform', function () {
     knFakeVision([['page' => 1, 'text' => 'SPA OPEN', 'description' => 'A sign.']]);
 
-    $document = knVisionUpload($this, 'sign.png', knSuperAdmin(), '/api/admin/knowledge-documents');
+    $document = knVisionUpload($this, 'sign.png', knSuperAdmin(), '/api/superadmin/knowledge-documents');
 
     expect($document)->hotel_id->toBeNull()->status->value->toBe('indexed');
     expect(DB::table('meter_events')->where('feature_code', 'knowledge_pages_read')->count())->toBe(0);

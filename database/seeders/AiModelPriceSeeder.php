@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * already reported against the old price still recomputes to the same figure.
  *
  * A model with no row here is not free: it is unpriced. Its calls are logged
- * with an estimated zero cost and listed explicitly by /api/admin/ai-cost, so
+ * with an estimated zero cost and listed explicitly by /api/superadmin/ai-cost, so
  * the gap shows up as a gap.
  */
 class AiModelPriceSeeder extends Seeder
@@ -125,7 +125,7 @@ class AiModelPriceSeeder extends Seeder
      *
      * Closing it means those calls become UNPRICED instead: logged with
      * cost_is_estimated = true, named in the `unpriced_models` block of
-     * /api/admin/ai-cost, and accompanied by a logged warning. That is a
+     * /api/superadmin/ai-cost, and accompanied by a logged warning. That is a
      * visible gap demanding an action, which is the right kind of wrong.
      *
      * So: before 1 January 2027, supersede these three with whatever Google

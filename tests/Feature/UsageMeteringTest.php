@@ -263,7 +263,7 @@ it('blocks a non super admin from the usage report', function () {
     $admin->update(['hotel_id' => $hotel->id]);
 
     $this->withHeaders(meteringHeaders())->actingAs($admin->fresh(), 'sanctum')
-        ->getJson('/api/admin/usage')
+        ->getJson('/api/superadmin/usage')
         ->assertStatus(403);
 });
 
@@ -276,7 +276,7 @@ it('reports usage per account per feature, and names what it cannot measure', fu
     metering()->recountSeats($hotel->hotelGroup);
 
     $response = $this->withHeaders(meteringHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson('/api/admin/usage')
+        ->getJson('/api/superadmin/usage')
         ->assertOk();
 
     $account = collect($response->json('body.accounts'))

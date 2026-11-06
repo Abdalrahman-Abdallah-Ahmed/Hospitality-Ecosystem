@@ -1911,7 +1911,7 @@ function tenantOwnedModelFactories(): array
 
 /*
 | Which generic cross-tenant rule (spec 017, research R2) can drive a route:
-| 'super_admin' (routes/admin.php: a hotel admin is refused),
+| 'super_admin' (routes/superadmin.php: a hotel admin is refused),
 | 'index' (GET, no parameters), 'bound' (every route parameter binds to a
 | tenant-owned model), 'foreign_key' (POST/PUT/PATCH with no parameters whose
 | form request names a tenant model by *_id), or null when none can — those
@@ -1923,7 +1923,7 @@ function crossTenantRuleFor(Route $route, string $method): ?string
         return null;
     }
 
-    // routes/admin.php is cross-account by design; what matters is that a
+    // routes/superadmin.php is cross-account by design; what matters is that a
     // hotel admin can never reach it.
     if (in_array('super_admin', $route->gatherMiddleware(), true)) {
         return 'super_admin';

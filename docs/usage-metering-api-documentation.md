@@ -116,7 +116,7 @@ them, the argument that follows is not one anybody wins.
 
 | Route | Reader | Scope | Declared in |
 |---|---|---|---|
-| `GET /api/admin/usage` | Super admin | Every account | `routes/admin.php` |
+| `GET /api/superadmin/usage` | Super admin | Every account | `routes/superadmin.php` |
 | `GET /api/usage` | Hotel-group admin | Their own account only | `routes/api.php` |
 
 Cross-account routes live in their own file, registered in
@@ -124,7 +124,7 @@ Cross-account routes live in their own file, registered in
 rather than to a group inside it — so a route added there is protected by
 construction and cannot be left exposed by forgetting to nest it.
 
-### `GET /api/admin/usage?from=2026-08-01&to=2026-08-31`
+### `GET /api/superadmin/usage?from=2026-08-01&to=2026-08-31`
 
 Both parameters optional: `from` defaults to the start of the current month,
 `to` to now. Filters on the event's `occurred_at`.
@@ -141,7 +141,7 @@ Seats come from the counter, since they are not event-derived.
 
 Each entry in `accounts[]` also carries the same `ai` block as the tenant
 report below: AI requests and tokens, with no cost. Cost is only in
-`/api/admin/ai-cost`.
+`/api/superadmin/ai-cost`.
 
 #### Response
 

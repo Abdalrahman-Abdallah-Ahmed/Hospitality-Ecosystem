@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * An uploaded file the assistants can answer from. `hotel_id = null` means
  * global: platform knowledge every hotel's assistant reads, managed only from
- * routes/admin.php.
+ * routes/superadmin.php.
  *
  * Searchable means: not deleted, `is_active`, and live passages exist.
  * `status` only describes the latest indexing run, which is why a document

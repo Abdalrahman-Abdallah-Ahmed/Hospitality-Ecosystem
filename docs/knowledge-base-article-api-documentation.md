@@ -6,7 +6,7 @@ A "knowledge base article" is a hotel-scoped content entry (e.g. an FAQ, a desti
 
 It covers `index`, `store`, `show`, `update`, and `destroy` — all five standard resource actions are enabled (`Route::resource('/knowledge-base-articles', ...)->except(['edit', 'create'])`), unlike hotel policies, which have no `show` route.
 
-> **Breaking change (2026-10-07, SPEC-008):** these routes now always act on **one hotel's** articles. Global articles (`hotel_id = null`, read by every hotel's assistant) moved to the super-admin area: [`/api/admin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles). On these routes:
+> **Breaking change (2026-10-07, SPEC-008):** these routes now always act on **one hotel's** articles. Global articles (`hotel_id = null`, read by every hotel's assistant) moved to the super-admin area: [`/api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles). On these routes:
 >
 > - a super admin **must** send `hotel_id` on `index` (query string) and `store` (body); without it the answer is `422 A hotel_id is required.` The article is created for that hotel.
 > - a global article is a `404` on `show`, `update` and `destroy`, for every caller.
@@ -146,7 +146,7 @@ All optional:
 
 `filter`/`sort` are validated against the `knowledge_base_articles` table's real columns; an unknown key returns a `422`.
 
-**Scoping behavior:** a regular admin or employee sees only their own hotel's articles. A super admin must name the hotel with `?hotel_id=…` (`422` without it) and sees that hotel's articles. Global articles are never listed here — use [`GET /api/admin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
+**Scoping behavior:** a regular admin or employee sees only their own hotel's articles. A super admin must name the hotel with `?hotel_id=…` (`422` without it) and sees that hotel's articles. Global articles are never listed here — use [`GET /api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
 
 ### Success Response
 
@@ -198,7 +198,7 @@ HTTP `422`:
 
 **Important — `hotel_id` is always server-resolved, never client-supplied:** the backend ignores whatever you send and overwrites it with `<the caller's own hotel>`. Simplest correct behavior: don't include `hotel_id` in the request body at all.
 
-**Important — hotel association depends on role:** a regular admin without a hotel gets the same `403` as always. **A super admin must send `hotel_id`** and the article is created for that hotel (`422` without it, `404` for an unknown hotel). Global articles are created only through [`POST /api/admin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
+**Important — hotel association depends on role:** a regular admin without a hotel gets the same `403` as always. **A super admin must send `hotel_id`** and the article is created for that hotel (`422` without it, `404` for an unknown hotel). Global articles are created only through [`POST /api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
 
 **Backend note on `status` (not a frontend contract concern, but worth knowing):** only `status: "published"` articles are embedded and made searchable for the AI assistant; a `draft` article is not. This is enforced correctly — creating a draft does not trigger embedding generation.
 
@@ -415,7 +415,7 @@ curl -X DELETE http://your-domain.com/api/knowledge-base-articles/019facde-2222-
 - Unlike hotel policies, a single-resource `GET /api/knowledge-base-articles/{id}` exists — use it for the detail/edit view instead of relying on the list row.
 - Never send `hotel_id` on create or update — it's always forced server-side and any value you send is silently ignored (not rejected, not applied).
 - `create` requires a regular admin to have an associated hotel; a super admin must send `hotel_id` and creates the article for that hotel.
-- A super admin's `index` needs `?hotel_id=` and returns that hotel's articles. Build the super-admin "manage the global KB" screen against `/api/admin/knowledge-base-articles`, not this endpoint.
+- A super admin's `index` needs `?hotel_id=` and returns that hotel's articles. Build the super-admin "manage the global KB" screen against `/api/superadmin/knowledge-base-articles`, not this endpoint.
 - `category` **is** enforced server-side to the fixed enum list — safe to build a plain `<select>` around it without extra client-side guarding.
 - `status` is free-text server-side — enforce `draft` / `published` client-side.
 - `DELETE` is soft-delete, not hard-delete.

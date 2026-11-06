@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Controllers\Admin\AiCostController;
-use App\Http\Controllers\Admin\GuestMemoryExtractionController;
-use App\Http\Controllers\Admin\KnowledgeBaseArticleController;
-use App\Http\Controllers\Admin\KnowledgeDocumentController;
-use App\Http\Controllers\Admin\KnowledgeRebuildController;
-use App\Http\Controllers\Admin\UsageController;
+use App\Http\Controllers\Superadmin\AiCostController;
+use App\Http\Controllers\Superadmin\GuestMemoryExtractionController;
+use App\Http\Controllers\Superadmin\KnowledgeBaseArticleController;
+use App\Http\Controllers\Superadmin\KnowledgeDocumentController;
+use App\Http\Controllers\Superadmin\KnowledgeRebuildController;
+use App\Http\Controllers\Superadmin\UsageController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Route;
 |
 |     api  →  api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  super_admin
 |
-| and the URL prefix `api/admin`. Deliberately applied there rather than in a
+| and the URL prefix `api/superadmin`. Deliberately applied there rather than in a
 | Route::group() here, so that EVERY route in this file is guarded by
 | construction. A route added at the top level of this file cannot end up
 | unprotected, which is the failure mode worth designing against in a file
@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Cross-account super-admin reporting lives in routes/admin.php,
+// Cross-account super-admin reporting lives in routes/superadmin.php,
 // registered in bootstrap/app.php with this same middleware stack
 // plus `super_admin`.
 Route::get('/usage', [UsageController::class, 'index']);
