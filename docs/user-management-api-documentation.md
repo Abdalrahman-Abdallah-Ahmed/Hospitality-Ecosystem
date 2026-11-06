@@ -246,7 +246,7 @@ HTTP `422`:
 | `email` | required, string, max 255, must be unique across all users. |
 | `password` | required, string, max 255. Hashed automatically — **do not** pre-hash it client-side. Unlike `POST /api/register`, there is **no `password_confirmation` field** on this endpoint. |
 | `phone_number` | optional, string, must be unique across all users if sent. |
-| `role` | optional, must be one of `admin`, `employee`, `super_admin`. Defaults to `employee` if omitted. Only a super admin may send `super_admin` — see below. |
+| `role` | optional, `admin` or `employee`. Defaults to `employee` if omitted. `super_admin` is refused for every caller — see below. |
 | `hotel_group_id`, `group_role` | **Super admin only.** Ignored when sent by a regular admin — see below. |
 | `team_id` | optional, must reference an existing team, and that team must belong to the resolved hotel (see below) — otherwise `403`. |
 | `staff_role_id` | optional, nullable. Must reference a staff role of the resolved hotel — otherwise `403`. Only for employees — see [Staff Roles](#staff-roles). |
@@ -254,15 +254,15 @@ HTTP `422`:
 **Important — `hotel_id` behaves differently depending on who's calling:**
 
 - **Regular admin:** whatever you send is discarded and overwritten with the caller's own hotel. Sending a *real* hotel id that isn't yours is silently ignored (the user is still created under your own hotel) — but sending a hotel id that **doesn't exist at all** fails validation first with a `422` (`hotel_id` is checked against `hotels.id` before the controller ever runs). Simplest correct behavior: don't include `hotel_id` in the request body at all.
-- **Super admin:** `hotel_id` is taken directly from what you send. If you omit it, the new user is created with **no hotel at all** (`hotel_id: null`) — useful for e.g. provisioning another super admin, but almost certainly wrong for a regular staff member. Always send `hotel_id` explicitly when a super admin is creating a hotel-scoped user.
+- **Super admin:** `hotel_id` is taken directly from what you send. If you omit it, the new user is created with **no hotel at all** (`hotel_id: null`), which is almost certainly wrong for a regular staff member. Always send `hotel_id` explicitly. To onboard a customer, use [the super admin API](superadmin-accounts-api-documentation.md) instead, where the new user sets their own password.
 
 **Important — the calling admin must have an associated hotel:** if the logged-in admin has no hotel, the request is rejected before any user is created (see [Error: No Associated Hotel](#error-no-associated-hotel)). This restriction does not apply to super admins.
 
 **Important — `team_id` must belong to the same hotel:** if you send `team_id`, the backend checks it against the hotel the user is being created under (the admin's own hotel, or the `hotel_id` a super admin supplied). A team from a different hotel — or any `team_id` at all when there's no hotel context (e.g. a super admin who omitted `hotel_id`) — returns `403`.
 
-**Important — only a super admin can assign the `super_admin` role:** a regular `admin` may create or set `admin` and `employee`, but sending `role: "super_admin"` (on create or update) returns `403` with the message `Only a super admin can assign the super admin role.` and nothing is written. Don't offer "Super admin" in a regular admin's role picker.
+**Important — nobody can assign the `super_admin` role:** sending `role: "super_admin"` (on create or update) returns `403` with the message `The super admin role cannot be assigned through the API.` for every caller, super admins included, and nothing is written. Don't offer "Super admin" in any role picker. Super admins come only from the seeder.
 
-**Important — account membership is super-admin only:** `hotel_group_id` and `group_role` decide which hotels a user can reach. When a regular admin sends them (on create or update) they are silently dropped, the same way `hotel_id` is; the rest of the request still succeeds.
+**Important — account membership is super-admin only:** `hotel_group_id` and `group_role` decide which hotels a user can reach. When a regular admin sends them (on create or update) they are silently dropped, the same way `hotel_id` is; the rest of the request still succeeds. Super admins have no hotel or account links, so sending either for a super admin target returns `403` with the message `A super admin cannot be linked to a hotel or account.` A super admin's own role can't be changed either: `role` for a super admin target returns `403` with the message `A super admin's role cannot be changed through the API.`
 
 ### Staff Roles
 
@@ -494,7 +494,7 @@ curl -X DELETE http://your-domain.com/api/users/019facde-1111-7000-9000-abcdef12
 - Never send `hotel_id` on **update** — it's always forced server-side and any value you send is silently ignored.
 - On **create**, only a super admin's `hotel_id` is actually used; a regular admin's is always overwritten with their own hotel. A super admin who omits `hotel_id` creates a hotel-less user — make sure your super-admin create form always sends one for regular staff.
 - `team_id` (create and update) must belong to the same hotel the user is/will be in, or you get a `403` with a dedicated message — surface it as a form-level error near the team picker.
-- Only a super admin can grant `super_admin`; a regular admin sending it gets `403`. `hotel_group_id` / `group_role` are silently ignored unless a super admin sends them.
+- Nobody can grant `super_admin` through the API; every caller gets `403`. `hotel_group_id` / `group_role` are silently ignored unless a super admin sends them, and refused for a super admin target.
 - There is no `password_confirmation` field on this endpoint (unlike `/api/register`) — if your form has a "confirm password" field, only send `password` to the API.
 - `DELETE` is a **hard delete** here — no `deleted_at`, no undo. Confirm destructively in the UI.
 - Show a staff role picker only for employees (`staff_role_id`, same hotel, `null` = defaults). Drive the rest of the app's UI from each user's `permissions` array rather than from `role`.
@@ -504,6 +504,7 @@ curl -X DELETE http://your-domain.com/api/users/019facde-1111-7000-9000-abcdef12
 
 - [Auth API Documentation](/D:/Hospitality%20Ecosystem/docs/auth-api-documentation.md)
 - [Hotel API Documentation](/D:/Hospitality%20Ecosystem/docs/hotel-api-documentation.md)
+- [Super Admin Accounts API Documentation](/D:/Hospitality%20Ecosystem/docs/superadmin-accounts-api-documentation.md)
 - [Hotel Policy API Documentation](/D:/Hospitality%20Ecosystem/docs/hotel-policy-api-documentation.md)
 - [Task Management API Documentation](/D:/Hospitality%20Ecosystem/docs/task-management-api-documentation.md)
 - Companion Postman collection: `docs/postman/user-management-api.postman_collection.json`

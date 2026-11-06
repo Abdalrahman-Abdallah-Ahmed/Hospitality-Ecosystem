@@ -194,6 +194,15 @@ If any of these checks fail, the API returns an error instead of creating a devi
 
 `POST /api/pair` is rate limited to 10 requests per minute per IP. Over the limit it returns HTTP `429` with a `Retry-After` header.
 
+## What Unpairs a Device
+
+A device is unpaired, and any unredeemed pairing code stops working, when:
+
+- a super admin revokes the user's access (`POST /api/superadmin/users/{user}/revoke-tokens`);
+- the user completes a password reset (`POST /api/reset-password`).
+
+The Admin Advisor then stops answering that number, which gets the "not yet paired" reply until the user pairs again.
+
 ## Inbound Messages (Meta Webhook)
 
 `POST /api/whatsapp` receives Meta's webhook. Clients never call it, but its behaviour affects what users see in WhatsApp:
