@@ -219,7 +219,7 @@ The new endpoints inherit the super admin guard and every protection of the stac
 - **FR-019**: A new user MUST be given a home hotel. An account is optional, and when given, the hotel MUST belong to it. **[V7]**
 - **FR-020**: A new user with role `admin` at a hotel with no owner MUST become its owner.
 - **FR-021**: Filtering and sorting users MUST NOT be possible on secret columns. **[V2]**
-- **FR-022**: Super admins MUST be able to change a user's role (`admin` or `employee`), account-wide role (`owner`, `group_admin` or none), hotel memberships and staff role.
+- **FR-022**: Super admins MUST be able to change a user's role (`admin` or `employee`), account-wide role (`owner`, `group_admin` or none), hotel memberships, staff role and team. A team MUST belong to the user's home hotel. A super admin MUST NOT be able to set another user's password through the tenant user endpoint on update.
 - **FR-023**: Setting an account-wide role MUST also attach the user to the account they belong to. It MUST be refused for an employee, and removed when an admin becomes an employee. **[V13]**
 - **FR-024**: A hotel added to a user's memberships MUST be live and in the user's account. Removing or keeping one needs no such check, so access can always be narrowed. Setting them MUST replace the list, and MUST NOT remove the user's home hotel. A user's home hotel MUST NOT be changeable through the API after creation. **[V8]**
 - **FR-025**: Staff role rules MUST match the tenant endpoint: employees only, from the user's home hotel, and removed when the user stops being an employee.

@@ -129,6 +129,10 @@ class UserAdministration
             $attributes = ['role' => $role, ...$this->groupRoleAttributes($user, $input, $isAdmin)];
             $attributes['staff_role_id'] = $this->staffRoleFor($user, $input, $role);
 
+            if (array_key_exists('team_id', $input)) {
+                $attributes['team_id'] = $this->teamFor($user, $input['team_id']);
+            }
+
             $changes = $this->applyChanges($user, $attributes);
 
             if (array_key_exists('hotel_ids', $input)) {
@@ -362,6 +366,21 @@ class UserAdministration
         // A user who stops being an employee loses their staff role, rather
         // than keeping one that would silently apply again on a demotion.
         return $role === UserRole::EMPLOYEE->value ? $user->staff_role_id : null;
+    }
+
+    /**
+     * A team must belong to the user's home hotel, the same rule as the tenant
+     * user endpoint. Null clears it.
+     */
+    private function teamFor(User $user, ?string $teamId): ?string
+    {
+        $hotel = $user->hotel_id ? Hotel::find($user->hotel_id) : null;
+
+        if ($teamId !== null && (! $hotel || invalidRelation($hotel, ['teams' => $teamId]))) {
+            throw new DomainRuleException('The selected team does not belong to you.', 403);
+        }
+
+        return $teamId;
     }
 
     /**

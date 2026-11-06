@@ -115,6 +115,11 @@ class UserController extends Controller
             return apiResponse(UserAdministration::SUPER_ADMIN_REFUSAL, 403);
         }
 
+        // A super admin must never know another user's password. Their own is fine.
+        if ($request->user()->isSuperAdmin() && $user->isNot($request->user()) && $request->safe()->has('password')) {
+            return apiResponse('A super admin cannot set another user\'s password. Send a password email instead.', 403);
+        }
+
         if ($user->isSuperAdmin()) {
             // Super admins have no hotel or account links.
             if (array_filter($request->safe()->only(self::ACCOUNT_ATTRIBUTES)) !== []) {

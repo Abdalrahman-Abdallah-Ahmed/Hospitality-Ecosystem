@@ -40,7 +40,7 @@ Responses use `UserResource` plus `hotel_ids`, the user's memberships. Tenant re
 | `POST /api/superadmin/users` | `201`, with `reset_email_sent` `true` or `false` | `403` for `role=super_admin`; `422` when `hotel_id` is missing, the hotel and account differ, or `group_role` is sent for an employee |
 | `GET /api/superadmin/users/{user}` | `200` | |
 | `PUT /api/superadmin/users/{user}` | `200`; `name`, `email`, `phone_number` | `422` on a taken email or phone |
-| `PUT /api/superadmin/users/{user}/access` | `200`; `role`, `group_role`, `hotel_ids`, `staff_role_id` | `403` for `role=super_admin`, or a staff role from another hotel; `422` for a [refused change](../data-model.md#access-change-rules) |
+| `PUT /api/superadmin/users/{user}/access` | `200`; `role`, `group_role`, `hotel_ids`, `staff_role_id`, `team_id` | `403` for `role=super_admin`, or a staff role or team from another hotel; `422` for a [refused change](../data-model.md#access-change-rules) |
 | `POST /api/superadmin/users/{user}/password-reset` | `200`, email sent, any pending link replaced | `429` within a minute of the last link; `503` when the send fails, with no event |
 | `POST /api/superadmin/users/{user}/revoke-tokens` | `200`, also with nothing to revoke | |
 

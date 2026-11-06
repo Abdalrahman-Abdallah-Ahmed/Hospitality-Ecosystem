@@ -69,6 +69,7 @@ Super admins are outside all of this: `404` as a target, and excluded from lists
 | `group_role` | optional | no | optional | `GroupRole` or null. Admins only |
 | `hotel_ids` | no | no | optional | Array of live hotels in the user's account |
 | `staff_role_id` | no | no | optional | Employees only, from the home hotel |
+| `team_id` | no | no | optional | A team in the home hotel, or null |
 
 `password` is never accepted. A new user gets `Str::password(32)`, which the `hashed` cast stores.
 

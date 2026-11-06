@@ -5,6 +5,7 @@ use App\Models\EventLog;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\StaffRole;
+use App\Models\Team;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Notifications\UserInvitationNotification;
@@ -676,6 +677,36 @@ it('applies the staff role rules', function () {
     // Becoming an admin removes it.
     userAdmin($this)->putJson("/api/superadmin/users/{$employee->id}/access", ['role' => 'admin'])
         ->assertOk()->assertJsonPath('body.staff_role_id', null);
+});
+
+it('applies the team rules', function () {
+    $account = userAccount();
+    $home = userHotel($account, 'home');
+    $other = userHotel($account, 'other');
+    $mine = Team::create(['hotel_id' => $home->id, 'name' => 'Front Desk', 'is_active' => true]);
+    $theirs = Team::create(['hotel_id' => $other->id, 'name' => 'Other', 'is_active' => true]);
+    $user = User::factory()->create(['hotel_id' => $home->id]);
+    $noHome = User::factory()->create();
+
+    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['team_id' => $mine->id])
+        ->assertOk()->assertJsonPath('body.team_id', $mine->id);
+
+    $event = EventLog::withoutGlobalScopes()->where('event_type', 'platform.user.access_changed')->sole();
+    expect($event->changes['team_id'])->toBe(['from' => null, 'to' => $mine->id]);
+
+    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['team_id' => $theirs->id])
+        ->assertStatus(403)->assertJsonPath('message', 'The selected team does not belong to you.');
+    userAdmin($this)->putJson("/api/superadmin/users/{$noHome->id}/access", ['team_id' => $mine->id])->assertStatus(403);
+    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['team_id' => 'not-a-uuid'])->assertStatus(422);
+
+    expect($user->fresh()->team_id)->toBe($mine->id);
+
+    // Leaving it out keeps it, including through a role change.
+    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['role' => 'admin'])
+        ->assertOk()->assertJsonPath('body.team_id', $mine->id);
+
+    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['team_id' => null])
+        ->assertOk()->assertJsonPath('body.team_id', null);
 });
 
 it('makes a promoted employee the owner of an ownerless home hotel, and frees the hotel on demotion', function () {

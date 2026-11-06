@@ -10,6 +10,7 @@ A super admin can now onboard a customer through the API, without SQL, and lock 
 - **Nobody can grant `super_admin` through the API.** `role: "super_admin"` on `POST` or `PUT /api/users` returns `403` for every caller, super admins included. The message is now `The super admin role cannot be assigned through the API.`
 - **A super admin can't be linked to an account.** `hotel_group_id` or `group_role` on a super admin target in `PUT /api/users/{id}` returns `403`.
 - **A super admin can't be demoted through the API.** `role` on a super admin target in `PUT /api/users/{id}` returns `403`, because nothing in the API can grant the role back.
+- **A super admin can't set another user's password.** `password` from a super admin in `PUT /api/users/{id}` returns `403`, unless it's their own. Use `POST /api/superadmin/users/{user}/password-reset`.
 - **`PUT /api/hotel/{id}` ignores `owner_id` and `hotel_group_id`**, for every caller. Use `PUT /api/superadmin/hotels/{hotel}` to move a hotel.
 - **A slug a soft-deleted record still holds returns `422`** on the tenant hotel update, and on any other generic create or update whose unique index covers deleted rows. These used to return `500`.
 - **List filters check the column's type.** A value the column can't hold, such as `filter[created_at]=abc` or a malformed id, returns `422` on every list endpoint. These used to return `500`. Filtering on a JSON column is refused the same way, and dates must be ISO 8601.

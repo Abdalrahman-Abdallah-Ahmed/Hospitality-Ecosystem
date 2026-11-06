@@ -499,6 +499,40 @@ it('refuses linking a super admin to an account', function (array $payload) {
     'an account and a role' => [['group_role' => 'owner']],
 ]);
 
+it('refuses a super admin setting another user\'s password', function () {
+    [, $hotel] = adminWithOwnedHotelForUsers();
+    $staff = staffForUsers($hotel);
+    $hash = $staff->password;
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs(User::factory()->role(UserRole::SUPER_ADMIN)->create(), 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['password' => 'Chosen-By-Admin1!'])
+        ->assertStatus(403)
+        ->assertJsonPath('message', 'A super admin cannot set another user\'s password. Send a password email instead.');
+
+    expect($staff->fresh()->password)->toBe($hash);
+});
+
+it('still lets a super admin change their own password, and a hotel admin their staff\'s', function () {
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $superAdminHash = $superAdmin->password;
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->putJson("/api/users/{$superAdmin->id}", ['password' => 'My-Own-Password1!'])
+        ->assertOk();
+
+    expect($superAdmin->fresh()->password)->not->toBe($superAdminHash);
+
+    [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    $staff = staffForUsers($hotel);
+    $staffHash = $staff->password;
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['password' => 'Set-By-Hotel-Admin1!'])
+        ->assertOk();
+
+    expect($staff->fresh()->password)->not->toBe($staffHash);
+});
+
 it('refuses demoting a super admin, including oneself', function (bool $self) {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
     $target = $self ? $superAdmin : User::factory()->role(UserRole::SUPER_ADMIN)->create();

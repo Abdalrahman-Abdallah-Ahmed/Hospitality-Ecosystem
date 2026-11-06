@@ -28,6 +28,7 @@ class UpdateUserAccessRequest extends FormRequest
             'hotel_ids' => ['sometimes', 'array'],
             'hotel_ids.*' => ['uuid', Rule::exists('hotels', 'id')->withoutTrashed()],
             'staff_role_id' => ['sometimes', 'nullable', 'uuid'],
+            'team_id' => ['sometimes', 'nullable', 'uuid'],
         ];
     }
 }

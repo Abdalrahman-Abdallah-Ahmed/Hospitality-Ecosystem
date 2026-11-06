@@ -167,6 +167,7 @@ The response includes `reset_email_sent`. When it is `false`, the email failed b
 | `group_role` | `owner`, `group_admin` or `null`. Admins only. Attaches the user to their account, and `422` if they have none |
 | `hotel_ids` | Replaces the user's memberships. A hotel being added must be live and in the user's account, or `422` |
 | `staff_role_id` | Employees only, or `422`. From the user's home hotel, or `403` |
+| `team_id` | A team in the user's home hotel, or `403`. `null` clears it |
 
 - The home hotel stays reachable whether or not it is in `hotel_ids`.
 - A membership in a soft-deleted hotel isn't touched, so restoring the hotel returns access.
