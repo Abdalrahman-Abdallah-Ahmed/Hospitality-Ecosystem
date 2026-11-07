@@ -38,6 +38,7 @@ class StartHousekeepingDayJob implements ShouldQueue
     {
         Hotel::query()
             ->where('is_active', true)
+            ->notSuspended()
             ->orderBy('id')
             ->chunkById(100, function ($hotels) use ($housekeeping): void {
                 foreach ($hotels as $hotel) {

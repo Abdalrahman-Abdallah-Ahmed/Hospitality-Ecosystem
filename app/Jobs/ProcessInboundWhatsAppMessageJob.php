@@ -33,6 +33,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Ai\Files\Image;
 use Laravel\Ai\Models\Conversation;
 use Throwable;
@@ -64,6 +65,8 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
     public const FAILED_REPLY = "Sorry, something went wrong on our side and I couldn't answer that. Please try again in a moment, or contact the hotel directly.";
 
     public const UNAVAILABLE_REPLY = "Sorry, I can't answer messages right now. Please contact the hotel directly for assistance.";
+
+    private const SUSPENDED_REPLY_SECONDS = 86400;
 
     /**
      * An agent turn with several tool calls can run well past a minute. Must
@@ -143,10 +146,22 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         $this->recordContact();
 
         if ($inbound->reply_text === null) {
-            $inbound->update(['reply_text' => $this->replyFor($inbound, $whatsApp, $metering)]);
+            $reply = $this->replyFor($inbound, $whatsApp, $metering);
+
+            // A suspended hotel's sender was told in the last 24 hours. The
+            // message stays stored, with no reply.
+            if ($reply === null) {
+                $inbound->update(['status' => InboundMessageStatus::THROTTLED]);
+
+                return;
+            }
+
+            $inbound->update(['reply_text' => $reply]);
         }
 
         $whatsApp->send($this->phoneNumber, $inbound->reply_text);
+
+        $this->rememberSuspendedReply($inbound->reply_text);
 
         $inbound->update(['status' => InboundMessageStatus::REPLIED, 'replied_at' => now()]);
 
@@ -218,7 +233,59 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         return __($keyword === 'opt_out' ? 'proactive.opt_out.confirmed' : 'proactive.opt_out.resumed', [], $locale);
     }
 
-    private function replyFor(WhatsAppInboundMessage $inbound, WhatsAppMessageService $whatsApp, MeteringService $metering): string
+    /**
+     * The id a suspended sender's fixed reply is limited by: their hotel's, or
+     * their account's when they have no hotel left. Null when not suspended.
+     */
+    private function suspendedSubjectId(): ?string
+    {
+        $hotel = $this->hotel ?? ($this->sender?->hotel_id ? Hotel::withTrashed()->find($this->sender->hotel_id) : null);
+
+        if ($hotel) {
+            return $hotel->isSuspended() ? $hotel->id : null;
+        }
+
+        $account = $this->sender instanceof User ? $this->sender->account(withTrashed: true) : null;
+
+        return $account?->isSuspended() ? $account->id : null;
+    }
+
+    /**
+     * A suspended hotel's fixed reply, at most once per 24 hours per hotel and
+     * phone number: null after that. The limit is only marked once the reply
+     * has gone out, so a crash or a failed send doesn't leave the sender
+     * untold. WithoutOverlapping runs one message per sender at a time, so two
+     * can't both pass this check.
+     */
+    private function suspendedReply(string $subjectId): ?string
+    {
+        if (Cache::has($this->suspendedReplyKey($subjectId))) {
+            return null;
+        }
+
+        $locale = $this->sender instanceof Guest && $this->sender->preferred_language === 'ar' ? 'ar' : 'en';
+
+        return __('suspension.guest_reply', [], $locale);
+    }
+
+    private function rememberSuspendedReply(string $reply): void
+    {
+        // The text is checked first, so a normal reply costs no query here.
+        if (! in_array($reply, [__('suspension.guest_reply', [], 'en'), __('suspension.guest_reply', [], 'ar')], true)) {
+            return;
+        }
+
+        if ($subjectId = $this->suspendedSubjectId()) {
+            Cache::put($this->suspendedReplyKey($subjectId), 1, self::SUSPENDED_REPLY_SECONDS);
+        }
+    }
+
+    private function suspendedReplyKey(string $subjectId): string
+    {
+        return 'suspended-reply:'.$subjectId.':'.$this->phoneNumber;
+    }
+
+    private function replyFor(WhatsAppInboundMessage $inbound, WhatsAppMessageService $whatsApp, MeteringService $metering): ?string
     {
         if ($this->senderType === SenderType::ADMIN && ! $this->devicePaired) {
             return self::NOT_PAIRED_REPLY;
@@ -236,6 +303,13 @@ class ProcessInboundWhatsAppMessageJob implements ShouldQueue
         // written records, so running it again is not safe.
         if ($inbound->generation_started_at) {
             return self::FAILED_REPLY;
+        }
+
+        // No AI runs for a suspended hotel. The WhatsApp advisor can't choose a
+        // hotel, so an admin follows their default hotel and doesn't move to
+        // another one (spec 024).
+        if ($subjectId = $this->suspendedSubjectId()) {
+            return $this->suspendedReply($subjectId);
         }
 
         $inbound->update(['generation_started_at' => now()]);

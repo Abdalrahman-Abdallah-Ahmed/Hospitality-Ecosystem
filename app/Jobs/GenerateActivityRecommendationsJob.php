@@ -3,12 +3,14 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\RecommendationAgent;
+use App\Contracts\HasHotel;
 use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Enums\QueueLane;
 use App\Enums\RecommendationSource;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Services\Metering\MeteringService;
@@ -25,9 +27,9 @@ use Illuminate\Queue\SerializesModels;
  * that reservation), so recommendations stay grounded in that specific
  * guest's data rather than blended across a hotel-wide batch.
  */
-class GenerateActivityRecommendationsJob implements ShouldQueue
+class GenerateActivityRecommendationsJob implements HasHotel, ShouldQueue
 {
-    use Queueable, SerializesModels;
+    use Queueable, SerializesModels, SkipsWhenHotelSuspended;
 
     /**
      * Create a new job instance.
@@ -37,6 +39,14 @@ class GenerateActivityRecommendationsJob implements ShouldQueue
     ) {
         // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
         $this->onQueue(QueueLane::AI_BATCH->value);
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return $this->reservation->hotel_id;
     }
 
     /**

@@ -2,11 +2,14 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\ImportDecimalMark;
 use App\Enums\ImportRowOutcome;
 use App\Enums\ImportStage;
 use App\Enums\ImportStatus;
 use App\Enums\QueueLane;
+use App\Exceptions\HotelSuspended;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\Hotel;
 use App\Models\ReservationImport;
 use App\Support\Import\Reservations\ImportFailed;
@@ -39,9 +42,9 @@ use Throwable;
  * itself and waits. The write jobs of the import in progress never start
  * another import's prepare; the next one simply finds the way clear.
  */
-class PrepareReservationImportJob implements ShouldQueue
+class PrepareReservationImportJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     /** Waiting behind another import is a release, not a failure. */
     public int $tries = 0;
@@ -62,6 +65,14 @@ class PrepareReservationImportJob implements ShouldQueue
     public function retryUntil(): CarbonInterface
     {
         return now()->addHours(12);
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return ReservationImport::withoutGlobalScope('hotel')->whereKey($this->importId)->value('hotel_id');
     }
 
     public function handle(ImportFileReader $reader, RowNormalizer $normalizer, RowValidator $validator, ReservationMapper $mapper, ReservationImportResolver $resolver, ImportOutcomeRecorder $recorder, ReservationImportCompleter $completer): void
@@ -167,6 +178,17 @@ class PrepareReservationImportJob implements ShouldQueue
             ->exists());
     }
 
+    /**
+     * What the import's staff are told. A suspension is a deliberate stop, so
+     * it doesn't read as something having gone wrong.
+     */
+    public static function failureReason(?ReservationImport $import, ?Throwable $exception): string
+    {
+        return $exception instanceof HotelSuspended
+            ? 'The hotel was suspended before this import finished. Upload the file again after it is reactivated; rows already imported will be reported as duplicates.'
+            : self::stoppedReason($import);
+    }
+
     public static function stoppedReason(?ReservationImport $import): string
     {
         $stage = $import?->stage?->value ?? 'start';
@@ -183,8 +205,11 @@ class PrepareReservationImportJob implements ShouldQueue
                 return;
             }
 
-            Log::error('Reservation import prepare job failed.', ['reservation_import_id' => $import->id, 'exception' => $exception]);
-            TenantContext::runForHotel($import->hotel_id, fn () => app(ReservationImportCompleter::class)->fail($import, self::stoppedReason($import)));
+            if (! $exception instanceof HotelSuspended) {
+                Log::error('Reservation import prepare job failed.', ['reservation_import_id' => $import->id, 'exception' => $exception]);
+            }
+
+            TenantContext::runForHotel($import->hotel_id, fn () => app(ReservationImportCompleter::class)->fail($import, self::failureReason($import, $exception)));
         });
     }
 }

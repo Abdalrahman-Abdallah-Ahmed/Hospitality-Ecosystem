@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
+use App\Models\Hotel;
+use App\Support\Suspension\HotelAccess;
+use App\Support\Suspension\SuspendedResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -41,6 +44,22 @@ class AuthenticatedSessionController extends Controller
         }
 
         $user = Auth::user();
+
+        // After the password check, so only someone who knows the password
+        // learns that the customer is suspended.
+        if (! $user->isSuperAdmin()) {
+            $access = HotelAccess::for($user->accessibleHotelIds(), $user);
+
+            if ($scope = $access->refusal()) {
+                return SuspendedResponse::make($scope);
+            }
+
+            // Only the in-memory relation: the stored default hotel stays.
+            if ($user->hotel_id !== null && $access->removed->has($user->hotel_id)) {
+                $user->setRelation('hotel', Hotel::find($access->activeIds[0]));
+            }
+        }
+
         $token = $user->createToken('api-token')->plainTextToken;
 
         return apiResponse('Authenticated successfully.', 200, [
@@ -48,7 +67,7 @@ class AuthenticatedSessionController extends Controller
             'token_type' => 'Bearer',
             // staffRole makes the resource include `permissions`, so the client
             // can build its UI without a follow-up GET /api/user.
-            'user' => UserResource::make($user->load(['hotel', 'team', 'staffRole'])),
+            'user' => UserResource::make($user->loadMissing(['hotel', 'team', 'staffRole'])),
         ]);
     }
 

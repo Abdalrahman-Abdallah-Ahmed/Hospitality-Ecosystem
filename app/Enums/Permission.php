@@ -8,6 +8,8 @@ namespace App\Enums;
  * Only grantable permissions belong here. User management, staff roles, hotel
  * settings, the AI advisor and usage are deliberately absent: they stay with
  * admins, so no role can hand an employee the means to raise their own access.
+ * The one exception is hotels.view: listing the hotels they work in, as a short
+ * record with no settings.
  */
 enum Permission: string
 {
@@ -48,6 +50,8 @@ enum Permission: string
     case GUEST_MEMORIES_DELETE = 'guest_memories.delete';
 
     case HISTORY_VIEW = 'history.view';
+
+    case HOTELS_VIEW = 'hotels.view';
 
     case HOTEL_POLICIES_VIEW = 'hotel_policies.view';
     case HOTEL_POLICIES_CREATE = 'hotel_policies.create';

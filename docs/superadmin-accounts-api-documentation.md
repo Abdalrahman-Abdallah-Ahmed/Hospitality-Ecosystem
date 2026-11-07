@@ -59,6 +59,9 @@ An account is the paying customer (a hotel group). Contract fields are neither r
   "default_timezone": "Africa/Cairo",
   "hotels_count": 2,
   "users_count": 14,
+  "suspended_at": null,
+  "suspended_by": null,
+  "suspended_reason": null,
   "created_at": "2026-11-06T10:00:00.000000Z",
   "updated_at": "2026-11-06T10:00:00.000000Z"
 }
@@ -68,7 +71,7 @@ An account is the paying customer (a hotel group). Contract fields are neither r
 
 | Method and path | Purpose | Notes |
 | --- | --- | --- |
-| `GET /accounts` | List | Filter and sort on the fields above except the counts. `search` reads `name` and `slug` |
+| `GET /accounts` | List | Filter and sort on the fields above except the counts and the suspension fields. `search` reads `name` and `slug`. `filter[suspended]` is described in [Suspending a customer](#suspending-a-customer) |
 | `POST /accounts` | Create | `201` |
 | `GET /accounts/{account}` | View | |
 | `PUT /accounts/{account}` | Edit | Partial |
@@ -84,11 +87,11 @@ An account is the paying customer (a hotel group). Contract fields are neither r
 
 ## Hotels
 
-Responses use the same hotel object as [the hotel API](hotel-api-documentation.md). Everything else about a hotel stays with its own admin.
+Responses use the same hotel object as [the hotel API](hotel-api-documentation.md), plus `suspended_at`, `suspended_by`, `suspended_reason` and `is_suspended`. Hotel staff never see those four. Everything else about a hotel stays with its own admin.
 
 | Method and path | Purpose | Notes |
 | --- | --- | --- |
-| `GET /hotels` | List across accounts | `filter[hotel_group_id]={account}` |
+| `GET /hotels` | List across accounts | `filter[hotel_group_id]={account}`, `filter[suspended]` |
 | `POST /accounts/{account}/hotels` | Create or restore | `201` |
 | `GET /hotels/{hotel}` | View | |
 | `PUT /hotels/{hotel}` | Edit or move | `name`, `slug`, `hotel_group_id` only |
@@ -188,6 +191,35 @@ The response includes `reset_email_sent`. When it is `false`, the email failed b
 
 `POST /users/{user}/revoke-tokens` removes all the user's login tokens and pairing codes and unpairs their WhatsApp device, so the Admin Advisor stops answering them. It succeeds even with nothing to revoke. To lock out a compromised user, call this, then send a reset email.
 
+## Suspending a Customer
+
+A full stop for an account or one hotel, for a customer who hasn't paid. Data is kept, and reactivating restores everything. `is_active` isn't involved.
+
+| Method and path | Body | Result |
+| --- | --- | --- |
+| `POST /accounts/{account}/suspend` | `reason` (required, max 1000) | `200` with the account. `422` with no reason, or if already suspended |
+| `POST /accounts/{account}/reactivate` | none | `200` with the account. `422` if not suspended |
+| `POST /hotels/{hotel}/suspend` | `reason` (required, max 1000) | `200` with the hotel. `422` with no reason, or if already suspended in its own right |
+| `POST /hotels/{hotel}/reactivate` | none | `200` with the hotel. `422` if not suspended in its own right |
+
+A hotel counts as suspended when it or its account is. Each keeps its own fields, and changing one never changes the other:
+
+- A hotel can be suspended inside a suspended account, and stays suspended after the account returns.
+- Reactivating a hotel inside a suspended account clears the hotel's fields, and it still counts as suspended.
+- `suspended_at`, `suspended_by` and `suspended_reason` describe the record's own suspension. On a hotel, `is_suspended` is true through either.
+
+While suspended:
+
+- **Login and the API**: staff get a `403` with `body.reason = "suspended"`. See [the auth API](auth-api-documentation.md#suspended-account-or-hotel). A user with another active hotel keeps working there.
+- **Background jobs**: a hotel's jobs don't run, and leave no `failed_jobs` row. A job with a cleanup handler still runs it, so an import or voucher email in progress ends failed. Skipped work isn't replayed. Staff redo imports and vouchers after reactivation.
+- **Proactive messages**: one still valid at reactivation may send late, if the normal checks allow it.
+- **Knowledge rebuilds**: a suspended hotel's items count as failed, and the rebuild still finishes. Run another after reactivation to bring that hotel's passages up to date.
+- **WhatsApp**: see [the WhatsApp API](whatsapp-device-api-documentation.md#suspended-hotels).
+
+Not stopped: notifications queued before the suspension, and a pairing code issued before it (it pairs a device that only gets the fixed reply). A suspended customer can still register a new, empty account.
+
+`filter[suspended]` takes `true`, `false`, `1` or `0` on `GET /accounts` and `GET /hotels`. For hotels, it includes hotels of a suspended account. Anything else returns `422`.
+
 ## Audit
 
 Each successful write records one event in `event_log`, with no hotel attached, so it never appears on a hotel's event log:
@@ -198,5 +230,7 @@ Each successful write records one event in `event_log`, with no hotel attached, 
 | `platform.hotel.created`, `.updated`, `.deleted` | Hotel writes. A restore is `.created` with `context.restored = true` |
 | `platform.user.created`, `.updated`, `.access_changed` | User writes. An email sent on create isn't recorded separately |
 | `platform.user.password_reset_sent`, `.access_revoked` | Reset access |
+| `platform.account.suspended`, `.reactivated` | Account suspension. A suspension has `context.reason` |
+| `platform.hotel.suspended`, `.reactivated` | Hotel suspension. A suspension has `context.reason` |
 
 An edit that changes nothing records no event. A user completing a reset records none, because no super admin acted. Events never contain a password, hash or token.

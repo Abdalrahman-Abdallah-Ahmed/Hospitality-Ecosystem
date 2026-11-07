@@ -3,10 +3,13 @@
 namespace App\Http\Requests\Superadmin;
 
 use App\Http\Requests\Generic\GenericIndexRequest;
+use App\Http\Requests\Superadmin\Concerns\FiltersBySuspension;
 use App\Models\HotelGroup;
 
 class AccountIndexRequest extends GenericIndexRequest
 {
+    use FiltersBySuspension;
+
     /**
      * An account is a HotelGroup, so the name can't be inferred from the
      * controller.

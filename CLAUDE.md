@@ -69,7 +69,9 @@ ones.** When adding one:
    don't: only add a case to `employeeDefaults()` on purpose, and explain why there.
 4. Leave a resource out of the enum only if it must stay admin-only whatever a
    role grants (users, staff roles, hotel settings, AI advisor, usage). Anything
-   that could let an employee raise their own access belongs in that group.
+   that could let an employee raise their own access belongs in that group. The
+   one exception is `hotels.view`, which lists an employee's hotels as a short
+   record with no settings.
 5. Add its endpoints to the permission reference in
    `docs/staff-roles-api-documentation.md` and to the dataset in
    `tests/Feature/PermissionAuthorizationTest.php`.

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\GuestMemoryExtractionStatus;
 use App\Enums\QueueLane;
 use App\Models\GuestMemoryExtraction;
+use App\Models\Hotel;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -31,6 +32,8 @@ class RetryGuestMemoryExtractionsJob implements ShouldQueue
         GuestMemoryExtraction::withoutGlobalScope('hotel')
             ->where('status', GuestMemoryExtractionStatus::PENDING_RETRY->value)
             ->where('retry_at', '<=', now())
+            // A suspended hotel's retries wait for it to return (spec 024).
+            ->whereIn('hotel_id', Hotel::notSuspended()->select('id'))
             ->orderBy('retry_at')
             ->get(['hotel_id', 'guest_id', 'reservation_id'])
             ->each(fn (GuestMemoryExtraction $extraction) => ExtractGuestMemoriesJob::dispatch(

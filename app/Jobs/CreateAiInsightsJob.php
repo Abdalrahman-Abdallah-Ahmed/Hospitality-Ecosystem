@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\InsightsAgent;
+use App\Contracts\HasHotel;
 use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiInsightCategories;
@@ -11,6 +12,7 @@ use App\Enums\EvidenceLevel;
 use App\Enums\InsightTypes;
 use App\Enums\MeterFeature;
 use App\Enums\QueueLane;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\AiInsights;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -27,9 +29,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Ai\Models\ConversationMessage;
 
-class CreateAiInsightsJob implements ShouldQueue
+class CreateAiInsightsJob implements HasHotel, ShouldQueue
 {
-    use Queueable, SerializesModels;
+    use Queueable, SerializesModels, SkipsWhenHotelSuspended;
 
     private const MAX_CITATIONS = 10;
 
@@ -49,6 +51,14 @@ class CreateAiInsightsJob implements ShouldQueue
         $this->onQueue(QueueLane::AI_BATCH->value);
 
         $this->meterKey = 'ai-insights:'.Str::uuid7();
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return $this->data['user']->hotel?->id;
     }
 
     /**

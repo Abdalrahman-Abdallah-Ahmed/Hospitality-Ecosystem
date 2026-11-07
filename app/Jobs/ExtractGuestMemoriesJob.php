@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\GuestMemoryAgent;
+use App\Contracts\HasHotel;
 use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
@@ -11,6 +12,7 @@ use App\Enums\MeterFeature;
 use App\Enums\QueueLane;
 use App\Enums\StayStatus;
 use App\Exceptions\AiSpendCeilingExceededException;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\Guest;
 use App\Models\GuestMemory;
 use App\Models\GuestMemoryExtraction;
@@ -44,9 +46,9 @@ use Throwable;
  * Forward only: dispatched by a check-out (Stay), never for stays that
  * departed before this shipped — there is no backfill.
  */
-class ExtractGuestMemoriesJob implements ShouldQueue
+class ExtractGuestMemoriesJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     /** Most messages read from one stay; the newest win. */
     private const MAX_MESSAGES = 200;
@@ -63,6 +65,14 @@ class ExtractGuestMemoriesJob implements ShouldQueue
     ) {
         // LLM or embedding work: it must never hold up a guest reply (spec 017 FR-020).
         $this->onQueue(QueueLane::AI_BATCH->value);
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return $this->hotelId;
     }
 
     public function handle(GuestMemoryService $memories): void

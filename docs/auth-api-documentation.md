@@ -214,6 +214,23 @@ Authorization: Bearer {token}
 ```
 
 4. Use `body.user.permissions` to build navigation and actions right away. There's no need to call `GET /api/user` first.
+5. Read the user's hotel from `body.user.hotel`, not `body.user.hotel_id`. They differ when the user's default hotel is suspended and they have another: `hotel_id` stays the stored default, and `hotel` is the active hotel they work in. `GET /api/user` behaves the same way.
+
+### Suspended Account or Hotel
+
+HTTP `403 Forbidden`, with no token, once the password has been checked. A wrong password still gets the `401` below.
+
+```json
+{
+  "message": "This account has been suspended.",
+  "code": 403,
+  "body": { "reason": "suspended", "scope": "account" }
+}
+```
+
+`scope` is `account` when the account is suspended, and `hotel` when all of the user's hotels are (the message is then "This hotel has been suspended."). A user with another active hotel logs in normally.
+
+Every hotel API route except `POST /api/logout` can return the same response to an existing token, when the account is suspended, all the user's hotels are, or `X-Hotel-Id` names a suspended hotel of theirs. Check `body.reason`, not the message, and show the suspended screen. Other `403` responses have no `reason`. The messages are English only, so translate from `reason` and `scope` if needed.
 
 ### Invalid Credentials Response
 

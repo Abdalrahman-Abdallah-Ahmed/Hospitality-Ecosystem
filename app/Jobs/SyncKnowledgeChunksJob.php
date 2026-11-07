@@ -2,11 +2,13 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
 use App\Enums\MeterFeature;
 use App\Enums\QueueLane;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\HotelPolicy;
 use App\Models\KnowledgeBaseArticle;
 use App\Models\KnowledgeIndexRebuild;
@@ -26,9 +28,9 @@ use Throwable;
  * that no longer exists (deleted, or cascaded away with its hotel) would fail
  * the job before it runs, so a rebuild waiting on it would never complete.
  */
-class SyncKnowledgeChunksJob implements ShouldQueue
+class SyncKnowledgeChunksJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     /** @var class-string<KnowledgeBaseArticle|HotelPolicy> */
     public string $chunkableType;
@@ -44,6 +46,14 @@ class SyncKnowledgeChunksJob implements ShouldQueue
 
         $this->chunkableType = $chunkable::class;
         $this->chunkableId = $chunkable->getKey();
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return $this->chunkableType::withoutGlobalScope('hotel')->whereKey($this->chunkableId)->value('hotel_id');
     }
 
     /**

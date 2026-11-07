@@ -2,9 +2,12 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\ImportRowOutcome;
 use App\Enums\ImportStatus;
 use App\Enums\QueueLane;
+use App\Exceptions\HotelSuspended;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\Hotel;
 use App\Models\ReservationImport;
 use App\Models\ReservationImportDraft;
@@ -32,9 +35,9 @@ use Throwable;
  * reservation, row outcomes and removal are committed together, so a job
  * that dies mid-chunk resumes exactly where it stopped.
  */
-class WriteReservationImportJob implements ShouldQueue
+class WriteReservationImportJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     public int $tries = 3;
 
@@ -49,6 +52,14 @@ class WriteReservationImportJob implements ShouldQueue
     {
         // Imports run in their own lane, one at a time (spec 017 FR-020).
         $this->onQueue(QueueLane::IMPORTS->value);
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return ReservationImport::withoutGlobalScope('hotel')->whereKey($this->importId)->value('hotel_id');
     }
 
     public function handle(ReservationImportWriter $writer, ImportOutcomeRecorder $recorder, ReservationImportCompleter $completer): void
@@ -137,8 +148,11 @@ class WriteReservationImportJob implements ShouldQueue
                 return;
             }
 
-            Log::error('Reservation import write job failed.', ['reservation_import_id' => $import->id, 'exception' => $exception]);
-            TenantContext::runForHotel($import->hotel_id, fn () => app(ReservationImportCompleter::class)->fail($import, PrepareReservationImportJob::stoppedReason($import)));
+            if (! $exception instanceof HotelSuspended) {
+                Log::error('Reservation import write job failed.', ['reservation_import_id' => $import->id, 'exception' => $exception]);
+            }
+
+            TenantContext::runForHotel($import->hotel_id, fn () => app(ReservationImportCompleter::class)->fail($import, PrepareReservationImportJob::failureReason($import, $exception)));
         });
     }
 }

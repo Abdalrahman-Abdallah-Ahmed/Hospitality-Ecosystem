@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\CancellationResolution;
 use App\Enums\GuestNoticeChannel;
 use App\Enums\GuestNoticeReason;
@@ -9,6 +10,7 @@ use App\Enums\GuestNoticeStatus;
 use App\Enums\GuestSignal;
 use App\Enums\QueueLane;
 use App\Enums\TaskStatus;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\Booking;
 use App\Models\Guest;
 use App\Models\Hotel;
@@ -39,9 +41,9 @@ use Throwable;
  * - Each channel is retried in the job and every failure is recorded, never
  *   thrown: a notice must not block or undo staff completing the task.
  */
-class SendGuestRequestNoticeJob implements ShouldQueue
+class SendGuestRequestNoticeJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     /**
      * WhatsApp's window is 24 hours; the margin covers queue delay and clock
@@ -73,6 +75,14 @@ class SendGuestRequestNoticeJob implements ShouldQueue
     {
         // A guest is waiting on the other end (spec 017 FR-020).
         $this->onQueue(QueueLane::REALTIME->value);
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return Task::withoutGlobalScope('hotel')->whereKey($this->taskId)->value('hotel_id');
     }
 
     public function handle(WhatsAppMessageService $whatsApp): void

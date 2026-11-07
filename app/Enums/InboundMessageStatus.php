@@ -7,7 +7,10 @@ enum InboundMessageStatus: string
     /** Accepted and queued for a reply. */
     case RECEIVED = 'received';
 
-    /** Dropped by the per-sender rate limit; no reply is generated. */
+    /**
+     * Dropped by the per-sender rate limit, or by a suspended hotel's limit of
+     * one fixed reply per 24 hours; no reply is generated.
+     */
     case THROTTLED = 'throttled';
 
     /** Handled as a device-pairing code rather than a conversation turn. */
