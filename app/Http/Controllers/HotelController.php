@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Generic\GenericIndexRequest;
-use App\Http\Requests\Generic\GenericStoreRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\HotelResource;
 use App\Models\Hotel;
@@ -18,6 +17,13 @@ use Illuminate\Support\Facades\Validator;
 class HotelController extends Controller
 {
     /**
+     * Columns that decide who a hotel belongs to. Never written here, for any
+     * caller: moving a hotel between accounts has rules that protect both
+     * customers, which live in App\Services\Superadmin\HotelAdministration.
+     */
+    private const PLATFORM_ATTRIBUTES = ['hotel_group_id', 'owner_id'];
+
+    /**
      * Display a listing of the resource.
      */
     public function index(GenericIndexRequest $request)
@@ -29,37 +35,6 @@ class HotelController extends Controller
         );
 
         return apiResponse('Hotels fetched successfully.', 200, HotelResource::collection($hotels));
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(GenericStoreRequest $request)
-    {
-        $this->authorize('create', Hotel::class);
-        // A hotel that doesn't exist yet owns no teams; its defaults are
-        // created with it (HotelOperationalDefaults).
-        $validated = unsetAttributes($request->validated(), [
-            'housekeeping_team_id', 'cleaning_task_category_id', 'inspection_task_category_id',
-            'maintenance_team_id', 'maintenance_task_category_id',
-        ]);
-
-        $trashed = Hotel::onlyTrashed()->where('slug', $validated['slug'])->first();
-
-        if ($trashed) {
-            if ($trashed->owner_id !== ($validated['owner_id'] ?? null)) {
-                return apiResponse('The slug has already been taken.', 422);
-            }
-
-            $trashed->restore();
-            $trashed->update($validated);
-
-            return apiResponse('Hotel created successfully.', 201, HotelResource::make($trashed));
-        }
-
-        $hotel = Hotel::create($validated);
-
-        return apiResponse('Hotel created successfully.', 201, HotelResource::make($hotel));
     }
 
     /**
@@ -79,7 +54,10 @@ class HotelController extends Controller
     {
         $this->authorize('update', $hotel);
 
-        $validated = $this->withoutStrandedCategories($hotel, $request->validated());
+        $validated = $this->withoutStrandedCategories(
+            $hotel,
+            unsetAttributes($request->validated(), self::PLATFORM_ATTRIBUTES),
+        );
 
         if ($error = $this->invalidHousekeepingDefaults($hotel, $validated)) {
             return $error;
@@ -225,17 +203,5 @@ class HotelController extends Controller
         }
 
         return null;
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Hotel $hotel)
-    {
-        $this->authorize('delete', $hotel);
-
-        $hotel->delete();
-
-        return apiResponse('Hotel deleted successfully.', 200);
     }
 }

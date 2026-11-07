@@ -22,47 +22,14 @@ function asUser(User $user)
     return test()->withHeader('X-API-KEY', 'test-api-key')->actingAs($user, 'sanctum');
 }
 
-it('creates a hotel with generic store rules derived from the hotels table', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
+it('derives a required column and a boolean cast from the hotels table', function () {
+    $validator = Validator::make(
+        ['slug' => 'missing-name-hotel', 'is_active' => 'not-a-boolean'],
+        ModelColumnRules::forCreate(Hotel::class),
+    );
 
-    $response = asUser($superAdmin)->postJson('/api/hotel', [
-        'owner_id' => $owner->id,
-        'name' => 'Grand Harbor Hotel',
-        'slug' => 'grand-harbor-hotel',
-        'currency' => 'USD',
-    ]);
-
-    $response->assertStatus(201)
-        ->assertJsonPath('body.name', 'Grand Harbor Hotel')
-        ->assertJsonPath('body.owner_id', $owner->id);
-
-    expect(Hotel::where('slug', 'grand-harbor-hotel')->exists())->toBeTrue();
-});
-
-it('rejects a non-super-admin from creating a hotel', function () {
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
-
-    $response = asUser($owner)->postJson('/api/hotel', [
-        'owner_id' => $owner->id,
-        'name' => 'Grand Harbor Hotel',
-        'slug' => 'grand-harbor-hotel',
-        'currency' => 'USD',
-    ]);
-
-    $response->assertStatus(403);
-});
-
-it('rejects a hotel missing a required column and an invalid boolean cast', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $response = asUser($superAdmin)->postJson('/api/hotel', [
-        'slug' => 'missing-name-hotel',
-        'is_active' => 'not-a-boolean',
-    ]);
-
-    $response->assertStatus(422)
-        ->assertJsonValidationErrors(['name', 'is_active']);
+    expect($validator->fails())->toBeTrue()
+        ->and($validator->errors()->keys())->toContain('name', 'is_active');
 });
 
 it('lists all hotels for a super admin', function () {
@@ -109,49 +76,6 @@ it('does not flag a hotel unique slug rule against itself on update', function (
     ]);
 
     $response->assertOk();
-});
-
-it('restores a soft-deleted hotel instead of throwing a duplicate-key error on recreation', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Old Name', 'slug' => 'reused-slug', 'currency' => 'USD']);
-    $hotel->delete();
-
-    expect(Hotel::withTrashed()->count())->toBe(1);
-
-    $response = asUser($superAdmin)->postJson('/api/hotel', [
-        'owner_id' => $owner->id,
-        'name' => 'New Name',
-        'slug' => 'reused-slug',
-        'currency' => 'EUR',
-    ]);
-
-    $response->assertStatus(201)
-        ->assertJsonPath('body.id', $hotel->id)
-        ->assertJsonPath('body.name', 'New Name');
-
-    expect(Hotel::count())->toBe(1);
-    expect(Hotel::withTrashed()->count())->toBe(1);
-    expect($hotel->fresh()->trashed())->toBeFalse();
-});
-
-it('rejects recreating a hotel whose slug belongs to a soft-deleted hotel owned by someone else', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $originalOwner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $originalOwner->id, 'name' => 'Original', 'slug' => 'shared-slug', 'currency' => 'USD']);
-    $hotel->delete();
-
-    $newOwner = User::factory()->role(UserRole::ADMIN)->create();
-
-    $response = asUser($superAdmin)->postJson('/api/hotel', [
-        'owner_id' => $newOwner->id,
-        'name' => 'Hijack Attempt',
-        'slug' => 'shared-slug',
-        'currency' => 'USD',
-    ]);
-
-    $response->assertStatus(422)->assertJsonPath('message', 'The slug has already been taken.');
-    expect(Hotel::withTrashed()->where('owner_id', $newOwner->id)->exists())->toBeFalse();
 });
 
 it('rejects a hotel update for a non-owner', function () {

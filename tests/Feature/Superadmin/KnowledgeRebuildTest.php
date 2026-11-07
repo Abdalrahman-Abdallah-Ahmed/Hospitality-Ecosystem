@@ -62,7 +62,7 @@ it('rebuilds one hotel from stored text, keeping corrections, with nothing read 
     $registry = Mockery::spy(ExtractorRegistry::class);
     app()->instance(ExtractorRegistry::class, $registry);
 
-    $response = knRequest($this, knSuperAdmin(), 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'hotel', 'hotel_id' => $f['hotel']->id])
+    $response = knRequest($this, knSuperAdmin(), 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'hotel', 'hotel_id' => $f['hotel']->id])
         ->assertStatus(202)
         ->assertJsonPath('body.scope', 'hotel')
         ->assertJsonPath('body.total', 3);
@@ -81,8 +81,8 @@ it('rebuilds everything, or the global knowledge only', function () {
     knRebuildFixture();
     $super = knSuperAdmin();
 
-    knRequest($this, $super, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'all'])->assertStatus(202)->assertJsonPath('body.total', 6);
-    knRequest($this, $super, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'global'])->assertStatus(202)->assertJsonPath('body.total', 2);
+    knRequest($this, $super, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'all'])->assertStatus(202)->assertJsonPath('body.total', 6);
+    knRequest($this, $super, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'global'])->assertStatus(202)->assertJsonPath('body.total', 2);
 
     expect(KnowledgeIndexRebuild::where('status', 'completed')->count())->toBe(2);
 });
@@ -94,7 +94,7 @@ it('lists a source that fails, keeps its previous passages, and still completes'
     $broken->forceFill(['segments' => null])->saveQuietly();
     $brokenChunks = KnowledgeChunk::withoutGlobalScope('hotel')->where('chunkable_id', $broken->id)->pluck('id')->all();
 
-    $id = knRequest($this, knSuperAdmin(), 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'hotel', 'hotel_id' => $f['hotel']->id])
+    $id = knRequest($this, knSuperAdmin(), 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'hotel', 'hotel_id' => $f['hotel']->id])
         ->assertStatus(202)->json('body.id');
 
     $rebuild = KnowledgeIndexRebuild::findOrFail($id);
@@ -113,7 +113,7 @@ it('still completes when a document is deleted after the rebuild was queued, or 
     $f = knRebuildFixture();
     Queue::fake();
 
-    $id = knRequest($this, knSuperAdmin(), 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'global'])->json('body.id');
+    $id = knRequest($this, knSuperAdmin(), 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'global'])->json('body.id');
     $rebuild = KnowledgeIndexRebuild::findOrFail($id);
 
     // The global document is deleted before its job runs.
@@ -134,7 +134,7 @@ it('still completes when an article or policy is gone by the time its job runs',
     $f = knRebuildFixture();
     Queue::fake();
 
-    $id = knRequest($this, knSuperAdmin(), 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'hotel', 'hotel_id' => $f['hotel']->id])->json('body.id');
+    $id = knRequest($this, knSuperAdmin(), 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'hotel', 'hotel_id' => $f['hotel']->id])->json('body.id');
 
     // The article and policy disappear (as with a hotel force-delete
     // cascade) before their queued jobs run.
@@ -155,9 +155,9 @@ it('validates the scope and needs a hotel only for a hotel rebuild', function ()
     [, $hotel] = knHotel();
     $super = knSuperAdmin();
 
-    knRequest($this, $super, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'everything'])->assertUnprocessable();
-    knRequest($this, $super, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'hotel'])->assertUnprocessable();
-    knRequest($this, $super, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'all', 'hotel_id' => $hotel->id])->assertUnprocessable();
+    knRequest($this, $super, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'everything'])->assertUnprocessable();
+    knRequest($this, $super, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'hotel'])->assertUnprocessable();
+    knRequest($this, $super, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'all', 'hotel_id' => $hotel->id])->assertUnprocessable();
 });
 
 it('shows rebuild progress to the super admin only', function () {
@@ -165,13 +165,13 @@ it('shows rebuild progress to the super admin only', function () {
     $super = knSuperAdmin();
     knRebuildFixture();
 
-    $id = knRequest($this, $super, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'all'])->json('body.id');
+    $id = knRequest($this, $super, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'all'])->json('body.id');
 
-    knRequest($this, $super, 'GET', '/api/admin/knowledge/rebuilds')->assertOk()->assertJsonPath('body.data.0.id', $id);
-    knRequest($this, $super, 'GET', "/api/admin/knowledge/rebuilds/{$id}")->assertOk()->assertJsonPath('body.requested_by.id', $super->id);
+    knRequest($this, $super, 'GET', '/api/superadmin/knowledge/rebuilds')->assertOk()->assertJsonPath('body.data.0.id', $id);
+    knRequest($this, $super, 'GET', "/api/superadmin/knowledge/rebuilds/{$id}")->assertOk()->assertJsonPath('body.requested_by.id', $super->id);
 
-    knRequest($this, $admin, 'POST', '/api/admin/knowledge/rebuilds', ['scope' => 'all'])->assertForbidden();
-    knRequest($this, $admin, 'GET', "/api/admin/knowledge/rebuilds/{$id}")->assertForbidden();
+    knRequest($this, $admin, 'POST', '/api/superadmin/knowledge/rebuilds', ['scope' => 'all'])->assertForbidden();
+    knRequest($this, $admin, 'GET', "/api/superadmin/knowledge/rebuilds/{$id}")->assertForbidden();
 });
 
 it('starts a tracked rebuild from the command line', function () {

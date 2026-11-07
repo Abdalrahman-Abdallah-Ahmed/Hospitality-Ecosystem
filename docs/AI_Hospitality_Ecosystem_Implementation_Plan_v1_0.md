@@ -53,7 +53,7 @@ KEEP = works as target. MODIFY = exists, needs change. ADD = missing. DEFER = po
 ### 2.1 Tenancy, auth, permissions — KEEP
 
 `BelongsToHotel` + `TenantContext`, `Permission` enum, `StaffRole`, `ChecksPermissions`,
-admin bypass, `routes/admin.php` super-admin stack, Sanctum with 7-day tokens. Every new
+admin bypass, `routes/superadmin.php` super-admin stack, Sanctum with 7-day tokens. Every new
 resource adds its permission cases (CLAUDE.md procedure).
 
 ### 2.2 Rooms — MODIFY / ADD
@@ -462,7 +462,7 @@ Concierge Action Tools, SPEC-054 Human Escalation.
    - Formats: PDF, DOCX, TXT, MD, CSV, Excel.
    - Images: the spec decides between OCR and vision.
 3. **Scope:**
-   - Global knowledge is managed by the super admin (`routes/admin.php`).
+   - Global knowledge is managed by the super admin (`routes/superadmin.php`).
    - Hotel knowledge is managed by the hotel admin.
    - Retrieval merges both, and hotel knowledge wins on conflict.
 4. **Citations:** search results carry source metadata; the Concierge and Insights cite

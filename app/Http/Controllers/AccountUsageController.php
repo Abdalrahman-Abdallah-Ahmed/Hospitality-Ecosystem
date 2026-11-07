@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 /**
  * What THIS account used — the tenant-facing half of usage reporting.
  *
- * The super-admin report at /api/admin/usage answers the same question for
+ * The super-admin report at /api/superadmin/usage answers the same question for
  * every hotel group at once. This answers it for exactly one: the account the
  * caller belongs to.
  *

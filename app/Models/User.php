@@ -10,10 +10,12 @@ use App\Services\Metering\MeteringService;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id', 'hotel_id', 'hotel_group_id', 'group_role', 'staff_role_id'])]
@@ -47,7 +49,18 @@ class User extends Authenticatable
         // incremented, so that a departed staff member actually leaves the
         // count.
         static::created(fn (self $user) => $user->recountSeats());
-        static::deleted(fn (self $user) => $user->recountSeats());
+        static::deleted(function (self $user): void {
+            $user->recountSeats();
+            self::forgetPasswordLinks($user->email);
+        });
+
+        // Password links are keyed by email, so one left behind would work
+        // again for whoever holds that address next.
+        static::updated(function (self $user): void {
+            if ($user->wasChanged('email')) {
+                self::forgetPasswordLinks($user->getOriginal('email'));
+            }
+        });
 
         // A user is very often linked to their hotel AFTER being created —
         // registration makes the user, then the hotel, then attaches one to
@@ -72,6 +85,13 @@ class User extends Authenticatable
                 $user->getOriginal('hotel_id'),
             );
         });
+    }
+
+    private static function forgetPasswordLinks(string $email): void
+    {
+        foreach (config('auth.passwords') as $broker) {
+            DB::table($broker['table'])->where('email', $email)->delete();
+        }
     }
 
     /**
@@ -232,11 +252,44 @@ class User extends Authenticatable
 
         $ids = $this->hotels()->pluck('hotels.id')->all();
 
-        if ($this->hotel_id && ! in_array($this->hotel_id, $ids, true)) {
+        // A soft-deleted hotel is out of reach until it is restored. The two
+        // branches above already leave those out.
+        if ($this->hotel_id && ! in_array($this->hotel_id, $ids, true) && Hotel::whereKey($this->hotel_id)->exists()) {
             $ids[] = $this->hotel_id;
         }
 
         return $ids;
+    }
+
+    /**
+     * Users attached to any of these accounts: directly, through a live home
+     * hotel, or through a live membership.
+     *
+     * @param  array<int, string>  $accountIds
+     */
+    public function scopeAttachedToAccount(Builder $query, array $accountIds): Builder
+    {
+        return $query->where(fn (Builder $attached) => $attached
+            ->whereIn('hotel_group_id', $accountIds)
+            ->orWhereIn('hotel_id', Hotel::query()->select('id')->whereIn('hotel_group_id', $accountIds))
+            ->orWhereHas('hotels', fn (Builder $hotels) => $hotels->whereIn('hotels.hotel_group_id', $accountIds)));
+    }
+
+    /**
+     * Users who can reach any of these hotels, by the same three routes as
+     * accessibleHotelIds(): home hotel, membership, or an account-wide role
+     * in the hotel's account.
+     *
+     * @param  array<int, string>  $hotelIds
+     */
+    public function scopeAttachedToHotel(Builder $query, array $hotelIds): Builder
+    {
+        return $query->where(fn (Builder $attached) => $attached
+            ->whereIn('hotel_id', $hotelIds)
+            ->orWhereHas('hotels', fn (Builder $hotels) => $hotels->whereIn('hotels.id', $hotelIds))
+            ->orWhere(fn (Builder $group) => $group
+                ->whereNotNull('group_role')
+                ->whereIn('hotel_group_id', Hotel::query()->select('hotel_group_id')->whereIn('id', $hotelIds))));
     }
 
     public function whatsappDevice()

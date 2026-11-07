@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Concerns\HandlesKnowledgeDocuments;
 use App\Http\Controllers\Controller;
@@ -14,7 +14,7 @@ use Illuminate\Http\Request;
  * reads. Only ever hotel_id IS NULL rows; a hotel document id is a 404 here.
  *
  * There is no policy check because there is no per-hotel permission to check:
- * routes/admin.php is registered behind the super_admin middleware as a
+ * routes/superadmin.php is registered behind the super_admin middleware as a
  * whole, and nothing else may change what every tenant's assistant says.
  */
 class KnowledgeDocumentController extends Controller

@@ -2,6 +2,7 @@
 
 use App\Enums\UserRole;
 use App\Models\Hotel;
+use App\Models\HotelGroup;
 use App\Models\Task;
 use App\Models\TaskCategory;
 use App\Models\Team;
@@ -31,10 +32,10 @@ function defaultsSnapshot(Hotel $hotel): array
 
 it('gives a hotel created through the API both teams, their categories and all five settings', function () {
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
+    $account = HotelGroup::create(['name' => 'Sea View Group', 'slug' => 'sea-view-group']);
 
     $id = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->postJson('/api/hotel', ['owner_id' => $owner->id, 'name' => 'Sea View', 'slug' => 'sea-view', 'currency' => 'USD'])
+        ->postJson("/api/superadmin/accounts/{$account->id}/hotels", ['name' => 'Sea View', 'slug' => 'sea-view', 'currency' => 'USD'])
         ->assertCreated()
         ->assertJsonPath('body.inspection_required', false)
         ->json('body.id');

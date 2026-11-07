@@ -1,8 +1,8 @@
 # Global Knowledge Admin API Documentation
 
-Global knowledge is platform knowledge that **every hotel's assistant reads**: general hospitality guidance, standard practices, etiquette. Because it changes what every tenant's AI says, it is managed only by super admins, only from `routes/admin.php`.
+Global knowledge is platform knowledge that **every hotel's assistant reads**: general hospitality guidance, standard practices, etiquette. Because it changes what every tenant's AI says, it is managed only by super admins, only from `routes/superadmin.php`.
 
-Every route here is registered under the `api/admin` prefix behind `api.key → auth:sanctum → throttle:api → tenant → super_admin`. Anyone who is not a super admin gets `403`, whatever their staff role grants.
+Every route here is registered under the `api/superadmin` prefix behind `api.key → auth:sanctum → throttle:api → tenant → super_admin`. Anyone who is not a super admin gets `403`, whatever their staff role grants.
 
 Every record here has `hotel_id = null`. A hotel's own document or article id is a `404` on these routes, just as a global id is a `404` on the hotel routes.
 
@@ -17,17 +17,17 @@ Failure codes and the stored `error` behave as in the hotel API. In particular, 
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /api/admin/knowledge-documents` | List global documents (never hotel ones) |
-| `POST /api/admin/knowledge-documents` | Upload a global document (multipart) |
-| `GET /api/admin/knowledge-documents/{id}` | Show |
-| `PUT /api/admin/knowledge-documents/{id}` | Edit title, category, `is_active` |
-| `POST /api/admin/knowledge-documents/{id}/file` | Replace the file |
-| `GET /api/admin/knowledge-documents/{id}/download` | Download |
-| `GET\|PUT\|DELETE /api/admin/knowledge-documents/{id}/text` | View, correct, discard corrections |
-| `POST /api/admin/knowledge-documents/{id}/reindex` | Re-index |
-| `DELETE /api/admin/knowledge-documents/{id}` | Delete (restorable for 30 days) |
-| `GET /api/admin/knowledge-documents/deleted` | Deleted, restorable |
-| `POST /api/admin/knowledge-documents/{id}/restore` | Restore |
+| `GET /api/superadmin/knowledge-documents` | List global documents (never hotel ones) |
+| `POST /api/superadmin/knowledge-documents` | Upload a global document (multipart) |
+| `GET /api/superadmin/knowledge-documents/{id}` | Show |
+| `PUT /api/superadmin/knowledge-documents/{id}` | Edit title, category, `is_active` |
+| `POST /api/superadmin/knowledge-documents/{id}/file` | Replace the file |
+| `GET /api/superadmin/knowledge-documents/{id}/download` | Download |
+| `GET\|PUT\|DELETE /api/superadmin/knowledge-documents/{id}/text` | View, correct, discard corrections |
+| `POST /api/superadmin/knowledge-documents/{id}/reindex` | Re-index |
+| `DELETE /api/superadmin/knowledge-documents/{id}` | Delete (restorable for 30 days) |
+| `GET /api/superadmin/knowledge-documents/deleted` | Deleted, restorable |
+| `POST /api/superadmin/knowledge-documents/{id}/restore` | Restore |
 
 Notes:
 
@@ -39,11 +39,11 @@ Notes:
 
 | Method & path | Purpose |
 | --- | --- |
-| `GET /api/admin/knowledge-base-articles` | List global articles, including those created through the hotel routes before 2026-10-07 |
-| `POST /api/admin/knowledge-base-articles` | Create a global article |
-| `GET /api/admin/knowledge-base-articles/{id}` | Show |
-| `PUT /api/admin/knowledge-base-articles/{id}` | Update; published articles are re-indexed |
-| `DELETE /api/admin/knowledge-base-articles/{id}` | Delete; the article leaves search |
+| `GET /api/superadmin/knowledge-base-articles` | List global articles, including those created through the hotel routes before 2026-10-07 |
+| `POST /api/superadmin/knowledge-base-articles` | Create a global article |
+| `GET /api/superadmin/knowledge-base-articles/{id}` | Show |
+| `PUT /api/superadmin/knowledge-base-articles/{id}` | Update; published articles are re-indexed |
+| `DELETE /api/superadmin/knowledge-base-articles/{id}` | Delete; the article leaves search |
 
 The fields and the article object are those of the [knowledge base article API](/D:/Hospitality%20Ecosystem/docs/knowledge-base-article-api-documentation.md#the-knowledge-base-article-object). `hotel_id` is always `null` (a sent value is ignored). Only `status: "published"` articles are searchable.
 
@@ -56,7 +56,7 @@ A rebuild re-indexes knowledge in bulk, for example after a change to how passag
 - Search keeps answering throughout: each source swaps its passages all at once.
 - A source that fails keeps the passages it had, and is listed with the reason.
 
-### `POST /api/admin/knowledge/rebuilds`
+### `POST /api/superadmin/knowledge/rebuilds`
 
 | Field | Rule |
 | --- | --- |
@@ -87,7 +87,7 @@ A rebuild re-indexes knowledge in bulk, for example after a change to how passag
 
 A rebuild with nothing in scope comes back `completed` straight away.
 
-### `GET /api/admin/knowledge/rebuilds` and `GET /api/admin/knowledge/rebuilds/{id}`
+### `GET /api/superadmin/knowledge/rebuilds` and `GET /api/superadmin/knowledge/rebuilds/{id}`
 
 The list is paginated, newest first (`per_page` 1–100). Each rebuild shows its progress:
 

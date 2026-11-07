@@ -28,14 +28,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // every hotel uses.
         //
         // The guard is applied HERE, to the whole file, rather than inside a
-        // Route::group() in it. That way a route added to routes/admin.php is
+        // Route::group() in it. That way a route added to routes/superadmin.php is
         // protected by construction and cannot be left exposed by forgetting
         // to nest it — the stack below is deliberately identical to the one
         // wrapping the tenant routes in routes/api.php, plus super_admin.
         then: function () {
             Route::middleware(['api', 'api.key', 'auth:sanctum', 'throttle:api', 'tenant', 'super_admin'])
-                ->prefix('api/admin')
-                ->group(base_path('routes/admin.php'));
+                ->prefix('api/superadmin')
+                ->group(base_path('routes/superadmin.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

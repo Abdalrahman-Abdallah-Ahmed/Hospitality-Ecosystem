@@ -17,6 +17,7 @@ use App\Observers\RecommendationOutcomeObserver;
 use App\Policies\ConversationPolicy;
 use App\Support\Audit\EventLogger;
 use App\Support\Observability\TagsSentryScope;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -90,6 +91,11 @@ class AppServiceProvider extends ServiceProvider
         $this->recordAiCost();
         $this->refusePairingCodesAsApiTokens();
         $this->throttleAuthentication();
+
+        // Password emails open the frontend's page. This API has no web route
+        // for the built-in notification to link to.
+        ResetPassword::createUrlUsing(fn ($user, string $token) => config('app.frontend_url')
+            .'/reset-password?token='.$token.'&email='.urlencode($user->getEmailForPasswordReset()));
     }
 
     /**

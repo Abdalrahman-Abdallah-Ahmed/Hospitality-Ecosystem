@@ -9,7 +9,7 @@ use App\Models\KnowledgeBaseArticle;
 /**
  * Writing a hotel's knowledge base articles, for the staff API and the Admin
  * AI alike (SPEC-055 R10). Articles written here always belong to a hotel:
- * global articles are managed only from /api/admin. Indexing follows from the
+ * global articles are managed only from /api/superadmin. Indexing follows from the
  * article observer, exactly as for any other save.
  */
 class ArticleCommands

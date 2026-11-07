@@ -12,6 +12,7 @@ use App\Models\MeterEvent;
 use App\Models\UsageCounter;
 use App\Models\User;
 use App\Support\Ai\AiRun;
+use App\Support\Tenancy\TenantContext;
 use BackedEnum;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -89,8 +90,45 @@ class EventLogger
         ?EvidenceLevel $evidence = null,
         array $context = [],
     ): void {
-        $eventType = Str::snake(class_basename($subject)).'.'.$verb;
+        self::write($subject, Str::snake(class_basename($subject)).'.'.$verb, self::resolveHotelId($subject), [
+            'changes' => $changes,
+            'context' => $context,
+            'evidence_level' => $evidence,
+            'reason' => $reason,
+        ]);
+    }
 
+    /**
+     * Record what a super admin did on the platform. The row never has a
+     * hotel, whatever the subject or the current hotel, so it cannot appear
+     * on any tenant event log. It is written with the current hotel cleared:
+     * setting hotel_id to null is not enough, because BelongsToHotel's create
+     * hook fills an empty hotel_id from the current hotel.
+     *
+     * Never put a password, a hash or a token in $changes or $context.
+     *
+     * @param  array<string, scalar|null>  $context
+     */
+    public static function recordPlatform(
+        string $eventType,
+        Model $subject,
+        ?array $changes = null,
+        array $context = [],
+    ): void {
+        TenantContext::runForHotel(null, fn () => self::write($subject, $eventType, null, [
+            'changes' => $changes,
+            'context' => $context,
+        ]));
+    }
+
+    /**
+     * The one place an audit row is built. Silently does nothing while
+     * recording is paused.
+     *
+     * @param  array{changes?: array|null, context?: array<string, scalar|null>, evidence_level?: EvidenceLevel|null, reason?: string|null}  $details
+     */
+    private static function write(Model $subject, string $eventType, ?string $hotelId, array $details): void
+    {
         self::notice($subject, $eventType, audited: true);
 
         if (! self::$recording) {
@@ -100,17 +138,17 @@ class EventLogger
         $actor = Auth::user() ?? self::$onBehalfOf;
 
         EventLog::create([
-            'hotel_id' => self::resolveHotelId($subject),
+            'hotel_id' => $hotelId,
             'event_type' => $eventType,
             'subject_type' => $subject->getMorphClass(),
             'subject_id' => $subject->getKey(),
             'actor_type' => $actor?->getMorphClass(),
             'actor_id' => $actor?->getKey(),
             'actor_kind' => self::resolveActorKind($actor)->value,
-            'changes' => $changes ?: null,
-            'context' => array_merge(self::context() ?? [], $context) ?: null,
-            'evidence_level' => ($evidence ?? EvidenceLevel::L1)->value,
-            'reason' => $reason,
+            'changes' => ($details['changes'] ?? null) ?: null,
+            'context' => array_merge(self::context() ?? [], $details['context'] ?? []) ?: null,
+            'evidence_level' => ($details['evidence_level'] ?? EvidenceLevel::L1)->value,
+            'reason' => $details['reason'] ?? null,
             'occurred_at' => now(),
         ]);
     }

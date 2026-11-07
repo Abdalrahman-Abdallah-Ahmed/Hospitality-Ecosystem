@@ -16,7 +16,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: hospitality_testing
+          POSTGRES_DB: Hospitality_Ecosystem_testing
         ports:
           - 5432:5432
         options: >-
@@ -25,14 +25,13 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
-    # Throwaway CI credentials. Real environment variables take precedence
-    # over the <env> entries in phpunit.xml, so these point the suite at the
-    # service container above.
+    # Throwaway CI credentials. phpunit.xml forces the other test settings,
+    # including the database name, so POSTGRES_DB above must match it. Only
+    # the username and password come from here.
     env:
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
-      DB_DATABASE: hospitality_testing
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       DB_URL: ""

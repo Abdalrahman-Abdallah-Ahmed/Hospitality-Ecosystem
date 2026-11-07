@@ -75,7 +75,7 @@ it('rejects an admin without an associated hotel from creating an article', func
         ->assertJsonPath('message', 'You do not belong to any hotel.');
 });
 
-// store — super admin (SPEC 008: global articles moved to /api/admin)
+// store — super admin (SPEC 008: global articles moved to /api/superadmin)
 
 it('makes a super admin name the hotel an article belongs to', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();

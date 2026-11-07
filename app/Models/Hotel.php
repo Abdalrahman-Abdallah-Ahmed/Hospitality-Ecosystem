@@ -94,6 +94,7 @@ class Hotel extends Model
             HotelOperationalDefaults::ensure($hotel);
         });
         static::deleted(fn (self $hotel) => $hotel->recountSeats());
+        static::restored(fn (self $hotel) => $hotel->recountSeats());
 
         // A hotel can move between accounts — the single-property group above
         // is explicitly a placeholder that hotels get reassigned out of once

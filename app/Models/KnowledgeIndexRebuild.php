@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 
 /**
- * A platform record, read only from routes/admin.php, so it deliberately has
+ * A platform record, read only from routes/superadmin.php, so it deliberately has
  * no BelongsToHotel scope: a rebuild of everything spans every hotel.
  */
 class KnowledgeIndexRebuild extends Model

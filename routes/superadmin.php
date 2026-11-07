@@ -1,11 +1,14 @@
 <?php
 
-use App\Http\Controllers\Admin\AiCostController;
-use App\Http\Controllers\Admin\GuestMemoryExtractionController;
-use App\Http\Controllers\Admin\KnowledgeBaseArticleController;
-use App\Http\Controllers\Admin\KnowledgeDocumentController;
-use App\Http\Controllers\Admin\KnowledgeRebuildController;
-use App\Http\Controllers\Admin\UsageController;
+use App\Http\Controllers\Superadmin\AccountController;
+use App\Http\Controllers\Superadmin\AiCostController;
+use App\Http\Controllers\Superadmin\GuestMemoryExtractionController;
+use App\Http\Controllers\Superadmin\HotelController;
+use App\Http\Controllers\Superadmin\KnowledgeBaseArticleController;
+use App\Http\Controllers\Superadmin\KnowledgeDocumentController;
+use App\Http\Controllers\Superadmin\KnowledgeRebuildController;
+use App\Http\Controllers\Superadmin\UsageController;
+use App\Http\Controllers\Superadmin\UserController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,7 +24,7 @@ use Illuminate\Support\Facades\Route;
 |
 |     api  →  api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  super_admin
 |
-| and the URL prefix `api/admin`. Deliberately applied there rather than in a
+| and the URL prefix `api/superadmin`. Deliberately applied there rather than in a
 | Route::group() here, so that EVERY route in this file is guarded by
 | construction. A route added at the top level of this file cannot end up
 | unprotected, which is the failure mode worth designing against in a file
@@ -33,7 +36,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-// Cross-account super-admin reporting lives in routes/admin.php,
+// Cross-account super-admin reporting lives in routes/superadmin.php,
 // registered in bootstrap/app.php with this same middleware stack
 // plus `super_admin`.
 Route::get('/usage', [UsageController::class, 'index']);
@@ -68,3 +71,23 @@ Route::get('/knowledge/rebuilds/{id}', [KnowledgeRebuildController::class, 'show
 // ones that ended for good, and re-run a failed or ceiling-stopped one once.
 Route::get('/guest-memory-extractions', [GuestMemoryExtractionController::class, 'index']);
 Route::post('/guest-memory-extractions/{extraction}/rerun', [GuestMemoryExtractionController::class, 'rerun']);
+
+// Onboarding and administration (spec 023): accounts, hotels and users across
+// every customer, and cutting off or restoring a user's access.
+Route::get('/accounts', [AccountController::class, 'index']);
+Route::post('/accounts', [AccountController::class, 'store']);
+Route::get('/accounts/{account}', [AccountController::class, 'show']);
+Route::put('/accounts/{account}', [AccountController::class, 'update']);
+Route::delete('/accounts/{account}', [AccountController::class, 'destroy']);
+Route::post('/accounts/{account}/hotels', [HotelController::class, 'store']);
+Route::get('/hotels', [HotelController::class, 'index']);
+Route::get('/hotels/{hotel}', [HotelController::class, 'show']);
+Route::put('/hotels/{hotel}', [HotelController::class, 'update']);
+Route::delete('/hotels/{hotel}', [HotelController::class, 'destroy']);
+Route::get('/users', [UserController::class, 'index']);
+Route::post('/users', [UserController::class, 'store']);
+Route::get('/users/{user}', [UserController::class, 'show']);
+Route::put('/users/{user}', [UserController::class, 'update']);
+Route::put('/users/{user}/access', [UserController::class, 'updateAccess']);
+Route::post('/users/{user}/password-reset', [UserController::class, 'sendPasswordReset']);
+Route::post('/users/{user}/revoke-tokens', [UserController::class, 'revokeTokens']);

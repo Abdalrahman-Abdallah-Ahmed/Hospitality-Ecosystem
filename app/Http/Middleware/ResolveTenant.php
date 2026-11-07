@@ -25,8 +25,12 @@ class ResolveTenant
             $requested = $request->header('X-Hotel-Id');
             $available = $hotelIds ?? ($user->hotel_id ? [$user->hotel_id] : []);
 
+            // A home hotel that was soft-deleted is no longer available, and
+            // must not be the hotel new records land in.
+            $default = in_array($user->hotel_id, $available, true) ? $user->hotel_id : ($available[0] ?? null);
+
             TenantContext::setCurrentHotelId(
-                $requested && in_array($requested, $available, true) ? $requested : ($user->hotel_id ?? $available[0] ?? null)
+                $requested && in_array($requested, $available, true) ? $requested : $default
             );
 
             // Which hotel and which endpoint, for an error that follows (spec 017 FR-027).

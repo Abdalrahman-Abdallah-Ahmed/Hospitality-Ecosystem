@@ -9,6 +9,7 @@ use App\Http\Requests\Generic\GenericUpdateRequest;
 use App\Http\Resources\UserResource;
 use App\Models\Hotel;
 use App\Models\User;
+use App\Services\Superadmin\UserAdministration;
 use App\Support\Audit\EventLogger;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Foundation\Http\FormRequest;
@@ -58,8 +59,8 @@ class UserController extends Controller
     {
         $this->authorize('create', User::class);
 
-        if ($denied = $this->denySuperAdminGrant($request)) {
-            return $denied;
+        if (UserAdministration::refusesSuperAdminGrant($request->validated('role'))) {
+            return apiResponse(UserAdministration::SUPER_ADMIN_REFUSAL, 403);
         }
 
         $validated = $this->assignableAttributes($request);
@@ -82,8 +83,8 @@ class UserController extends Controller
 
         $role = $validated['role'] ?? UserRole::EMPLOYEE->value;
 
-        if ($denied = $this->denyStaffRole($validated, $hotel, $role)) {
-            return $denied;
+        if ($error = UserAdministration::staffRoleError($validated['staff_role_id'] ?? null, $hotel, $role)) {
+            return apiResponse($error['message'], $error['status']);
         }
 
         $user = User::create([...$validated, 'hotel_id' => $hotel?->id]);
@@ -110,8 +111,26 @@ class UserController extends Controller
     {
         $this->authorize('update', $user);
 
-        if ($denied = $this->denySuperAdminGrant($request)) {
-            return $denied;
+        if (UserAdministration::refusesSuperAdminGrant($request->validated('role'))) {
+            return apiResponse(UserAdministration::SUPER_ADMIN_REFUSAL, 403);
+        }
+
+        // A super admin must never know another user's password. Their own is fine.
+        if ($request->user()->isSuperAdmin() && $user->isNot($request->user()) && $request->safe()->has('password')) {
+            return apiResponse('A super admin cannot set another user\'s password. Send a password email instead.', 403);
+        }
+
+        if ($user->isSuperAdmin()) {
+            // Super admins have no hotel or account links.
+            if (array_filter($request->safe()->only(self::ACCOUNT_ATTRIBUTES)) !== []) {
+                return apiResponse('A super admin cannot be linked to a hotel or account.', 403);
+            }
+
+            // Nothing in the API can grant the role back, so a demotion could
+            // not be undone, and the last one would lock out the platform.
+            if ($request->safe()->has('role')) {
+                return apiResponse('A super admin\'s role cannot be changed through the API.', 403);
+            }
         }
 
         $validated = $this->assignableAttributes($request);
@@ -125,8 +144,8 @@ class UserController extends Controller
 
         $role = $validated['role'] ?? $user->role->value;
 
-        if ($denied = $this->denyStaffRole($validated, $hotel, $role)) {
-            return $denied;
+        if ($error = UserAdministration::staffRoleError($validated['staff_role_id'] ?? null, $hotel, $role)) {
+            return apiResponse($error['message'], $error['status']);
         }
 
         // A user who stops being an employee loses their staff role, rather
@@ -154,44 +173,6 @@ class UserController extends Controller
         $user->delete();
 
         return apiResponse('User deleted successfully.', 200);
-    }
-
-    /**
-     * Only a super admin can create or promote a super admin. The rule turns
-     * on who is asking rather than on the value, so the schema-derived
-     * validation rules cannot express it.
-     */
-    private function denySuperAdminGrant(FormRequest $request): ?JsonResponse
-    {
-        if ($request->user()->isSuperAdmin() || $request->validated('role') !== UserRole::SUPER_ADMIN->value) {
-            return null;
-        }
-
-        return apiResponse('Only a super admin can assign the super admin role.', 403);
-    }
-
-    /**
-     * A staff role can only be given to an employee — admins already hold
-     * every permission — and must belong to the user's hotel. The schema rule
-     * only checks the id exists somewhere.
-     */
-    private function denyStaffRole(array $validated, ?Hotel $hotel, string $role): ?JsonResponse
-    {
-        $staffRoleId = $validated['staff_role_id'] ?? null;
-
-        if ($staffRoleId === null) {
-            return null;
-        }
-
-        if ($role !== UserRole::EMPLOYEE->value) {
-            return apiResponse('Only employees can be given a staff role.', 422);
-        }
-
-        if (! $hotel || invalidRelation($hotel, ['staffRoles' => $staffRoleId])) {
-            return apiResponse('The selected staff role does not belong to you.', 403);
-        }
-
-        return null;
     }
 
     /**

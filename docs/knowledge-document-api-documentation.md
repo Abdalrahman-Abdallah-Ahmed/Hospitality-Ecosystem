@@ -4,7 +4,7 @@ Knowledge documents are files a hotel uploads so its AI assistants can answer fr
 
 Defined by `App\Http\Controllers\KnowledgeDocumentController` (the shared actions live in `App\Http\Controllers\Concerns\HandlesKnowledgeDocuments`), gated by `App\Policies\KnowledgeDocumentPolicy`, with the business rules in `App\Services\Knowledge\KnowledgeDocumentService`. Indexing is `App\Jobs\IndexKnowledgeDocumentJob`.
 
-These routes are always about **one hotel's** documents. Global documents (shared platform knowledge, `hotel_id = null`) are managed by super admins under `/api/admin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md). A global document id is a `404` on every route here.
+These routes are always about **one hotel's** documents. Global documents (shared platform knowledge, `hotel_id = null`) are managed by super admins under `/api/superadmin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md). A global document id is a `404` on every route here.
 
 ## Base URL and Headers
 

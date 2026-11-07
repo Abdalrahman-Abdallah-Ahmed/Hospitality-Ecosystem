@@ -9,6 +9,7 @@ use App\Http\Controllers\AiAdvisorController;
 use App\Http\Controllers\AiInsightsController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisterUserController;
 use App\Http\Controllers\AvailabilityController;
 use App\Http\Controllers\BookingCancellationRequestController;
@@ -63,6 +64,7 @@ Route::get('/health', HealthController::class)->middleware('throttle:30,1');
 Route::middleware('api.key')->group(function () {
     Route::post('/register', [RegisterUserController::class, 'apiStore'])->middleware('throttle:register');
     Route::post('/login', [AuthenticatedSessionController::class, 'apiLogin'])->middleware('throttle:login')->name('login');
+    Route::post('/reset-password', [PasswordResetController::class, 'store'])->middleware('throttle:login');
     Route::post('/pair', [WhatsAppController::class, 'pair'])->middleware('throttle:pair');
 
     Route::middleware(['auth:sanctum', 'throttle:api', 'tenant'])->group(function () {
@@ -143,7 +145,8 @@ Route::middleware('api.key')->group(function () {
             Route::get('/transaction', [TransactionController::class, 'index']);
             Route::get('/transaction/{transaction}', [TransactionController::class, 'show']);
         });
-        Route::resource('/hotel', HotelController::class)->except(['edit', 'create']);
+        // Creating and deleting a hotel is a platform action: routes/superadmin.php.
+        Route::resource('/hotel', HotelController::class)->except(['store', 'destroy', 'edit', 'create']);
         Route::put('/room/{room}/housekeeping-status', [RoomHousekeepingController::class, 'update']);
         Route::post('/room/{room}/out-of-order', [RoomOutOfOrderController::class, 'store']);
         Route::patch('/room/{room}/out-of-order', [RoomOutOfOrderController::class, 'update']);

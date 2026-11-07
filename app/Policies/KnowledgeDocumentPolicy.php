@@ -9,7 +9,7 @@ use App\Policies\Concerns\ChecksPermissions;
 
 /**
  * Hotel knowledge documents. Global documents (hotel_id = null) are managed
- * only from routes/admin.php, which the super_admin middleware guards, so
+ * only from routes/superadmin.php, which the super_admin middleware guards, so
  * every ability here refuses them, whoever is asking.
  */
 class KnowledgeDocumentPolicy

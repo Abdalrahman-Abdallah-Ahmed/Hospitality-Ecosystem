@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Superadmin;
 
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
@@ -14,7 +14,7 @@ use Illuminate\Support\Collection;
 /**
  * What each account cost us to serve.
  *
- * WP-8's /api/admin/usage answers what a customer used. This answers what we
+ * WP-8's /api/superadmin/usage answers what a customer used. This answers what we
  * paid to give it to them. The gap between the two is the only number that
  * says whether the business works, and until both existed it could not be
  * computed for any hotel in any month.

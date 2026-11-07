@@ -122,7 +122,7 @@ time. Restoring the guest does not bring them back.
 
 ## Super Admin: List Extractions
 
-`GET /api/admin/guest-memory-extractions` — filters `hotel_id`, `status`; newest first; paged.
+`GET /api/superadmin/guest-memory-extractions` — filters `hotel_id`, `status`; newest first; paged.
 
 ```json
 {
@@ -145,7 +145,7 @@ time. Restoring the guest does not bring them back.
 
 ## Super Admin: Re-run an Extraction
 
-`POST /api/admin/guest-memory-extractions/{id}/rerun`
+`POST /api/superadmin/guest-memory-extractions/{id}/rerun`
 
 Only for `failed` or `skipped_spend_ceiling` (otherwise `422`). Queues one more attempt; if it
 fails again it is final, with no further automatic retry.

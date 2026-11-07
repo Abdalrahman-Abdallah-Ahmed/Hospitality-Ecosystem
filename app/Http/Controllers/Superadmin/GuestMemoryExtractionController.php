@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Superadmin;
 
 use App\Enums\GuestMemoryExtractionStatus;
 use App\Http\Controllers\Controller;
@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
 /**
  * Guest memory extractions across every hotel, for operators (SPEC-084
  * FR-036): find the ones that ended for good and re-run a failed or
- * ceiling-stopped one by hand. Super admin only, by routes/admin.php.
+ * ceiling-stopped one by hand. Super admin only, by routes/superadmin.php.
  */
 class GuestMemoryExtractionController extends Controller
 {

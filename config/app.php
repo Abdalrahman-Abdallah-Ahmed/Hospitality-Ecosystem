@@ -55,6 +55,9 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // Where emailed links send people: the frontend's address, not this API's.
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

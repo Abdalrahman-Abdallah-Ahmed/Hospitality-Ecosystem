@@ -84,9 +84,9 @@ api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  (policy authori
 ```
 
 Middleware aliases are registered in `bootstrap/app.php`. Cross-account
-super-admin reporting lives in `routes/admin.php`, which is registered in
+super-admin reporting lives in `routes/superadmin.php`, which is registered in
 `bootstrap/app.php` with the same stack **plus `super_admin`** and the
-`api/admin` prefix — the guard is applied to the whole file on purpose, so a
+`api/superadmin` prefix — the guard is applied to the whole file on purpose, so a
 new route there cannot be left unprotected. Do not put tenant-facing endpoints
 in that file, and do not wrap its routes in their own group.
 

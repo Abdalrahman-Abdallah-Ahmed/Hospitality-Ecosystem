@@ -163,7 +163,7 @@ it('gives super admins the same AI block per account, and nobody else the cross-
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
     $accounts = collect($this->withHeaders(aiBlockHeaders())->actingAs($super, 'sanctum')
-        ->getJson('/api/admin/usage')
+        ->getJson('/api/superadmin/usage')
         ->assertOk()
         ->json('body.accounts'));
 
@@ -173,14 +173,14 @@ it('gives super admins the same AI block per account, and nobody else the cross-
         ->and($account['ai']['by_capability']['insights']['total_tokens'])->toBe(77);
 
     $this->withHeaders(aiBlockHeaders())->actingAs(aiBlockAdmin($hotel), 'sanctum')
-        ->getJson('/api/admin/usage')
+        ->getJson('/api/superadmin/usage')
         ->assertForbidden();
 
     $employee = User::factory()->role(UserRole::EMPLOYEE)->create();
     $employee->update(['hotel_id' => $hotel->id]);
 
     $this->withHeaders(aiBlockHeaders())->actingAs($employee->fresh(), 'sanctum')
-        ->getJson('/api/admin/usage')
+        ->getJson('/api/superadmin/usage')
         ->assertForbidden();
 });
 
@@ -264,7 +264,7 @@ it('lists every account\'s hotels in the super-admin report with one hotels quer
 
     DB::enableQueryLog();
     $this->withHeaders(aiBlockHeaders())->actingAs($super, 'sanctum')
-        ->getJson('/api/admin/usage')
+        ->getJson('/api/superadmin/usage')
         ->assertOk();
 
     $hotelQueries = collect(DB::getQueryLog())->filter(fn ($q) => preg_match('/from "hotels"/', $q['query']));

@@ -201,10 +201,10 @@ never read as a zero meaning "free".
 ## Endpoint
 
 ```
-GET /api/admin/ai-cost?from=2026-08-01&to=2026-08-31
+GET /api/superadmin/ai-cost?from=2026-08-01&to=2026-08-31
 ```
 
-Behind `super_admin`, like `/api/admin/usage`: it reports across every account,
+Behind `super_admin`, like `/api/superadmin/usage`: it reports across every account,
 so there is no single model to authorise against.
 
 Both parameters are optional and default to the current calendar month.

@@ -20,7 +20,6 @@ All endpoints below are served under:
 
 Examples:
 
-- `POST /api/hotel`
 - `POST /api/activity`
 - `POST /api/reservation`
 - `POST /api/room`
@@ -97,64 +96,7 @@ The frontend should treat these as form-level errors.
 
 ## 1. Create Hotel
 
-### Endpoint
-
-`POST /api/hotel`
-
-### Purpose
-
-Creates a hotel on behalf of another user. **This is a super-admin-only endpoint**, not a self-service "create my hotel" flow — see [Hotel API Documentation](/D:/Hospitality%20Ecosystem/docs/hotel-api-documentation.md) for the full authorization model. A regular admin gets their hotel by registering via `POST /api/register` (nested `hotel` object — see [Register API Update](/D:/Hospitality%20Ecosystem/docs/register-api-update.md)), not through this endpoint.
-
-### Important Backend Behavior
-
-- Caller must have `role: "super_admin"` — any other role gets `403`.
-- `owner_id` must be sent explicitly (it identifies who the hotel is being created for) — it is **not** auto-filled from the caller, since the caller (a super admin) is generally not the intended owner.
-- Recreating a soft-deleted hotel's `slug` with the same `owner_id` restores that hotel instead of erroring or creating a duplicate; with a different `owner_id` it's rejected. See the full doc for details.
-
-### Request Body
-
-```json
-{
-  "owner_id": "019f9b37-c260-7abc-9000-1234567890ab",
-  "name": "Grand Harbor Hotel",
-  "slug": "grand-harbor-hotel",
-  "timezone": "Africa/Cairo",
-  "currency": "USD",
-  "country_code": "EG",
-  "city": "Cairo",
-  "address": "Nile Corniche",
-  "whatsapp_number": "+201234567890",
-  "email": "frontdesk@example.com",
-  "phone": "+20212345678",
-  "branding": {
-    "primary_color": "#0f766e"
-  },
-  "ai_preferences": {
-    "tone": "friendly"
-  },
-  "is_active": true
-}
-```
-
-### Field Notes
-
-- `name` is required.
-- `owner_id` is required in practice (see above), must exist in `users.id`.
-- `slug` is required and must be unique among active hotels.
-- `timezone` defaults to `UTC` if omitted.
-- `currency` defaults to `USD` and must be a 3-character string.
-- `country_code` should be a 2-character string.
-- `branding` and `ai_preferences` are JSON objects/arrays.
-- `is_active` is boolean and defaults to `true`.
-
-### Frontend Recommendations
-
-- Build this as a super-admin-only "provision a hotel" form, not part of the regular admin onboarding flow.
-- Include an owner picker (search/select an existing user) since `owner_id` must be sent explicitly.
-- Validate `slug` format client-side before submit.
-- Validate `email` format client-side even if the generic backend validation is permissive.
-- Use a timezone dropdown instead of free text if possible.
-- Use a 3-letter uppercase currency code input.
+A super admin creates a hotel with `POST /api/superadmin/accounts/{account}/hotels`: see [Super Admin Accounts API Documentation](/D:/Hospitality%20Ecosystem/docs/superadmin-accounts-api-documentation.md). `POST /api/hotel` no longer exists and returns `405`. A regular admin gets their hotel by registering via `POST /api/register` (nested `hotel` object — see [Register API Update](/D:/Hospitality%20Ecosystem/docs/register-api-update.md)).
 
 ## 2. Create Activity
 
@@ -379,7 +321,7 @@ For the frontend create modules, this setup will map well to the backend:
 ## Most Important Gotchas
 
 - Never let the frontend submit another hotel's `hotel_id` for `activity`, `reservation`, `room`, or `guest`.
-- `POST /api/hotel` is super-admin-only and requires an explicit `owner_id` — it is not the regular hotel-onboarding flow (that's `POST /api/register`).
+- A hotel is created through `POST /api/register`, or by a super admin through `/api/superadmin`. `POST /api/hotel` returns `405`.
 - Do not expect the reservation create endpoint to generate `reservation_id`.
 - Do not rely on the backend to validate all product rules like room-status options or reservation date ordering.
 - Use form-level handling for wrapped business-rule errors like `"The selected hotel does not belong to you."`

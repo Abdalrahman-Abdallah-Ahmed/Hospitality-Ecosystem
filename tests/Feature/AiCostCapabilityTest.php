@@ -47,7 +47,7 @@ function capCostAccount($test, Hotel $hotel): array
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
     return collect($test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertOk()
         ->json('body.accounts'))
         ->firstWhere('hotel_group_id', $hotel->hotel_group_id);
@@ -107,7 +107,7 @@ it('keeps the cost report from hotel admins and employees', function () {
 
     foreach ([$hotel->owner, fdEmployee($hotel, Permission::cases())] as $user) {
         $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')
-            ->getJson('/api/admin/ai-cost')
+            ->getJson('/api/superadmin/ai-cost')
             ->assertForbidden();
     }
 });

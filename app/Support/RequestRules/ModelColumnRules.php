@@ -76,11 +76,13 @@ class ModelColumnRules
                 meta: $meta,
                 forUpdate: $forUpdate,
                 cast: $casts[$column] ?? null,
-                isUnique: $uniqueColumns[$column] ?? false,
+                isUnique: isset($uniqueColumns[$column]),
                 foreignKey: $foreignKeys[$column] ?? null,
                 table: $table,
                 ignore: $ignore,
-                deletedAtColumn: $deletedAtColumn,
+                // A unique index that covers soft-deleted rows has to be checked
+                // against them too, or the write fails on the database instead.
+                deletedAtColumn: ($uniqueColumns[$column]['partial'] ?? false) ? $deletedAtColumn : null,
             );
         }
 
@@ -218,18 +220,22 @@ class ModelColumnRules
      * like (hotel_id, lower(name)) would otherwise read as "hotel_id is
      * unique" and let a hotel have only one row. Postgres' own count of key
      * columns (expressions included) decides instead.
+     *
+     * `partial` marks an index with a WHERE clause, the "live rows only" kind.
+     *
+     * @return array<string, array{partial: bool}>
      */
     protected static function uniqueColumns(string $table): array
     {
         $singleKeyIndexes = collect(DB::select(
-            'select c.relname from pg_index i join pg_class c on c.oid = i.indexrelid '
+            'select c.relname, i.indpred is not null as partial from pg_index i join pg_class c on c.oid = i.indexrelid '
             .'where i.indrelid = ?::regclass and i.indnkeyatts = 1 and i.indexprs is null',
             [$table],
-        ))->pluck('relname')->all();
+        ))->pluck('partial', 'relname');
 
         return collect(Schema::getIndexes($table))
-            ->filter(fn ($index) => $index['unique'] && ! $index['primary'] && in_array($index['name'], $singleKeyIndexes, true))
-            ->mapWithKeys(fn ($index) => [$index['columns'][0] => true])
+            ->filter(fn ($index) => $index['unique'] && ! $index['primary'] && $singleKeyIndexes->has($index['name']))
+            ->mapWithKeys(fn ($index) => [$index['columns'][0] => ['partial' => (bool) $singleKeyIndexes[$index['name']]]])
             ->all();
     }
 

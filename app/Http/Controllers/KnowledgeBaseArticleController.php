@@ -21,7 +21,7 @@ class KnowledgeBaseArticleController extends Controller
 
         // These are hotel routes: always one hotel's articles. A super admin
         // names the hotel; the global knowledge base is managed from
-        // /api/admin/knowledge-base-articles.
+        // /api/superadmin/knowledge-base-articles.
         $query = KnowledgeBaseArticle::with(['hotel']);
 
         if ($request->user()->isSuperAdmin()) {
@@ -47,7 +47,7 @@ class KnowledgeBaseArticleController extends Controller
 
         // Every article created here belongs to a hotel: a scoped user's own,
         // or the one a super admin names. Global articles are created only
-        // from /api/admin/knowledge-base-articles.
+        // from /api/superadmin/knowledge-base-articles.
         if ($user->isSuperAdmin() && ! $request->filled('hotel_id')) {
             return apiResponse('A hotel_id is required.', 422);
         }
@@ -113,7 +113,7 @@ class KnowledgeBaseArticleController extends Controller
     }
 
     /**
-     * Global articles are only reachable from /api/admin/knowledge-base-articles.
+     * Global articles are only reachable from /api/superadmin/knowledge-base-articles.
      * Scoped users never see them here anyway (the tenant scope); this closes
      * the same door for an unrestricted super admin.
      */

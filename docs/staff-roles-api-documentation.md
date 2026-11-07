@@ -42,7 +42,7 @@ An employee with no staff role has:
 
 `rooms.update_housekeeping_status` and `rooms.set_out_of_order` are never defaults either: both change which rooms can be sold. A housekeeper who should report faults and complete inspections needs `tasks.update`; one who should also be able to take a room off sale when reporting needs `rooms.set_out_of_order`.
 
-None of the five `knowledge_documents.*` permissions is a default, not even `view` (2026-10-07): whatever is uploaded, corrected or switched on is what the guest AI tells guests, so a hotel grants them on purpose. Global knowledge (shared by every hotel) is not a permission at all: it is managed only by super admins under `/api/admin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md).
+None of the five `knowledge_documents.*` permissions is a default, not even `view` (2026-10-07): whatever is uploaded, corrected or switched on is what the guest AI tells guests, so a hotel grants them on purpose. Global knowledge (shared by every hotel) is not a permission at all: it is managed only by super admins under `/api/superadmin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md).
 
 None of the six voucher permissions (`reservations.voucher`, `reservations.voucher_email`, `voucher_templates.*`) is a default (2026-10-27): a voucher is a document proving a booking, with guest names and dates, and emailing it sends guest data outside the system.
 

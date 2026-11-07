@@ -264,6 +264,60 @@ HTTP `200 OK`
 - Logout removes the **current** access token only.
 - If the same user is logged in on multiple devices or sessions, other tokens remain active.
 
+## 4. Set a New Password
+
+A user sets a password from an emailed link, either a new user's first link or a reset link a super admin sent. There is no self-service "forgot password" request. See [superadmin-accounts-api-documentation.md](superadmin-accounts-api-documentation.md).
+
+The link opens the frontend at `{FRONTEND_URL}/reset-password?token=…&email=…`. The page asks for a new password and posts here. Public: API key only, no login.
+
+### Endpoint
+
+`POST /api/reset-password`
+
+### Request Body
+
+```json
+{
+  "token": "the-token-from-the-link",
+  "email": "nadia@example.com",
+  "password": "A-new-Password1!",
+  "password_confirmation": "A-new-Password1!"
+}
+```
+
+### Success Response
+
+HTTP `200`. The link stops working, and **all the user's login tokens are revoked and their WhatsApp device is unpaired**, so they log in again with the new password.
+
+```json
+{
+  "message": "Password set successfully.",
+  "code": 200,
+  "body": null
+}
+```
+
+### Link Lifetime
+
+| Link | Valid for |
+| --- | --- |
+| A new user's first link | 72 hours |
+| Any other, including a resend for a new user | 60 minutes |
+
+Sending a new link cancels any link still pending for that user.
+
+### Invalid Link
+
+HTTP `422` for an invalid or expired token or an unknown email, always with the same message so the response never reveals whether an email exists. Show a page telling the user to ask for a new link.
+
+```json
+{
+  "message": "This password reset link is invalid or has expired.",
+  "code": 422,
+  "body": null
+}
+```
+
 ## Token Lifetime
 
 Login and register tokens **expire 7 days after they are issued** (server setting `SANCTUM_TOKEN_EXPIRATION`, in minutes). An expired token gets HTTP `401` on any protected route, the same as a missing one. There is no refresh endpoint: on `401`, clear the stored token and send the user to the login page.
@@ -273,9 +327,10 @@ Login and register tokens **expire 7 days after they are issued** (server settin
 | Endpoint | Limit |
 | --- | --- |
 | `POST /api/login` | 5 attempts per minute per email + IP, and 20 per minute per IP across all emails. |
+| `POST /api/reset-password` | Same limiter as `POST /api/login`, sharing its counts: 5 attempts per minute per email + IP, and 20 per minute per IP. |
 | `POST /api/register` | 5 attempts per minute per IP. |
 | `POST /api/pair` | 10 requests per minute per IP. |
-| Every authenticated route (`auth:sanctum`), including `/api/admin/*` | 240 requests per minute per user. |
+| Every authenticated route (`auth:sanctum`), including `/api/superadmin/*` | 240 requests per minute per user. |
 
 Every attempt counts, successful or not. Over the limit the API returns HTTP `429` with a `Retry-After` header (seconds):
 

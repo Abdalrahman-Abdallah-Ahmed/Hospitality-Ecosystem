@@ -233,7 +233,7 @@ it('marks estimated costs and reports the estimated percentage', function () {
         ->and((float) $unpriced->cost_usd)->toBe(0.0);
 
     $response = $this->withHeaders(costHeaders())->actingAs($admin, 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertStatus(200);
 
     $account = collect($response->json('body.accounts'))
@@ -260,7 +260,7 @@ it('separates cost by trigger kind', function () {
     logCall($hotel, AiTriggerKind::SCHEDULED_JOB, ['inputTokens' => 1_090_000]);
 
     $response = $this->withHeaders(costHeaders())->actingAs($admin, 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertStatus(200);
 
     $account = collect($response->json('body.accounts'))
@@ -289,7 +289,7 @@ it('returns null margin when no contract value is recorded', function () {
     logCall($withoutContract, AiTriggerKind::GUEST_MESSAGE, ['inputTokens' => 109_000_000]);
 
     $response = $this->withHeaders(costHeaders())->actingAs($admin, 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertStatus(200);
 
     $accounts = collect($response->json('body.accounts'));
@@ -544,7 +544,7 @@ it('reports a cost of fractions of a cent instead of rounding it away', function
     }
 
     $response = $this->withHeaders(costHeaders())->actingAs($admin, 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertStatus(200);
 
     $account = collect($response->json('body.accounts'))
@@ -567,12 +567,12 @@ it('blocks a non super admin from the ai cost report', function () {
     // goods. A hotel admin reaching it would see both other customers' usage
     // and our margin on their own contract.
     $this->withHeaders(costHeaders())->actingAs($admin->fresh(), 'sanctum')
-        ->getJson('/api/admin/ai-cost')
+        ->getJson('/api/superadmin/ai-cost')
         ->assertStatus(403);
 });
 
 it('keeps the split-out admin routes behind the full middleware stack', function () {
-    // routes/admin.php is registered in bootstrap/app.php rather than nested
+    // routes/superadmin.php is registered in bootstrap/app.php rather than nested
     // inside routes/api.php. This asserts the move did not quietly drop a
     // layer — the failure mode of that refactor is a route that still answers
     // but no longer checks who is asking.
@@ -580,7 +580,7 @@ it('keeps the split-out admin routes behind the full middleware stack', function
     // covered by the 403 tests either side of this one.
     $expected = ['api', 'api.key', 'auth:sanctum', 'throttle:api', 'tenant', 'super_admin'];
 
-    foreach (['api/admin/usage', 'api/admin/ai-cost'] as $uri) {
+    foreach (['api/superadmin/usage', 'api/superadmin/ai-cost'] as $uri) {
         $route = collect(Route::getRoutes()->getRoutes())
             ->first(fn ($route) => $route->uri() === $uri);
 
