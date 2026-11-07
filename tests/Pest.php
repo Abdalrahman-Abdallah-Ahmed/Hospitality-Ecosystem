@@ -29,6 +29,7 @@ use App\Models\Guest;
 use App\Models\GuestMemory;
 use App\Models\GuestMemoryExtraction;
 use App\Models\Hotel;
+use App\Models\HotelGroup;
 use App\Models\HotelPolicy;
 use App\Models\HousekeepingDayRun;
 use App\Models\KnowledgeBaseArticle;
@@ -2111,4 +2112,74 @@ function vcGet($test, User $user, string $uri): TestResponse
 function vcPdfText(string $pdf): string
 {
     return (new Parser)->parseContent($pdf)->getText();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Suspension (spec 024)
+|--------------------------------------------------------------------------
+*/
+
+function spSuspend(Hotel|HotelGroup $record): void
+{
+    $record->newQueryWithoutScopes()->whereKey($record->getKey())->update(['suspended_at' => now(), 'suspended_reason' => 'Unpaid invoice']);
+    $record->refresh();
+}
+
+function spReactivate(Hotel|HotelGroup $record): void
+{
+    $record->newQueryWithoutScopes()->whereKey($record->getKey())->update(['suspended_at' => null, 'suspended_by' => null, 'suspended_reason' => null]);
+    $record->refresh();
+}
+
+/**
+ * An account with two hotels.
+ *
+ * @return array{0: HotelGroup, 1: Hotel, 2: Hotel}
+ */
+function spAccount(string $slug = 'acme'): array
+{
+    $account = HotelGroup::create(['name' => $slug, 'slug' => $slug]);
+    $hotels = array_map(fn (string $name) => Hotel::create([
+        'hotel_group_id' => $account->id,
+        'name' => "{$slug} {$name}",
+        'slug' => "{$slug}-{$name}",
+        'currency' => 'USD',
+    ]), ['a', 'b']);
+
+    return [$account, ...$hotels];
+}
+
+/**
+ * A user whose default hotel is $default, assigned to any $others as well.
+ *
+ * @param  list<Hotel>  $others
+ */
+function spUser(Hotel $default, array $others = [], UserRole $role = UserRole::ADMIN, array $attributes = []): User
+{
+    $user = User::factory()->role($role)->create(['hotel_id' => $default->id, ...$attributes]);
+
+    foreach ($others as $hotel) {
+        $user->hotels()->attach($hotel->id, ['id' => (string) Str::uuid(), 'role' => $role->value, 'is_primary' => false]);
+    }
+
+    return $user;
+}
+
+/**
+ * A request with a real token, as a client sends it: a fresh guard and user
+ * each time, so nothing set on the user by an earlier request can carry over.
+ *
+ * @param  array<string, mixed>  $payload
+ * @param  array<string, string>  $headers
+ */
+function spRequest($test, User $user, string $method, string $uri, array $payload = [], array $headers = []): TestResponse
+{
+    app('auth')->forgetGuards();
+
+    return $test->json($method, $uri, $payload, [
+        ...apiHeaders(),
+        'Authorization' => 'Bearer '.$user->createToken('api')->plainTextToken,
+        ...$headers,
+    ]);
 }

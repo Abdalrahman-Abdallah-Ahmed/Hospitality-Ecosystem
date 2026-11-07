@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\ApiKeyMiddleware;
 use App\Http\Middleware\EnsureFeatureEnabled;
+use App\Http\Middleware\EnsureNotSuspended;
 use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\ResolveTenant;
 use App\Http\Middleware\VerifyWhatsAppWebhookSignature;
@@ -43,6 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'api.key' => ApiKeyMiddleware::class,
             'tenant' => ResolveTenant::class,
+            'not_suspended' => EnsureNotSuspended::class,
             'super_admin' => EnsureSuperAdmin::class,
             'feature' => EnsureFeatureEnabled::class,
             'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
@@ -57,6 +59,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // A switched-off feature answers before any of its records is looked
         // up, so every id gets the same "not enabled" 404 (spec 019).
         $middleware->prependToPriorityList(SubstituteBindings::class, EnsureFeatureEnabled::class);
+
+        // A suspended hotel leaves the tenant scope before any record is looked
+        // up, so its record ids are not found (spec 024).
+        $middleware->prependToPriorityList(SubstituteBindings::class, EnsureNotSuspended::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

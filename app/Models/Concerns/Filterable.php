@@ -45,9 +45,17 @@ trait Filterable
             return $query;
         }
 
-        $columns = static::searchableColumns($query);
+        return $this->scopeSearchColumns($query, $term, static::searchableColumns($query));
+    }
 
-        if ($columns === []) {
+    /**
+     * The same search, across the columns given.
+     *
+     * @param  array<int, string>  $columns
+     */
+    public function scopeSearchColumns(Builder $query, ?string $term, array $columns): Builder
+    {
+        if ($term === null || $term === '' || $columns === []) {
             return $query;
         }
 

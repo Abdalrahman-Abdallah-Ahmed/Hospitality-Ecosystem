@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
+use App\Models\StaffRole;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -35,13 +37,79 @@ it('rejects an unauthenticated index request', function () {
         ->assertStatus(401);
 });
 
-it('rejects a non-super-admin from listing hotels', function () {
+it('lists only the hotels an admin can reach', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
-    hotelFor($admin);
+    $own = hotelFor($admin);
+    $admin->update(['hotel_id' => $own->id]);
+    hotelFor(User::factory()->role(UserRole::ADMIN)->create());
+
+    $response = $this->withHeaders(hotelApiHeaders())->actingAs($admin, 'sanctum')
+        ->getJson('/api/hotel')
+        ->assertOk();
+
+    expect(collect($response->json('body.data'))->pluck('id')->all())->toBe([$own->id])
+        ->and($response->json('body.data.0'))->toHaveKey('branding');
+});
+
+it('lists an empty page for an admin with no hotels', function () {
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    hotelFor(User::factory()->role(UserRole::ADMIN)->create());
 
     $this->withHeaders(hotelApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/hotel')
-        ->assertStatus(403);
+        ->assertOk()
+        ->assertJsonCount(0, 'body.data');
+});
+
+it('leaves a suspended hotel out of the list of a user who has others', function () {
+    [, $a, $b] = spAccount();
+    $admin = spUser($a, [$b]);
+    spSuspend($a);
+
+    $response = spRequest($this, $admin, 'GET', '/api/hotel')->assertOk();
+
+    expect(collect($response->json('body.data'))->pluck('id')->all())->toBe([$b->id]);
+});
+
+it('gives an employee with hotels.view a short record of their own hotels', function () {
+    [, $a, $b] = spAccount();
+    [, $other] = spAccount('other');
+    $role = StaffRole::create(['hotel_id' => $a->id, 'name' => 'Desk', 'permissions' => [Permission::HOTELS_VIEW->value]]);
+    $employee = spUser($a, [$b], UserRole::EMPLOYEE, ['staff_role_id' => $role->id]);
+
+    $response = spRequest($this, $employee, 'GET', '/api/hotel')->assertOk();
+    $rows = collect($response->json('body.data'));
+
+    expect($rows->pluck('id')->sort()->values()->all())->toBe(collect([$a->id, $b->id])->sort()->values()->all())
+        ->and($rows->pluck('id')->all())->not->toContain($other->id)
+        ->and(array_keys($rows->first()))->toBe(['id', 'name', 'slug', 'timezone', 'currency', 'city']);
+});
+
+it('lets an employee search, filter and sort only on the short record', function () {
+    [, $a] = spAccount();
+    $a->update(['email' => 'secret@example.com', 'city' => 'Cairo']);
+    $role = StaffRole::create(['hotel_id' => $a->id, 'name' => 'Desk', 'permissions' => [Permission::HOTELS_VIEW->value]]);
+    $employee = spUser($a, role: UserRole::EMPLOYEE, attributes: ['staff_role_id' => $role->id]);
+
+    spRequest($this, $employee, 'GET', '/api/hotel?filter[email]=secret@example.com')
+        ->assertUnprocessable()->assertJsonValidationErrors('filter.email');
+    spRequest($this, $employee, 'GET', '/api/hotel?sort=email')
+        ->assertUnprocessable()->assertJsonValidationErrors('sort');
+    spRequest($this, $employee, 'GET', '/api/hotel?search=secret')
+        ->assertOk()->assertJsonCount(0, 'body.data');
+
+    spRequest($this, $employee, 'GET', '/api/hotel?search=Cairo')->assertOk()->assertJsonCount(1, 'body.data');
+    spRequest($this, $employee, 'GET', '/api/hotel?filter[city]=Cairo&sort=-name')->assertOk()->assertJsonCount(1, 'body.data');
+});
+
+it('opens only the list with hotels.view', function () {
+    [, $a] = spAccount();
+    $role = StaffRole::create(['hotel_id' => $a->id, 'name' => 'Desk', 'permissions' => [Permission::HOTELS_VIEW->value]]);
+    $employee = spUser($a, role: UserRole::EMPLOYEE, attributes: ['staff_role_id' => $role->id]);
+    $a->update(['owner_id' => $employee->id]);
+
+    spRequest($this, $employee, 'GET', "/api/hotel/{$a->id}")->assertForbidden();
+    spRequest($this, $employee, 'PUT', "/api/hotel/{$a->id}", ['city' => 'Cairo'])->assertForbidden();
 });
 
 it('lets a super admin list every hotel regardless of owner', function () {

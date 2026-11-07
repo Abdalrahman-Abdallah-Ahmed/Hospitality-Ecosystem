@@ -51,6 +51,7 @@ class EvaluateProactiveTriggersJob implements ShouldQueue
     {
         $hotels = Hotel::query()
             ->where('is_active', true)
+            ->notSuspended()
             ->when($this->hotelId, fn ($query) => $query->whereKey($this->hotelId))
             ->get()
             ->filter(fn (Hotel $hotel) => $hotel->proactiveSettings()->enabled);

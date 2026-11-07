@@ -61,6 +61,7 @@ class Hotel extends Model
         'inspection_required_since' => 'datetime',
         'proactive_settings' => 'array',
         'guest_memories_enabled' => 'boolean',
+        'suspended_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -299,6 +300,69 @@ class Hotel extends Model
     public function staffRoles(): HasMany
     {
         return $this->hasMany(StaffRole::class);
+    }
+
+    /**
+     * A hotel counts as suspended when it or its account is. This is the one
+     * rule every suspension check uses. The suspended_* columns are not
+     * fillable: only App\Services\Superadmin\Suspension writes them.
+     */
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null || $this->accountIsSuspended();
+    }
+
+    /**
+     * Reads a soft-deleted account too, so a suspended account counts the same
+     * on every path. Uses the value withSuspension() selected, when it did.
+     */
+    public function accountIsSuspended(): bool
+    {
+        if (array_key_exists('account_suspended_at', $this->attributes)) {
+            return $this->attributes['account_suspended_at'] !== null;
+        }
+
+        return HotelGroup::withTrashed()
+            ->whereKey($this->hotel_group_id)
+            ->whereNotNull('suspended_at')
+            ->exists();
+    }
+
+    /**
+     * Adds account_suspended_at, so a list can answer isSuspended() without a
+     * query per row. Call any select() before this: a later one would drop it,
+     * and hide the account's suspension.
+     */
+    public function scopeWithSuspension(Builder $query): Builder
+    {
+        if ($query->getQuery()->columns === null) {
+            $query->select('hotels.*');
+        }
+
+        return $query->selectSub(
+            HotelGroup::withTrashed()
+                ->select('hotel_groups.suspended_at')
+                ->whereColumn('hotel_groups.id', 'hotels.hotel_group_id'),
+            'account_suspended_at',
+        );
+    }
+
+    /**
+     * No join: both tables have id and is_active, so one would make those
+     * ambiguous in every caller.
+     */
+    public function scopeNotSuspended(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('hotels.suspended_at')
+            ->whereNotIn('hotels.hotel_group_id', HotelGroup::withTrashed()->whereNotNull('suspended_at')->select('id'));
+    }
+
+    public function scopeSuspended(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $suspended) => $suspended
+            ->whereNotNull('hotels.suspended_at')
+            ->orWhereIn('hotels.hotel_group_id', HotelGroup::withTrashed()->whereNotNull('suspended_at')->select('id')));
     }
 
     public function scopeActive($query)

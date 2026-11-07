@@ -31,8 +31,12 @@ class GenericQuery
      */
     public static function query(Builder $query, GenericIndexRequest $request): Builder
     {
-        $query->filter((array) $request->input('filter', []))
-            ->search($request->string('search')->toString() ?: null);
+        $term = $request->string('search')->toString() ?: null;
+        $columns = $request->searchColumns();
+
+        $query->filter((array) $request->input('filter', []));
+
+        $columns === null ? $query->search($term) : $query->searchColumns($term, $columns);
 
         if ($sort = $request->string('sort')->toString()) {
             $query->orderBy(ltrim($sort, '-'), str_starts_with($sort, '-') ? 'desc' : 'asc');

@@ -25,6 +25,9 @@ class AccountResource extends JsonResource
             'default_timezone' => $this->default_timezone,
             'hotels_count' => (int) $this->hotels_count,
             'users_count' => (int) $this->users_count,
+            'suspended_at' => $this->suspended_at,
+            'suspended_by' => $this->suspended_by,
+            'suspended_reason' => $this->suspended_reason,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

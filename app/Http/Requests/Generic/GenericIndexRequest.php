@@ -76,6 +76,17 @@ class GenericIndexRequest extends FormRequest
     }
 
     /**
+     * The columns `search` reads, or null for the model's own list. A subclass
+     * narrows it when some columns must not be searched by this caller.
+     *
+     * @return array<int, string>|null
+     */
+    public function searchColumns(): ?array
+    {
+        return null;
+    }
+
+    /**
      * @return array<int, string>
      */
     public function availableColumns(): array

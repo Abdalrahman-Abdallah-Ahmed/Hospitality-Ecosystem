@@ -113,6 +113,15 @@ it('gives an employee without a staff role exactly the default permissions', fun
     }
 });
 
+it('does not give an employee with no role the hotel list', function () {
+    $hotel = hotelForPermissions();
+
+    $this->withHeaders(permissionApiHeaders())->actingAs(employeeWithPermissions($hotel), 'sanctum')
+        ->getJson('/api/hotel')->assertForbidden();
+
+    expect(Permission::employeeDefaults())->not->toContain(Permission::HOTELS_VIEW);
+});
+
 it('reports every permission for an admin', function () {
     $hotel = hotelForPermissions();
     $admin = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
@@ -143,6 +152,7 @@ it('lets an employee read a resource only when their role grants it', function (
     'conversations' => ['/api/conversations', Permission::CONVERSATIONS_VIEW],
     'booking cancellation requests' => ['/api/booking/cancellation-requests', Permission::BOOKINGS_VIEW],
     'dashboard' => ['/api/dashboard', Permission::DASHBOARD_VIEW],
+    'hotels' => ['/api/hotel', Permission::HOTELS_VIEW],
     'guests' => ['/api/guest', Permission::GUESTS_VIEW],
     'hotel policies' => ['/api/hotel-policy', Permission::HOTEL_POLICIES_VIEW],
     'knowledge base articles' => ['/api/knowledge-base-articles', Permission::KNOWLEDGE_BASE_ARTICLES_VIEW],

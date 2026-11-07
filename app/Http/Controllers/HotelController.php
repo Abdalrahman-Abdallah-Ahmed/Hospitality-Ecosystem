@@ -2,16 +2,21 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\Generic\GenericIndexRequest;
 use App\Http\Requests\Generic\GenericUpdateRequest;
+use App\Http\Requests\HotelListRequest;
 use App\Http\Resources\HotelResource;
+use App\Http\Resources\HotelSummaryResource;
 use App\Models\Hotel;
 use App\Models\TaskCategory;
 use App\Models\Team;
 use App\Support\Audit\EventLogger;
 use App\Support\Proactive\ProactiveSettings;
 use App\Support\RequestRules\GenericQuery;
+use App\Support\Suspension\ImpersonatedRead;
+use App\Support\Suspension\SuspendedResponse;
+use App\Support\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class HotelController extends Controller
@@ -26,23 +31,32 @@ class HotelController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(GenericIndexRequest $request)
+    public function index(HotelListRequest $request)
     {
         $this->authorize('viewAny', Hotel::class);
-        $hotels = GenericQuery::apply(
-            Hotel::query(),
-            $request
-        );
 
-        return apiResponse('Hotels fetched successfully.', 200, HotelResource::collection($hotels));
+        // Hotel isn't scoped by BelongsToHotel, and EnsureNotSuspended has
+        // already taken suspended hotels out of this list.
+        $hotelIds = TenantContext::hotelIds();
+        $query = Hotel::query()->when($hotelIds !== null, fn ($query) => $query->whereIn('hotels.id', $hotelIds));
+
+        $hotels = GenericQuery::apply($query, $request);
+
+        return apiResponse('Hotels fetched successfully.', 200, $request->showsFullRecords()
+            ? HotelResource::collection($hotels)
+            : HotelSummaryResource::collection($hotels));
     }
 
     /**
      * Display the specified resource.
      */
-    public function show(Hotel $hotel)
+    public function show(Request $request, Hotel $hotel)
     {
         $this->authorize('view', $hotel);
+
+        if ($this->refusedAsSuspended($hotel) && ! ImpersonatedRead::allows($request)) {
+            return SuspendedResponse::forHotel($hotel);
+        }
 
         return apiResponse('Hotel fetched successfully.', 200, HotelResource::make($hotel));
     }
@@ -53,6 +67,10 @@ class HotelController extends Controller
     public function update(GenericUpdateRequest $request, Hotel $hotel)
     {
         $this->authorize('update', $hotel);
+
+        if ($this->refusedAsSuspended($hotel)) {
+            return SuspendedResponse::forHotel($hotel);
+        }
 
         $validated = $this->withoutStrandedCategories(
             $hotel,
@@ -92,6 +110,16 @@ class HotelController extends Controller
         }
 
         return apiResponse('Hotel updated successfully.', 200, HotelResource::make($hotel));
+    }
+
+    /**
+     * Asked only after authorization, so a caller who can't reach a hotel gets
+     * the normal answer and never learns it is suspended. A super admin's null
+     * scope is never refused.
+     */
+    private function refusedAsSuspended(Hotel $hotel): bool
+    {
+        return TenantContext::hotelIds() !== null && $hotel->isSuspended();
     }
 
     /**

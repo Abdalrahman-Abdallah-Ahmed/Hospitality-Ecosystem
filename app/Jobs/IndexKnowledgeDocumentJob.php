@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\ActorKind;
 use App\Enums\AiAgentName;
 use App\Enums\AiTriggerKind;
@@ -11,6 +12,7 @@ use App\Enums\KnowledgeDocumentStatus;
 use App\Enums\MeterFeature;
 use App\Enums\QueueLane;
 use App\Exceptions\AiSpendCeilingExceededException;
+use App\Jobs\Middleware\SkipIfHotelSuspended;
 use App\Models\KnowledgeDocument;
 use App\Models\KnowledgeIndexRebuild;
 use App\Services\Knowledge\KnowledgeDocumentService;
@@ -49,7 +51,7 @@ use Throwable;
  *  - permanent failures (an encrypted file, too many scanned pages…) are
  *    recorded and not retried; transient ones are retried three times.
  */
-class IndexKnowledgeDocumentJob implements ShouldQueue
+class IndexKnowledgeDocumentJob implements HasHotel, ShouldQueue
 {
     use Queueable;
 
@@ -95,7 +97,19 @@ class IndexKnowledgeDocumentJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping($this->documentId))->releaseAfter(30)->expireAfter(600)];
+        return [
+            new SkipIfHotelSuspended,
+            (new WithoutOverlapping($this->documentId))->releaseAfter(30)->expireAfter(600),
+        ];
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     * A global document has no hotel, so it runs.
+     */
+    public function hotelId(): ?string
+    {
+        return KnowledgeDocument::withoutGlobalScope('hotel')->whereKey($this->documentId)->value('hotel_id');
     }
 
     public function handle(ExtractorRegistry $registry, VisionExtractor $vision, MeteringService $metering): void

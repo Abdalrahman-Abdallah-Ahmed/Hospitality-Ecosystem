@@ -2,11 +2,15 @@
 
 namespace App\Policies;
 
+use App\Enums\Permission;
 use App\Models\Hotel;
 use App\Models\User;
+use App\Policies\Concerns\ChecksPermissions;
 
 class HotelPolicy
 {
+    use ChecksPermissions;
+
     /**
      * Super admins bypass every ability below.
      */
@@ -16,11 +20,13 @@ class HotelPolicy
     }
 
     /**
-     * Determine whether the user can view any models.
+     * Whether the user can list the hotels they work in. The list itself is
+     * limited to those, in HotelController. Every other ability stays with the
+     * hotel's owner: hotels.view opens only this.
      */
     public function viewAny(User $user): bool
     {
-        return false;
+        return $this->allows($user, Permission::HOTELS_VIEW);
     }
 
     /**

@@ -46,13 +46,16 @@ it('lists all hotels for a super admin', function () {
     expect($response->json('body.data'))->toHaveCount(2);
 });
 
-it('rejects a non-super-admin from listing hotels', function () {
+it('limits an admin\'s hotel list to the hotels they can reach', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    Hotel::create(['owner_id' => $owner->id, 'name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
+    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
+    Hotel::create(['owner_id' => $owner->id, 'name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
 
-    $response = asUser($owner)->getJson('/api/hotel');
+    $response = asUser($owner->fresh())->getJson('/api/hotel');
 
-    $response->assertStatus(403);
+    $response->assertOk();
+    expect(collect($response->json('body.data'))->pluck('id')->all())->toBe([$hotel->id]);
 });
 
 it('updates a hotel partially via the generic update request', function () {

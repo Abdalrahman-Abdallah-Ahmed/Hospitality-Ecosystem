@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\ActorKind;
 use App\Enums\MeterFeature;
 use App\Enums\PitchGate;
@@ -10,6 +11,7 @@ use App\Enums\PitchResult;
 use App\Enums\ProactiveMessageStatus;
 use App\Enums\ProactiveSkipReason;
 use App\Enums\QueueLane;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Models\Guest;
 use App\Models\Hotel;
 use App\Models\PitchDecision;
@@ -47,9 +49,9 @@ use Throwable;
  *   opening), and counts as delivered only once WhatsApp accepted it.
  * - Failures are recorded, never thrown.
  */
-class SendProactiveMessageJob implements ShouldQueue
+class SendProactiveMessageJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     public int $tries = 3;
 
@@ -59,6 +61,14 @@ class SendProactiveMessageJob implements ShouldQueue
     {
         // A guest is waiting on the other end (spec 017 FR-020).
         $this->onQueue(QueueLane::REALTIME->value);
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return ProactiveMessage::withoutGlobalScope('hotel')->whereKey($this->messageId)->value('hotel_id');
     }
 
     public function handle(

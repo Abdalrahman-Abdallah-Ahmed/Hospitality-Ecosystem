@@ -67,10 +67,13 @@ Route::middleware('api.key')->group(function () {
     Route::post('/reset-password', [PasswordResetController::class, 'store'])->middleware('throttle:login');
     Route::post('/pair', [WhatsAppController::class, 'pair'])->middleware('throttle:pair');
 
-    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant'])->group(function () {
-        Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout']);
+    // not_suspended is on the whole group, so a new route can't be left out.
+    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant', 'not_suspended'])->group(function () {
+        // A suspended user can still end their session.
+        Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout'])->withoutMiddleware('not_suspended');
+        // loadMissing keeps the current hotel EnsureNotSuspended may have set.
         Route::get('/user', function (Request $request) {
-            return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->load(['hotel', 'team', 'staffRole'])));
+            return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->loadMissing(['hotel', 'team', 'staffRole'])));
         });
         Route::post('/connect', [WhatsAppController::class, 'connect']);
         Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);

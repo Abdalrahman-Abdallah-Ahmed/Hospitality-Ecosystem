@@ -37,6 +37,7 @@ class HotelGroup extends Model
         'settings' => 'array',
         'is_active' => 'boolean',
         'contract_value_monthly' => 'decimal:2',
+        'suspended_at' => 'datetime',
     ];
 
     /**
@@ -46,6 +47,20 @@ class HotelGroup extends Model
      * @var list<string>
      */
     public array $searchable = ['name', 'slug'];
+
+    /**
+     * Whether this account is suspended. The suspended_* columns are not
+     * fillable: only App\Services\Superadmin\Suspension writes them.
+     */
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null;
+    }
+
+    public function scopeSuspended(Builder $query): Builder
+    {
+        return $query->whereNotNull('hotel_groups.suspended_at');
+    }
 
     /**
      * Adds users_count: every user who is not a super admin and is attached

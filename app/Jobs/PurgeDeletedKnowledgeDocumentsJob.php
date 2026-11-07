@@ -40,6 +40,11 @@ class PurgeDeletedKnowledgeDocumentsJob implements ShouldQueue
             KnowledgeDocument::withoutGlobalScope('hotel')
                 ->onlyTrashed()
                 ->where('deleted_at', '<', $cutoff)
+                // A suspended hotel's data is kept. Global documents and those of
+                // soft-deleted hotels still go (spec 024).
+                ->where(fn ($query) => $query
+                    ->whereNull('hotel_id')
+                    ->orWhereIn('hotel_id', Hotel::withTrashed()->notSuspended()->select('id')))
                 ->chunkById(100, function ($documents) {
                     foreach ($documents as $document) {
                         $this->purge($document);

@@ -36,7 +36,7 @@ class ExpireRecommendationsJob implements ShouldQueue
 
     public function handle(): void
     {
-        foreach (Hotel::query()->where('is_active', true)->get() as $hotel) {
+        foreach (Hotel::query()->where('is_active', true)->notSuspended()->get() as $hotel) {
             TenantContext::runForHotel($hotel->id, fn () => $this->expireFor($hotel));
         }
     }

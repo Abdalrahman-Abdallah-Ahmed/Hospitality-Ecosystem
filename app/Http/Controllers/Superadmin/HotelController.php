@@ -3,13 +3,15 @@
 namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Generic\GenericIndexRequest;
+use App\Http\Requests\Superadmin\HotelIndexRequest;
 use App\Http\Requests\Superadmin\StoreHotelRequest;
+use App\Http\Requests\Superadmin\SuspendRequest;
 use App\Http\Requests\Superadmin\UpdateHotelRequest;
-use App\Http\Resources\HotelResource;
+use App\Http\Resources\Superadmin\HotelResource;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Services\Superadmin\HotelAdministration;
+use App\Services\Superadmin\Suspension;
 use App\Support\RequestRules\GenericQuery;
 use Illuminate\Http\JsonResponse;
 
@@ -20,15 +22,22 @@ use Illuminate\Http\JsonResponse;
  */
 class HotelController extends Controller
 {
-    public function __construct(private readonly HotelAdministration $hotels) {}
+    public function __construct(
+        private readonly HotelAdministration $hotels,
+        private readonly Suspension $suspension,
+    ) {}
 
-    public function index(GenericIndexRequest $request): JsonResponse
+    public function index(HotelIndexRequest $request): JsonResponse
     {
-        return apiResponse(
-            'Hotels fetched successfully.',
-            200,
-            HotelResource::collection(GenericQuery::apply(Hotel::query(), $request)),
-        );
+        $query = Hotel::query()->withSuspension();
+
+        $suspended = $request->suspendedFilter();
+
+        if ($suspended !== null) {
+            $suspended ? $query->suspended() : $query->notSuspended();
+        }
+
+        return apiResponse('Hotels fetched successfully.', 200, HotelResource::collection(GenericQuery::apply($query, $request)));
     }
 
     public function store(StoreHotelRequest $request, HotelGroup $account): JsonResponse
@@ -55,5 +64,19 @@ class HotelController extends Controller
         $this->hotels->delete($hotel);
 
         return apiResponse('Hotel deleted successfully.');
+    }
+
+    public function suspend(SuspendRequest $request, Hotel $hotel): JsonResponse
+    {
+        $hotel = $this->suspension->suspendHotel($hotel, $request->validated('reason'), $request->user());
+
+        return apiResponse('Hotel suspended successfully.', 200, HotelResource::make($hotel));
+    }
+
+    public function reactivate(Hotel $hotel): JsonResponse
+    {
+        $hotel = $this->suspension->reactivateHotel($hotel);
+
+        return apiResponse('Hotel reactivated successfully.', 200, HotelResource::make($hotel));
     }
 }

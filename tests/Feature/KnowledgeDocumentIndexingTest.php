@@ -63,7 +63,7 @@ it('retries transient failures three times, holds back without spending a retry,
         ->and($job->timeout)->toBe(300)
         ->and($job->failOnTimeout)->toBeTrue()
         ->and($job->retryUntil()->isFuture())->toBeTrue()
-        ->and($job->middleware()[0])->toBeInstanceOf(WithoutOverlapping::class);
+        ->and($job->middleware()[1])->toBeInstanceOf(WithoutOverlapping::class);
 });
 
 it('keeps the previous passages when embedding a re-index fails, then marks the document once retries run out', function () {

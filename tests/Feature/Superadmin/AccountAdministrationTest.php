@@ -33,8 +33,7 @@ function accountNamed(string $slug, array $attributes = []): HotelGroup
 
 const ACCOUNT_FIELDS = [
     'id', 'name', 'slug', 'country_code', 'default_currency', 'default_timezone',
-    'hotels_count', 'users_count', 'created_at', 'updated_at',
-];
+    'hotels_count', 'users_count', 'created_at', 'updated_at', 'suspended_at', 'suspended_by', 'suspended_reason'];
 
 it('creates an account with only its public fields in the response', function () {
     $body = accountAdmin($this)->postJson('/api/superadmin/accounts', [

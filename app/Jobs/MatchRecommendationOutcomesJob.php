@@ -50,8 +50,8 @@ class MatchRecommendationOutcomesJob implements ShouldQueue
     public function handle(): void
     {
         $hotels = $this->hotelId
-            ? Hotel::whereKey($this->hotelId)->get()
-            : Hotel::query()->get();
+            ? Hotel::whereKey($this->hotelId)->notSuspended()->get()
+            : Hotel::query()->notSuspended()->get();
 
         foreach ($hotels as $hotel) {
             // A queue worker has no HTTP request, so tenancy is set explicitly.

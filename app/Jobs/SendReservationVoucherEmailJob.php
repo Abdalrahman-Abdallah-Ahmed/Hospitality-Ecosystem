@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Contracts\HasHotel;
 use App\Enums\QueueLane;
 use App\Enums\VoucherEmailStatus;
+use App\Jobs\Concerns\SkipsWhenHotelSuspended;
 use App\Mail\ReservationVoucherMail;
 use App\Models\Reservation;
 use App\Models\VoucherEmailRequest;
@@ -38,9 +40,9 @@ use Throwable;
  *   the mail reached the mailer ends `failed` (`uncertain_delivery`) and
  *   staff resend with a new key.
  */
-class SendReservationVoucherEmailJob implements ShouldQueue
+class SendReservationVoucherEmailJob implements HasHotel, ShouldQueue
 {
-    use Queueable;
+    use Queueable, SkipsWhenHotelSuspended;
 
     /** Rendering plus one provider call fits well inside this, under the queue's retry_after (360 s). */
     public int $timeout = 120;
@@ -59,6 +61,14 @@ class SendReservationVoucherEmailJob implements ShouldQueue
     public function backoff(): array
     {
         return [10, 60];
+    }
+
+    /**
+     * Checked when the job starts: a suspended hotel's job doesn't run (spec 024).
+     */
+    public function hotelId(): ?string
+    {
+        return VoucherEmailRequest::withoutGlobalScope('hotel')->whereKey($this->emailRequestId)->value('hotel_id');
     }
 
     public function handle(
