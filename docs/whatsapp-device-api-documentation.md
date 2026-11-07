@@ -362,6 +362,19 @@ curl -X POST http://your-domain.com/api/pair \
   }'
 ```
 
+## Suspended Hotels
+
+When a hotel or its account is [suspended](superadmin-accounts-api-documentation.md#suspending-a-customer), no AI runs for its messages. In order:
+
+1. An unpaired admin gets the usual not-paired reply.
+2. A guest's STOP, or other opt-out or opt-in keyword, is applied and confirmed as usual.
+3. The first other message in 24 hours, per hotel and phone number, gets a fixed reply: "Sorry, I can't answer messages right now. Please contact the hotel directly for assistance." A guest whose language is Arabic gets it in Arabic. Admins get English.
+4. Later messages are stored with status `throttled`, and get no reply.
+
+The WhatsApp advisor can't choose a hotel, so an admin follows their default hotel. If it's suspended, they get the fixed reply even with other active hotels, and use the dashboard for those.
+
+Pairing isn't gated: a code issued before the suspension still pairs a device, which then only gets the fixed reply.
+
 ## Summary for Claude
 
 - Call `POST /api/connect` as an authenticated user to generate a WhatsApp pairing token — it expires in 15 minutes and works once

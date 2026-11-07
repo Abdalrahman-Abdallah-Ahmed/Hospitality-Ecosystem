@@ -45,13 +45,14 @@ Every action is gated by `App\Policies\HotelPolicy`. The policy has a `before()`
 
 | Action | Rule (non-super-admin) | Super admin |
 | --- | --- | --- |
-| `index` (list) | Always denied. | Allowed — sees **every** hotel, not scoped to any owner. |
+| `index` (list) | Allowed for an `admin`, and for an `employee` whose staff role grants `hotels.view`. Only the hotels they can reach and that aren't suspended. | Allowed — sees **every** hotel, not scoped to any owner. |
 | `show` | The user must be `admin`, **and** the hotel's `owner_id` must equal the user's own id. | Allowed for any hotel. |
 | `update` | Same as `show`: must be the owning `admin`. | Allowed for any hotel, regardless of owner. |
 
 Practical implications for the UI:
 
-- **`index` is a super-admin-only screen.** A regular admin should never see a "list all hotels" or "create a hotel" screen — they manage their own hotel via `show`/`update` on the hotel they already own (fetched from their own user/hotel context, e.g. `GET /api/user`), and got that hotel via `/api/register` in the first place.
+- **`index` lists the hotels a user works in**, so a multi-hotel user can choose where to work with `X-Hotel-Id`. An admin gets the full hotel object. An employee gets a short record, and it doesn't open `show` or `update` for them.
+- **A suspended hotel is refused.** It leaves the list, and `show`/`update` return the [suspended `403`](auth-api-documentation.md#suspended-account-or-hotel) to whoever would otherwise pass. Anyone else gets the normal `403`, with no `reason`, and is never told it is suspended. A super admin isn't affected.
 - `show`/`update` for a regular admin: a `403` on their own hotel id should not normally happen; a `403` on someone else's hotel id means "not yours" — treat it like a 404.
 - A super admin's UI can freely browse and edit any hotel; there is no ownership restriction for that role anywhere in this resource.
 - **A soft-deleted hotel can't be reached by its staff.** It drops out of what a user can reach, by default or with `X-Hotel-Id`. Links and tokens are kept, so access returns if the hotel is restored.
@@ -164,7 +165,7 @@ Field notes for the UI:
 
 ## 1. List Hotels
 
-**Super admin only** — see [Who Can Call These Endpoints](#who-can-call-these-endpoints).
+Needs `hotels.view`: admins hold it automatically, and employees only through a staff role. See [Who Can Call These Endpoints](#who-can-call-these-endpoints).
 
 ### Endpoint
 
@@ -184,11 +185,17 @@ All optional:
 
 `filter`/`sort` are validated against the hotels table's real columns; an unknown key returns a `422`.
 
+For an employee, `filter` and `sort` accept only `id`, `name`, `slug`, `timezone`, `currency` and `city`, and `search` reads only `name`, `slug` and `city`.
+
 ### Success Response
 
-HTTP `200 OK`. `body` is a Laravel paginator object; `body.data` contains **every** hotel in the system (not scoped to any owner), each shaped as the [hotel object](#the-hotel-object).
+HTTP `200 OK`. `body` is a Laravel paginator object; `body.data` contains the hotels the caller can reach and that aren't suspended (every hotel for a super admin), each shaped as the [hotel object](#the-hotel-object). An employee gets a short record instead:
 
-### Error: Non-Super-Admin
+```json
+{ "id": "…", "name": "Grand Harbor Hotel", "slug": "grand-harbor", "timezone": "UTC", "currency": "USD", "city": "Cairo" }
+```
+
+### Error: Without `hotels.view`
 
 HTTP `403`, Laravel's default authorization-failure shape (not the custom wrapper):
 

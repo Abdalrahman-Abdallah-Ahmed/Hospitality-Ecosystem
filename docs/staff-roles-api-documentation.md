@@ -19,7 +19,7 @@ Rules that apply whatever a role grants:
 - **Admin-only areas.** These are not in the permission list and cannot be granted:
   - User management (`/api/users`)
   - Staff roles and `/api/permissions`
-  - Hotel settings (`/api/hotel`)
+  - Hotel settings (`/api/hotel`). The exception is `hotels.view`, which lists the employee's own hotels as a short record with no settings
   - AI advisor chat (`/api/ai-advisor/chat`)
   - Account usage (`/api/usage`)
 - **Hard limits.** Nobody can delete a booking or edit or delete a transaction; they are cancelled or reversed instead. A live booking's date, time, party and notes can be corrected (`bookings.update`). Only a super admin can create or delete a hotel.
@@ -82,6 +82,7 @@ None of the four export permissions (`reservations.export`, `activities.export`,
 | `guest_memories.view` | `GET /api/guest/{id}/memories` (*added 2026-10-10*; never an employee default) |
 | `guest_memories.delete` | `DELETE /api/guest/{id}/memories/{memory}` (*added 2026-10-10*; never an employee default) |
 | `history.view` | `GET /api/history/{type}/{id}`, `GET /api/ai-activity` (*AI activity added 2026-10-10*) |
+| `hotels.view` | `GET /api/hotel`: the employee's own non-suspended hotels, as a short record. Not an employee default, and doesn't open `GET` or `PUT /api/hotel/{id}` |
 | `hotel_policies.view` | `GET /api/hotel-policy` |
 | `hotel_policies.create` | `POST /api/hotel-policy` |
 | `hotel_policies.update` | `PUT /api/hotel-policy/{id}` |
@@ -356,7 +357,7 @@ PUT /api/users/{id}
 
 Decide what to show from that array (e.g. `permissions.includes('rooms.create')`) instead of checking `role === 'admin'`. The server still enforces every rule, so a hidden button is a convenience, not the protection.
 
-`permissions` never includes the admin-only areas. Keep using `role` for the users, staff roles, hotel settings, AI advisor and usage screens.
+`permissions` never includes the admin-only areas. Keep using `role` for the users, staff roles, hotel settings, AI advisor and usage screens. `hotels.view` only covers the list of hotels.
 
 ## Audit Trail
 
