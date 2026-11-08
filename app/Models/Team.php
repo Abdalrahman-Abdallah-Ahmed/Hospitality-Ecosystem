@@ -4,12 +4,13 @@ namespace App\Models;
 
 use App\Concerns\BelongsToHotel;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsImpersonatedWrites;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
 class Team extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids;
+    use BelongsToHotel, Filterable, HasUuids, RecordsImpersonatedWrites;
 
     public $fillable = [
         'hotel_id',
@@ -17,6 +18,14 @@ class Team extends Model
         'description',
         'is_active',
     ];
+
+    /**
+     * @return list<string>
+     */
+    protected function hotelSettingsClearedOnDelete(): array
+    {
+        return ['housekeeping_team_id', 'maintenance_team_id'];
+    }
 
     public function members()
     {

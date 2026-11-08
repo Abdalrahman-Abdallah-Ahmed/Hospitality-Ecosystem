@@ -2,13 +2,13 @@
 
 namespace App\Support\Suspension;
 
+use App\Support\Impersonation\CurrentImpersonation;
 use Illuminate\Http\Request;
-use Laravel\Sanctum\PersonalAccessToken;
 
 /**
- * Support reading a suspended hotel through an impersonation session, which
- * stage 5 adds. Until then the token has no impersonator_id, so this is false
- * for every request. A write follows the normal suspension rules.
+ * Support reading a suspended hotel through an impersonation session. A read
+ * keeps the user's whole scope. A write follows the normal suspension rules, so
+ * a session can only write to active hotels (spec 027 FR-026, FR-027).
  */
 class ImpersonatedRead
 {
@@ -18,8 +18,6 @@ class ImpersonatedRead
             return false;
         }
 
-        $token = $request->user()?->currentAccessToken();
-
-        return $token instanceof PersonalAccessToken && $token->getAttribute('impersonator_id') !== null;
+        return CurrentImpersonation::token() !== null;
     }
 }

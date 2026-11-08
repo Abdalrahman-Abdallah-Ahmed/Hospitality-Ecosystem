@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Impersonation\CurrentImpersonation;
 use App\Support\Observability\TagsSentryScope;
 use App\Support\Tenancy\TenantContext;
 use Closure;
@@ -35,9 +36,15 @@ class ResolveTenant
             );
 
             // Which hotel and which endpoint, for an error that follows (spec 017 FR-027).
+            // Always both impersonation tags: null clears them, so a process that
+            // serves several requests doesn't carry them to the next.
+            $impersonation = CurrentImpersonation::token();
+
             TagsSentryScope::tag([
                 'hotel_id' => TenantContext::currentHotelId(),
                 'operation' => $request->route()?->getName() ?? $request->method().' '.$request->route()?->uri(),
+                'impersonating' => $impersonation ? 'true' : null,
+                'impersonator_id' => $impersonation?->getAttribute('impersonator_id'),
             ]);
         }
 

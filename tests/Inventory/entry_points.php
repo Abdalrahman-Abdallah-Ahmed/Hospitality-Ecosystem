@@ -123,6 +123,7 @@ return [
         'App\\Jobs\\RetryGuestMemoryExtractionsJob',
         'App\\Jobs\\StartHousekeepingDayJob',
         'queue:check-waits',
+        'sanctum:prune-expired --hours=1',
     ],
     // Intended global records (FR-007): visible to the AI for every hotel,
     // never readable or changeable through the hotel routes.

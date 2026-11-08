@@ -12,6 +12,7 @@ use App\Models\MeterEvent;
 use App\Models\UsageCounter;
 use App\Models\User;
 use App\Support\Ai\AiRun;
+use App\Support\Impersonation\CurrentImpersonation;
 use App\Support\Tenancy\TenantContext;
 use BackedEnum;
 use DateTimeInterface;
@@ -31,6 +32,10 @@ use Throwable;
  * Recording can be paused (importers, so a 10k-row upload does not produce
  * 10k rows) and the actor kind can be forced to ai_agent for the duration of
  * a callback (the AI jobs and tools).
+ *
+ * In an impersonation session's request the actor is the real super admin, with
+ * the user in context.impersonated_user_id (spec 027). A job the request
+ * dispatched runs later with no token, so it stays with the hotel user (R8).
  */
 class EventLogger
 {
@@ -122,20 +127,39 @@ class EventLogger
     }
 
     /**
+     * A write an impersonation session made to a record that is not audited,
+     * by field name only, never values (spec 027 FR-019b). Not counted toward a
+     * capture: the model event already was, so what a capture lists doesn't
+     * depend on the token.
+     *
+     * @param  list<string>  $fields
+     */
+    public static function recordSessionWrite(Model $subject, string $verb, array $fields): void
+    {
+        self::write($subject, Str::snake(class_basename($subject)).'.'.$verb, self::resolveHotelId($subject), [
+            'context' => ['changed_fields' => $fields],
+            'notice' => false,
+        ]);
+    }
+
+    /**
      * The one place an audit row is built. Silently does nothing while
      * recording is paused.
      *
-     * @param  array{changes?: array|null, context?: array<string, scalar|null>, evidence_level?: EvidenceLevel|null, reason?: string|null}  $details
+     * @param  array{changes?: array|null, context?: array<string, scalar|list<string>|null>, evidence_level?: EvidenceLevel|null, reason?: string|null, notice?: bool}  $details
      */
     private static function write(Model $subject, string $eventType, ?string $hotelId, array $details): void
     {
-        self::notice($subject, $eventType, audited: true);
+        if ($details['notice'] ?? true) {
+            self::notice($subject, $eventType, audited: true);
+        }
 
         if (! self::$recording) {
             return;
         }
 
         $actor = Auth::user() ?? self::$onBehalfOf;
+        $session = CurrentImpersonation::token();
 
         EventLog::create([
             'hotel_id' => $hotelId,
@@ -143,10 +167,12 @@ class EventLogger
             'subject_type' => $subject->getMorphClass(),
             'subject_id' => $subject->getKey(),
             'actor_type' => $actor?->getMorphClass(),
-            'actor_id' => $actor?->getKey(),
+            // The id from the token, so the row names the super admin even if they
+            // were deleted while this request was running.
+            'actor_id' => $session?->getAttribute('impersonator_id') ?? $actor?->getKey(),
             'actor_kind' => self::resolveActorKind($actor)->value,
             'changes' => ($details['changes'] ?? null) ?: null,
-            'context' => array_merge(self::context() ?? [], $details['context'] ?? []) ?: null,
+            'context' => array_merge(self::context() ?? [], $session ? ['impersonated_user_id' => $actor->getKey()] : [], $details['context'] ?? []) ?: null,
             'evidence_level' => ($details['evidence_level'] ?? EvidenceLevel::L1)->value,
             'reason' => $details['reason'] ?? null,
             'occurred_at' => now(),

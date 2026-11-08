@@ -50,6 +50,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\VoucherTemplateController;
 use App\Http\Controllers\WhatsAppController;
 use App\Http\Resources\UserResource;
+use App\Support\Impersonation\CurrentImpersonation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -74,10 +75,17 @@ Route::middleware('api.key')->group(function () {
         Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout'])->withoutMiddleware(['not_suspended', 'hotel_choice']);
         // loadMissing keeps the current hotel EnsureNotSuspended may have set.
         Route::get('/user', function (Request $request) {
-            return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->loadMissing(['hotel', 'team', 'staffRole'])));
+            $body = UserResource::make($request->user()->loadMissing(['hotel', 'team', 'staffRole']))->resolve();
+
+            // Here only, not in UserResource, which also renders user lists.
+            if ($impersonation = CurrentImpersonation::details()) {
+                $body['impersonation'] = $impersonation;
+            }
+
+            return apiResponse('Authenticated user fetched successfully.', 200, $body);
         });
         // A device belongs to the user's home hotel, whichever hotel they're working in.
-        Route::post('/connect', [WhatsAppController::class, 'connect'])->withoutMiddleware('hotel_choice');
+        Route::post('/connect', [WhatsAppController::class, 'connect'])->withoutMiddleware('hotel_choice')->middleware('not_impersonating');
         Route::get('/check-paired', [WhatsAppController::class, 'checkPaired'])->withoutMiddleware('hotel_choice');
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
@@ -188,14 +196,18 @@ Route::middleware('api.key')->group(function () {
         Route::resource('/guest', GuestController::class)->except(['edit', 'create']);
         Route::resource('/hotel-policy', HotelPolicyController::class)->except(['edit', 'create', 'show']);
         Route::resource('/team', TeamController::class)->except(['edit', 'create']);
-        Route::post('/team/{team}/members', [TeamController::class, 'addMember']);
+        Route::post('/team/{team}/members', [TeamController::class, 'addMember'])->middleware('not_impersonating');
         Route::resource('/task-category', TaskCategoryController::class)->except(['edit', 'create']);
         Route::post('/task/{task}/inspection', [TaskInspectionController::class, 'store']);
         Route::post('/task/{task}/issues', [TaskIssueController::class, 'store']);
         Route::resource('/task', TaskController::class)->except(['edit', 'create']);
-        Route::resource('/users', UserController::class)->except(['edit', 'create']);
+        // An impersonation session reads these and can't change them, so it can
+        // never set a lasting password (spec 027).
+        Route::resource('/users', UserController::class)->except(['edit', 'create'])
+            ->middlewareFor(['store', 'update', 'destroy'], 'not_impersonating');
         Route::get('/permissions', [PermissionController::class, 'index']);
-        Route::resource('/staff-roles', StaffRoleController::class)->except(['edit', 'create']);
+        Route::resource('/staff-roles', StaffRoleController::class)->except(['edit', 'create'])
+            ->middlewareFor(['store', 'update', 'destroy'], 'not_impersonating');
         Route::resource('/ai-insights', AiInsightsController::class)->except(['edit', 'create', 'show', 'update', 'destroy']);
         Route::resource('/knowledge-base-articles', KnowledgeBaseArticleController::class)->except(['edit', 'create']);
         // `deleted` before `{id}`, or it would be read as a document id.
@@ -212,7 +224,9 @@ Route::middleware('api.key')->group(function () {
         Route::delete('/knowledge-documents/{id}/text', [KnowledgeDocumentController::class, 'discardText']);
         Route::post('/knowledge-documents/{id}/reindex', [KnowledgeDocumentController::class, 'reindex']);
         Route::post('/knowledge-documents/{id}/restore', [KnowledgeDocumentController::class, 'restore']);
-        Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat']);
+        // Refused in a session: the conversation and any write waiting for confirmation
+        // belong to the user (spec 027).
+        Route::post('/ai-advisor/chat', [AiAdvisorController::class, 'chat'])->middleware('not_impersonating');
         Route::get('/history/{type}/{id}', [HistoryController::class, 'show']);
         Route::get('/ai-activity', [AiActivityController::class, 'index']);
 

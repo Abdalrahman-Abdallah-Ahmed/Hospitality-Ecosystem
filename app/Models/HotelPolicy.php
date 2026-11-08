@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\BelongsToHotel;
 use App\Enums\KnowledgeBaseCategory;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsImpersonatedWrites;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class HotelPolicy extends Model
 {
-    use BelongsToHotel, Filterable, HasUuids, SoftDeletes;
+    use BelongsToHotel, Filterable, HasUuids, RecordsImpersonatedWrites, SoftDeletes;
 
     protected $keyType = 'string';
 

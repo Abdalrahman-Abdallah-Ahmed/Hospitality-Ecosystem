@@ -59,3 +59,7 @@ Schedule::job(new EvaluateProactiveTriggersJob)->everyFifteenMinutes()->withoutO
 // Alerts when a lane's oldest job has waited past its limit (spec 017 FR-028).
 // A scheduler command, not a queued job, so a stuck lane cannot hide itself.
 Schedule::command('queue:check-waits')->everyMinute()->withoutOverlapping();
+
+// Removes tokens an hour after they expire, of every kind. An impersonation
+// token stops working at its expiry; this only clears the row (spec 027).
+Schedule::command('sanctum:prune-expired --hours=1')->hourly();

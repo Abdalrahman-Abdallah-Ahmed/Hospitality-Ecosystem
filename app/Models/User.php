@@ -8,8 +8,10 @@ use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
+use App\Support\Impersonation\CurrentImpersonation;
 use App\Support\Tenancy\TenantContext;
 use Database\Factories\UserFactory;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,13 +21,16 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\NewAccessToken;
 
 #[Fillable(['name', 'email', 'password', 'role', 'phone_number', 'team_id', 'hotel_id', 'hotel_group_id', 'group_role', 'staff_role_id'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use Filterable, HasApiTokens, HasFactory, HasUuids, Notifiable;
+    use Filterable, HasApiTokens, HasFactory, HasUuids, Notifiable {
+        HasApiTokens::createToken as issueToken;
+    }
 
     protected $keyType = 'string';
 
@@ -46,8 +51,24 @@ class User extends Authenticatable
         ];
     }
 
+    /**
+     * An impersonation session can't issue a credential, whichever route or tool
+     * tries (spec 027).
+     */
+    public function createToken(string $name, array $abilities = ['*'], ?DateTimeInterface $expiresAt = null): NewAccessToken
+    {
+        CurrentImpersonation::refuseDuringSession();
+
+        return $this->issueToken($name, $abilities, $expiresAt);
+    }
+
     protected static function booted(): void
     {
+        // Nor can it change a user, which covers passwords, emails, roles and
+        // teams, whichever route or tool tries (spec 027).
+        static::saving(fn () => CurrentImpersonation::refuseDuringSession());
+        static::deleting(fn () => CurrentImpersonation::refuseDuringSession());
+
         // Users are a seat, like properties: recounted from this table, never
         // incremented, so that a departed staff member actually leaves the
         // count.
