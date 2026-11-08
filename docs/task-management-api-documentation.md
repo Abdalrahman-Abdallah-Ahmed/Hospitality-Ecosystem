@@ -167,6 +167,8 @@ Server-side checks, in order:
 
 Success: `200`, `body` is the [team object](#the-team-object) with `hotel` and `members` reloaded — read the updated roster from `body.members`, not from the request you just sent.
 
+This route returns `403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), because it edits a user. Set a user's team through `PUT /api/superadmin/users/{id}/access` instead.
+
 ### 1.6 Delete a Team — `DELETE /api/team/{id}`
 
 Hard delete — **but only if the team has no members.** `users.team_id`'s foreign key has no cascade/null-on-delete rule, so deleting a team that still has at least one member fails at the database level with a foreign-key constraint violation, which surfaces as an unhandled `500` (there is no try/catch in the controller to turn this into a friendly `403`/`422`). **The frontend must block the delete action (or confirm the team is empty) whenever `members` is non-empty**, rather than relying on the API to reject it cleanly.

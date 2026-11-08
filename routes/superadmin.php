@@ -5,6 +5,7 @@ use App\Http\Controllers\Superadmin\AiCostController;
 use App\Http\Controllers\Superadmin\DashboardController;
 use App\Http\Controllers\Superadmin\GuestMemoryExtractionController;
 use App\Http\Controllers\Superadmin\HotelController;
+use App\Http\Controllers\Superadmin\ImpersonationController;
 use App\Http\Controllers\Superadmin\KnowledgeBaseArticleController;
 use App\Http\Controllers\Superadmin\KnowledgeDocumentController;
 use App\Http\Controllers\Superadmin\KnowledgeRebuildController;
@@ -96,6 +97,11 @@ Route::put('/users/{user}', [UserController::class, 'update']);
 Route::put('/users/{user}/access', [UserController::class, 'updateAccess']);
 Route::post('/users/{user}/password-reset', [UserController::class, 'sendPasswordReset']);
 Route::post('/users/{user}/revoke-tokens', [UserController::class, 'revokeTokens']);
+
+// Acting as a hotel user for up to 30 minutes (spec 027).
+Route::post('/users/{user}/impersonate', [ImpersonationController::class, 'start']);
+Route::post('/users/{user}/end-impersonation', [ImpersonationController::class, 'endAllFor']);
+Route::post('/impersonation/end', [ImpersonationController::class, 'end']);
 
 // The platform dashboard (spec 026): separate routes, so that one slow section
 // does not hold up the others.

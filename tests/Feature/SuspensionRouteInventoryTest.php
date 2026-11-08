@@ -57,7 +57,7 @@ it('runs the check before a record in the URL is looked up', function () {
 });
 
 it('works in one chosen hotel on every authenticated route, apart from those named', function () {
-    $exempt = ['POST api/logout', 'POST logout', 'GET api/hotel', 'POST api/connect', 'GET api/check-paired'];
+    $exempt = ['POST api/logout', 'POST logout', 'GET api/hotel', 'GET api/whatsapp-device', 'DELETE api/whatsapp-device', 'POST api/connect', 'GET api/check-paired'];
     $missing = [];
     $checked = 0;
 

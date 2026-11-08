@@ -14,10 +14,12 @@ use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Models\WhatsAppInboundMessage;
 use App\Services\SenderRecognitionService;
+use App\Support\Audit\EventLogger;
 use App\Support\PhoneNumber;
 use App\Support\RecognizedSender;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -166,6 +168,47 @@ class WhatsAppController extends Controller
             'user_role' => $user?->role,
             'user_name' => $user?->name,
         ];
+    }
+
+    /**
+     * The signed-in user's own device, for a settings screen that has no phone
+     * number to ask about. Outside the hotel scope on purpose: it is found by the
+     * user, so it is always theirs, and a device stays in their home hotel
+     * whichever hotel the request works in.
+     */
+    public function device(Request $request)
+    {
+        $device = $request->user()->whatsappDevice()->withoutGlobalScope('hotel')->first();
+
+        return apiResponse($device ? 'User has a paired WhatsApp device.' : 'User not paired.', 200, [
+            'paired' => $device !== null,
+            'device' => $device ? WhatsAppDeviceResource::make($device)->resolve() : null,
+        ]);
+    }
+
+    /**
+     * Unpairs the signed-in user's own device, and voids any pairing code they
+     * haven't used, so a lost phone or an old number can be cut off without a
+     * password reset. Login tokens stay. The event's subject is the user, because
+     * a device's integer id doesn't fit the uuid subject_id.
+     */
+    public function unpair(Request $request)
+    {
+        $user = $request->user();
+
+        DB::transaction(function () use ($user) {
+            $user->tokens()->where('name', WhatsAppDevice::PAIRING_TOKEN_NAME)->delete();
+
+            $device = $user->whatsappDevice()->withoutGlobalScope('hotel')->first();
+
+            if ($device) {
+                $device->delete();
+
+                EventLogger::record($user, 'whatsapp_device_unpaired', context: ['device_id' => $device->getKey()]);
+            }
+        });
+
+        return apiResponse('WhatsApp device unpaired successfully.', 200, ['paired' => false, 'device' => null]);
     }
 
     /**

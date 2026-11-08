@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
 use App\Models\Hotel;
+use App\Services\Superadmin\Impersonation;
+use App\Support\Impersonation\CurrentImpersonation;
 use App\Support\Suspension\HotelAccess;
 use App\Support\Suspension\SuspendedResponse;
 use Illuminate\Http\Request;
@@ -71,9 +73,13 @@ class AuthenticatedSessionController extends Controller
         ]);
     }
 
-    public function apiLogout(Request $request)
+    public function apiLogout(Request $request, Impersonation $impersonation)
     {
-        $request->user()->currentAccessToken()->delete();
+        if ($token = CurrentImpersonation::token()) {
+            $impersonation->endCurrent($token);
+        } else {
+            $request->user()->currentAccessToken()->delete();
+        }
 
         return apiResponse('Logged out successfully.');
     }

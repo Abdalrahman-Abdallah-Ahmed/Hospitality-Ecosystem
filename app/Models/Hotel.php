@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
+use App\Models\Concerns\RecordsImpersonatedWrites;
 use App\Services\Metering\MeteringService;
 use App\Support\Housekeeping\HotelOperationalDefaults;
 use App\Support\Proactive\ProactiveSettings;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Hotel extends Model
 {
-    use Filterable, HasFactory, HasUuids, SoftDeletes;
+    use Filterable, HasFactory, HasUuids, RecordsImpersonatedWrites, SoftDeletes;
 
     protected $keyType = 'string';
 

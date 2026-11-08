@@ -39,6 +39,9 @@ dataset('administration routes', [
     'dashboard counts' => ['GET', '/dashboard/counts'],
     'dashboard usage' => ['GET', '/dashboard/usage'],
     'dashboard activity' => ['GET', '/dashboard/activity'],
+    'impersonate' => ['POST', '/users/{user}/impersonate'],
+    'end impersonation' => ['POST', '/impersonation/end'],
+    'end all impersonation' => ['POST', '/users/{user}/end-impersonation'],
 ]);
 
 /**

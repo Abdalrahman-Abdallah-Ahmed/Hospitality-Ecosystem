@@ -287,6 +287,10 @@ HTTP `200 OK`. `body` is the updated [hotel object](#the-hotel-object).
 
 Same as [show](#2-get-a-single-hotel): `404` if the id doesn't exist, `403` if the caller can't reach it or is an employee.
 
+### While Impersonating
+
+An update through a super admin's [impersonation session](superadmin-impersonation-api-documentation.md) records one `hotel.updated` event naming the super admin, with the changed field names in `context.changed_fields` and no values. The same update from any other token records nothing new.
+
 ## Validation Errors
 
 For any field-shape validation failure (missing required field, wrong type, failed `exists`/`unique` check), Laravel returns its default shape — **not** the custom `message/code/body` wrapper:

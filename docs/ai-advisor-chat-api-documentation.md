@@ -32,6 +32,10 @@ Content-Type: application/json
 
 Every tool still checks the acting admin's permission each time it runs (see [Tool catalog](#tool-catalog)), and runs only inside the admin's own hotel. Admins hold every permission, so for them this never refuses today; it keeps the tools safe if the advisor is ever opened to employees.
 
+### While Impersonating
+
+This endpoint returns `403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), because the conversation and any write waiting for confirmation belong to the user.
+
 ## Request Body
 
 ```json

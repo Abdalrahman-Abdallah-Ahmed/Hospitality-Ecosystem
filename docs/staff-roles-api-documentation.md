@@ -186,6 +186,10 @@ Content-Type: application/json
 
 Every endpoint in this document, including `GET /api/permissions`, is for `admin` (own hotel) and `super_admin` (any hotel). An employee gets `403` whatever their role grants.
 
+### While Impersonating
+
+Every write here (`POST`, `PUT`, `PATCH`, `DELETE`) returns `403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), before the role is looked up. Reads work under the impersonated user's permissions. The permission reference above doesn't change, because this isn't a permission.
+
 ## Response Format
 
 Successful responses use the usual wrapper:

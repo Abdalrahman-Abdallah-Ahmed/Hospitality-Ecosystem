@@ -1,10 +1,12 @@
 <?php
 
 use App\Enums\UserRole;
+use App\Models\EventLog;
 use App\Models\Hotel;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 
 uses(RefreshDatabase::class);
@@ -321,4 +323,119 @@ it('does not reveal a user or device belonging to another hotel via check-paired
         ->assertJsonPath('body.paired', false)
         ->assertJsonPath('body.user_name', null)
         ->assertJsonPath('body.user_role', null);
+});
+
+// The signed-in user's own device
+
+it('reports the signed-in user\'s own device', function (string $status) {
+    [$user, $hotel] = whatsappDeviceOwner();
+    WhatsAppDevice::create(['user_id' => $user->id, 'phone_number' => '201151793758', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-own', 'status' => $status]);
+
+    spRequest($this, $user, 'GET', '/api/whatsapp-device')
+        ->assertOk()
+        ->assertJsonPath('body.paired', true)
+        ->assertJsonPath('body.device.phone_number', '201151793758')
+        ->assertJsonPath('body.device.status', $status);
+})->with(['active', 'inactive']);
+
+it('reports no device when the user has none, whatever a colleague has', function () {
+    [$user, $hotel] = whatsappDeviceOwner();
+    $colleague = User::factory()->create(['hotel_id' => $hotel->id]);
+    WhatsAppDevice::create(['user_id' => $colleague->id, 'phone_number' => '201151793759', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-other', 'status' => 'active']);
+
+    spRequest($this, $user, 'GET', '/api/whatsapp-device')
+        ->assertOk()
+        ->assertJsonPath('body.paired', false)
+        ->assertJsonPath('body.device', null);
+});
+
+it('needs a login', function () {
+    $this->withHeader('X-API-KEY', 'test-api-key')->getJson('/api/whatsapp-device')->assertUnauthorized();
+});
+
+it('finds the device of a home hotel the request is not working in', function () {
+    [, $a, $b] = spAccount();
+    $admin = spUser($a, [$b]);
+    WhatsAppDevice::create(['user_id' => $admin->id, 'phone_number' => '201151793760', 'hotel_id' => $a->id, 'wa_user_id' => 'wa-home', 'status' => 'active']);
+
+    spRequest($this, $admin, 'GET', '/api/whatsapp-device', headers: ['X-Hotel-Id' => $b->id])
+        ->assertOk()
+        ->assertJsonPath('body.paired', true);
+
+    // A stale choice must not stop the settings screen.
+    spRequest($this, $admin, 'GET', '/api/whatsapp-device', headers: ['X-Hotel-Id' => (string) Str::uuid()])
+        ->assertOk()
+        ->assertJsonPath('body.paired', true);
+});
+
+it('still reports the device when the user\'s default hotel is suspended and they have another', function () {
+    [, $a, $b] = spAccount();
+    $admin = spUser($a, [$b]);
+    WhatsAppDevice::create(['user_id' => $admin->id, 'phone_number' => '201151793761', 'hotel_id' => $a->id, 'wa_user_id' => 'wa-suspended', 'status' => 'active']);
+    spSuspend($a);
+
+    spRequest($this, $admin, 'GET', '/api/whatsapp-device')
+        ->assertOk()
+        ->assertJsonPath('body.paired', true);
+});
+
+it('only ever unpairs the caller\'s own device', function () {
+    [$user, $hotel] = whatsappDeviceOwner();
+    $colleague = User::factory()->create(['hotel_id' => $hotel->id]);
+    $own = WhatsAppDevice::create(['user_id' => $user->id, 'phone_number' => '201151793762', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-mine', 'status' => 'active']);
+    $theirs = WhatsAppDevice::create(['user_id' => $colleague->id, 'phone_number' => '201151793763', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-theirs', 'status' => 'active']);
+
+    spRequest($this, $user, 'DELETE', '/api/whatsapp-device')
+        ->assertOk()
+        ->assertJsonPath('body.paired', false)
+        ->assertJsonPath('body.device', null);
+
+    expect(WhatsAppDevice::withoutGlobalScopes()->find($own->id))->toBeNull()
+        ->and(WhatsAppDevice::withoutGlobalScopes()->find($theirs->id))->not->toBeNull();
+
+    $event = EventLog::withoutGlobalScopes()->where('event_type', 'user.whatsapp_device_unpaired')->sole();
+
+    expect($event->subject_id)->toBe($user->id)
+        ->and($event->actor_id)->toBe($user->id)
+        ->and($event->hotel_id)->toBe($hotel->id)
+        ->and($event->context['device_id'])->toBe($own->id);
+});
+
+it('keeps login tokens and voids unredeemed pairing codes when unpairing', function () {
+    [$user, $hotel] = whatsappDeviceOwner();
+    WhatsAppDevice::create(['user_id' => $user->id, 'phone_number' => '201151793764', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-codes', 'status' => 'active']);
+    $code = pairingCodeFor($user);
+
+    spRequest($this, $user, 'DELETE', '/api/whatsapp-device')->assertOk();
+
+    expect(PersonalAccessToken::findToken($code))->toBeNull()
+        ->and($user->tokens()->where('name', '!=', WhatsAppDevice::PAIRING_TOKEN_NAME)->count())->toBeGreaterThan(0);
+});
+
+it('can pair again after unpairing, and answers the same with nothing to unpair', function () {
+    [$user, $hotel] = whatsappDeviceOwner();
+    WhatsAppDevice::create(['user_id' => $user->id, 'phone_number' => '201151793765', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-again', 'status' => 'active']);
+
+    spRequest($this, $user, 'DELETE', '/api/whatsapp-device')->assertOk();
+    spRequest($this, $user, 'DELETE', '/api/whatsapp-device')->assertOk()->assertJsonPath('body.paired', false);
+
+    expect(EventLog::withoutGlobalScopes()->where('event_type', 'user.whatsapp_device_unpaired')->count())->toBe(1);
+
+    app('auth')->forgetGuards();
+
+    $this->withHeader('X-API-KEY', 'test-api-key')->postJson('/api/pair', [
+        'token' => pairingCodeFor($user),
+        'phone_number' => '201151793766',
+        'wa_user_id' => 'wa-new',
+    ])->assertOk();
+});
+
+it('unpairs a device in a home hotel the request is not working in', function () {
+    [, $a, $b] = spAccount();
+    $admin = spUser($a, [$b]);
+    WhatsAppDevice::create(['user_id' => $admin->id, 'phone_number' => '201151793767', 'hotel_id' => $a->id, 'wa_user_id' => 'wa-away', 'status' => 'active']);
+
+    spRequest($this, $admin, 'DELETE', '/api/whatsapp-device', headers: ['X-Hotel-Id' => $b->id])->assertOk();
+
+    expect(WhatsAppDevice::withoutGlobalScopes()->where('user_id', $admin->id)->exists())->toBeFalse();
 });

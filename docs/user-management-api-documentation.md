@@ -58,6 +58,10 @@ Practical implications for the UI:
 - A `403` on `update`/`destroy` of an **admin** you can see means you aren't the account owner. Hide edit and delete on other admins' rows, and the admin choice in the role field, unless the signed-in user has `group_role: "owner"`.
 - An admin's `index` always includes their own user record, even if — for data-consistency reasons unrelated to this endpoint — their own `hotel_id` column happens to be unset (the backend resolves "my hotel" via ownership as a fallback and explicitly OR's in the caller's own id, so this can't silently exclude them).
 
+### While Impersonating
+
+Every write here (`POST`, `PUT`, `PATCH`, `DELETE`) returns `403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), before the user is looked up, so a session can't set a lasting password or change an email or role. Reads work under the impersonated user's permissions.
+
 ## Response Format
 
 Successful custom API responses use this structure:
