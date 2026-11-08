@@ -4,7 +4,6 @@ namespace App\Services\Metering;
 
 use App\Enums\AiAgentName;
 use App\Models\AiUsageLog;
-use App\Models\Hotel;
 use App\Models\HotelGroup;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -34,6 +33,9 @@ class AiUsageSummary
      * before handing usage over), so it is added back here: to a hotel it is
      * input like any other, and it only differs in price.
      *
+     * Each row carries its hotel's name, deleted or moved or not, so describe()
+     * needs no query per account to name a hotel that has since left.
+     *
      * @return Collection<string, Collection<int, object>> keyed by hotel_group_id
      */
     public function totals(Carbon $from, Carbon $to, ?string $accountId = null): Collection
@@ -43,7 +45,7 @@ class AiUsageSummary
             ->whereBetween('occurred_at', [$from, $to])
             ->when($accountId, fn ($query) => $query->where('hotel_group_id', $accountId))
             ->groupBy('hotel_group_id', 'hotel_id', 'capability')
-            ->selectRaw('hotel_group_id, hotel_id, capability, COUNT(*) AS requests, COALESCE(SUM(input_tokens + cached_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens')
+            ->selectRaw('hotel_group_id, hotel_id, capability, (SELECT name FROM hotels WHERE hotels.id = ai_usage_logs.hotel_id) AS hotel_name, COUNT(*) AS requests, COALESCE(SUM(input_tokens + cached_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens')
             ->toBase()
             ->get()
             ->groupBy('hotel_group_id');
@@ -90,12 +92,8 @@ class AiUsageSummary
 
         $elsewhere = $rows->whereNotNull('hotel_id')->whereNotIn('hotel_id', array_keys($byHotel));
 
-        if ($elsewhere->isNotEmpty()) {
-            $names = Hotel::withTrashed()->whereKey($elsewhere->pluck('hotel_id')->unique()->all())->pluck('name', 'id');
-
-            foreach ($elsewhere->groupBy('hotel_id') as $hotelId => $group) {
-                $byHotel[$hotelId] = ['hotel' => $names[$hotelId] ?? null, ...$this->figures($group)];
-            }
+        foreach ($elsewhere->groupBy('hotel_id') as $hotelId => $group) {
+            $byHotel[$hotelId] = ['hotel' => $group->first()->hotel_name, ...$this->figures($group)];
         }
 
         $unassigned = $rows->whereNull('hotel_id');

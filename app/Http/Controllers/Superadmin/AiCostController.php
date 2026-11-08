@@ -7,6 +7,7 @@ use App\Enums\AiTriggerKind;
 use App\Http\Controllers\Controller;
 use App\Models\AiUsageLog;
 use App\Models\HotelGroup;
+use App\Services\AiCost\AiCostReport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -232,18 +233,7 @@ class AiCostController extends Controller
      */
     private function basis(Collection $rows): array
     {
-        $total = $rows->count();
-        $estimated = $rows->where('cost_is_estimated', true)->count();
-
-        return [
-            'cost_basis' => match (true) {
-                $total === 0 => 'no data',
-                $estimated === 0 => 'measured',
-                $estimated === $total => 'estimated',
-                default => 'mixed',
-            },
-            'estimated_rows_pct' => $total === 0 ? 0.0 : round(($estimated / $total) * 100, 1),
-        ];
+        return AiCostReport::basis($rows->count(), $rows->where('cost_is_estimated', true)->count());
     }
 
     /**
@@ -316,23 +306,9 @@ class AiCostController extends Controller
         return (float) config('ai_cost.fx.usd_per_eur');
     }
 
-    /**
-     * Provider cost, kept to the same six decimals the column stores.
-     *
-     * Two decimals is the obvious choice and it is wrong here, for exactly
-     * the reason the column is decimal(12,6) in the first place: a single
-     * call may cost $0.000420, and a month of a small account's traffic can
-     * total well under a cent. Rounding money to cents at read time destroys
-     * the cost base just as thoroughly as storing it that way would — the
-     * report would say a hotel cost nothing to serve, which is never true of
-     * a hotel that made calls.
-     *
-     * Contract figures are rounded to 2 instead, because those were agreed
-     * by a person in whole cents and no precision beyond that exists.
-     */
     private function money(float $amount): float
     {
-        return round($amount, 6);
+        return AiCostReport::money($amount);
     }
 
     private function toEur(float $usd): float

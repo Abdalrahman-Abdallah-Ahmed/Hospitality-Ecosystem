@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Superadmin\AccountController;
 use App\Http\Controllers\Superadmin\AiCostController;
+use App\Http\Controllers\Superadmin\DashboardController;
 use App\Http\Controllers\Superadmin\GuestMemoryExtractionController;
 use App\Http\Controllers\Superadmin\HotelController;
 use App\Http\Controllers\Superadmin\KnowledgeBaseArticleController;
@@ -95,3 +96,9 @@ Route::put('/users/{user}', [UserController::class, 'update']);
 Route::put('/users/{user}/access', [UserController::class, 'updateAccess']);
 Route::post('/users/{user}/password-reset', [UserController::class, 'sendPasswordReset']);
 Route::post('/users/{user}/revoke-tokens', [UserController::class, 'revokeTokens']);
+
+// The platform dashboard (spec 026): separate routes, so that one slow section
+// does not hold up the others.
+Route::get('/dashboard/counts', [DashboardController::class, 'counts']);
+Route::get('/dashboard/usage', [DashboardController::class, 'usage']);
+Route::get('/dashboard/activity', [DashboardController::class, 'activity']);
