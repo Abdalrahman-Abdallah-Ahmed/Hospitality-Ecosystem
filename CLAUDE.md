@@ -124,6 +124,10 @@ in that file, and do not wrap its routes in their own group.
 - **Responses**: always `apiResponse(string $message, int $code, mixed $body)`
   from `app/Helpers/Helper.php`. It unwraps Resources and returns
   `{ message, code, body }`. Do not hand-roll `response()->json()` in controllers.
+  Cross-account report endpoints with no model to wrap (`Superadmin\UsageController`,
+  `AiCostController`, `DashboardController`) pass plain arrays and use no Resource,
+  and `Superadmin\DashboardController` adds cost to the usage section itself, because
+  `CostVisibilityTest` keeps cost out of `app/Services/Reports/`.
 - **Other helpers**: `resolveHotel()` (scoped admin gets their own hotel; super
   admin must name one), `invalidRelation()` (reject cross-tenant foreign keys),
   `unsetAttributes()` (strip client-supplied `hotel_id` before writing).
