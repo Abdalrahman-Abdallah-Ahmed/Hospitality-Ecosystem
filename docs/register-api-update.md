@@ -87,7 +87,7 @@ HTTP `201 Created`
 
 Notes:
 
-- The registering user is automatically made the hotel's owner/admin (`role: "admin"`).
+- The registering user is an admin (`role: "admin"`) and the owner of the account created for their hotel: `user.hotel_group_id` is that account, and `user.group_role` is `"owner"`. Any hotel later added to the account is theirs with no further step.
 - `hotel.slug` is generated from `hotel.name` server-side — don't send a slug.
 - `user.id` / `hotel.id` are UUID strings, not integers.
 - As before, this endpoint does **not** log the user in or return a token — call

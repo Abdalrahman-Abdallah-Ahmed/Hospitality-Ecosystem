@@ -317,9 +317,9 @@ routes/superadmin.php (prefix api/superadmin)
         `role=super_admin` from everyone, super admins included. Today it lets
         super admins grant the role.
     *   A new user gets a random password and a password reset email, so the
-        super admin never knows the credential. Creating the first admin of a
-        hotel with no owner sets that hotel's `owner_id`, because `HotelPolicy`
-        requires it.
+        super admin never knows the credential. (Spec 025 removed `hotels.owner_id`:
+        ownership belongs to the account, and no admin becomes an owner
+        automatically.)
 *   **Reset access.** Lives in the same service:
     *   `sendPasswordReset(User)` uses Laravel's password broker
         (`password_reset_tokens` already exists) and Laravel's built-in reset
@@ -934,9 +934,9 @@ Dates below are placeholders for the day each stage is written.
 #### 2.4 `app/Services/Superadmin/UserAdministration.php` and `app/Http/Controllers/UserController.php` (Create / Modify)
 
 *   **Proposed Changes**:
-    *   `create(array)`: sets a random password, sets `hotels.owner_id` when the
-        role is admin and the hotel has no owner, and sends the reset link. It
-        records only `platform.user.created`.
+    *   `create(array)`: sets a random password and sends the reset link. It
+        records only `platform.user.created`. (Spec 025 removed the
+        `hotels.owner_id` claim this used to make.)
     *   `update(User, array)`: records `platform.user.updated`.
     *   `changeAccess(User, array)`: records `platform.user.access_changed`.
         *   Setting `group_role` also sets `hotel_group_id` from `User::account()`,
@@ -983,7 +983,7 @@ Dates below are placeholders for the day each stage is written.
     | `UpdateHotelRequest` | `name`, `slug`, `hotel_group_id` |
     | `StoreUserRequest` | `name`, `email`, `phone_number`, `role`, `hotel_id`, optional `hotel_group_id` and `group_role`. No `password` |
     | `UpdateUserRequest` | `name`, `email`, `phone_number`. No `password` |
-    | `UpdateUserAccessRequest` | `role` (`admin` or `employee`), `group_role` (`owner` or `group_admin`, or null), `hotel_ids` (array), `staff_role_id` |
+    | `UpdateUserAccessRequest` | `role` (`admin` or `employee`), `group_role` (`owner` or null; spec 025 removed `group_admin`), `hotel_ids` (array), `staff_role_id` |
 
     `StoreUserRequest` and `UpdateUserAccessRequest` reject `role=super_admin`.
 
@@ -1478,6 +1478,8 @@ Dates below are placeholders for the day each stage is written.
     impersonating).
 
 ### Stage 6: Remove super admin access to hotel endpoints
+
+**Added by spec 025**: `DELETE /api/users/{id}` is the only way to delete a user, and spec 025 kept it open to super admins for that reason. This stage must add a super admin delete route before closing it. The tenant `/api/users` endpoint already ignores `hotel_group_id` and `group_role` for every caller.
 
 #### 6.1 `app/Http/Middleware/DenySuperAdmin.php` (Create, alias `no_super_admin`)
 

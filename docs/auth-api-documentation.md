@@ -214,7 +214,19 @@ Authorization: Bearer {token}
 ```
 
 4. Use `body.user.permissions` to build navigation and actions right away. There's no need to call `GET /api/user` first.
-5. Read the user's hotel from `body.user.hotel`, not `body.user.hotel_id`. They differ when the user's default hotel is suspended and they have another: `hotel_id` stays the stored default, and `hotel` is the active hotel they work in. `GET /api/user` behaves the same way.
+5. Read the user's hotel from `body.user.hotel`, not `body.user.hotel_id`. They differ when the user's default hotel is suspended and they have another: `hotel_id` stays the stored default, and `hotel` is the active hotel they work in. `GET /api/user` behaves the same way, and for an admin it also follows `X-Hotel-Id`.
+
+### Choosing a hotel (`X-Hotel-Id`)
+
+*2026-11-07.* An admin's request works in **one hotel**: the one named by the `X-Hotel-Id` header, or their default hotel without it. Lists, the dashboard and reports show only that hotel, new records are created there, and a record in any other hotel returns `404`, even one the admin can reach. An account owner can choose any hotel of the account. Any other admin can choose their home hotel and the hotels they are a member of. Employees are unchanged: their permissions apply to their home hotel's records only.
+
+A header naming a hotel the user can't reach, including an unknown, deleted or malformed id, returns a plain `403` on every request:
+
+```json
+{ "message": "This action is unauthorized.", "code": 403, "body": null }
+```
+
+Clear the stored choice when you get it. A suspended hotel of the user's still gets the suspended `403` below. `POST /api/logout`, `GET /api/hotel`, `POST /api/connect` and `GET /api/check-paired` ignore the header, so a client can always recover. Super admins are unaffected.
 
 ### Suspended Account or Hotel
 

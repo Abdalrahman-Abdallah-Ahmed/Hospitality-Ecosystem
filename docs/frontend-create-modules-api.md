@@ -312,7 +312,7 @@ You can also fetch these from:
 
 For the frontend create modules, this setup will map well to the backend:
 
-- `hotel`: standalone form, no `hotel_id`, no `owner_id`.
+- `hotel`: standalone form, no `hotel_id`. Hotels have no `owner_id`: ownership belongs to the account.
 - `activity`: hidden `hotel_id`, optional `category_id`, JSON-capable advanced settings.
 - `reservation`: hidden `hotel_id`, guest picker required, room picker optional.
 - `room`: hidden `hotel_id`, simple text/select fields.

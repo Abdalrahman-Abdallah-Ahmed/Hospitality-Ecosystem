@@ -15,9 +15,9 @@ Defined by `App\Http\Controllers\StaffRoleController` and `App\Http\Controllers\
 
 Rules that apply whatever a role grants:
 
-- **Own hotel only.** A permission covers records in the employee's own hotel. Another hotel's record still returns `403`.
+- **Own hotel only.** A permission covers records in the employee's own hotel. Another hotel's record still returns `403`, including a hotel they are a member of. Admins are different: they work in any hotel they can reach, one per request, chosen with `X-Hotel-Id` (see [auth-api-documentation.md](auth-api-documentation.md#choosing-a-hotel-x-hotel-id)).
 - **Admin-only areas.** These are not in the permission list and cannot be granted:
-  - User management (`/api/users`)
+  - User management (`/api/users`). Within it, only the account owner can create, promote, edit or delete another admin
   - Staff roles and `/api/permissions`
   - Hotel settings (`/api/hotel`). The exception is `hotels.view`, which lists the employee's own hotels as a short record with no settings
   - AI advisor chat (`/api/ai-advisor/chat`)
