@@ -102,6 +102,17 @@ Field notes:
   insight/recommendation *content*.)
 - `reason` is set for events that carry one (e.g. a transaction reversal).
 
+## Super Admin Actors
+
+When the caller isn't a super admin and an event's actor is a super admin, or a user who no longer exists:
+
+- `actor` has only `id` and `name`, or is `null` if the user no longer exists.
+- `context` has no `ip`.
+
+A super admin's own token reads the full row, and the stored row doesn't change.
+
+A write made through an [impersonation session](superadmin-impersonation-api-documentation.md) names the super admin as actor, with the user in `context.impersonated_user_id`.
+
 ## Example
 
 ```bash

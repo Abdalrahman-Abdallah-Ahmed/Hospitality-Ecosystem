@@ -122,6 +122,12 @@ HTTP `200 OK`
 - It is **not an API credential**. Sending it as `Authorization: Bearer …` returns `401` on every authenticated route.
 - Conversely, a normal login token is rejected by `/api/pair` (`Invalid token.`).
 
+### While Impersonating
+
+`POST /api/connect` returns `403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), so a session can't pair a device.
+
+---
+
 ## 2. Pair WhatsApp Device
 
 Pairs a WhatsApp device to the user who owns the pairing token.
@@ -199,7 +205,8 @@ If any of these checks fail, the API returns an error instead of creating a devi
 A device is unpaired, and any unredeemed pairing code stops working, when:
 
 - a super admin revokes the user's access (`POST /api/superadmin/users/{user}/revoke-tokens`);
-- the user completes a password reset (`POST /api/reset-password`).
+- the user completes a password reset (`POST /api/reset-password`);
+- the user unpairs it themselves (`DELETE /api/whatsapp-device`).
 
 The Admin Advisor then stops answering that number, which gets the "not yet paired" reply until the user pairs again.
 
@@ -250,6 +257,61 @@ Only devices and users belonging to the caller's own hotel(s) are considered. A 
 | `201` | `User not paired.` | `{ paired: false, user_role, user_name }` — the user fields are `null` when no user in your hotel(s) has that number |
 | `401` | `Unauthenticated.` | Missing or invalid bearer token |
 | `422` | Validation error | `phone_number` missing, or not 7–15 digits once formatting is stripped |
+
+## 4. Get Your Own Device
+
+Reports the signed-in user's own device, for a screen that has no phone number to ask about. Unlike check-paired, it finds the device by the user, not by a number, so a device paired under a different number than the user's profile still shows.
+
+### Endpoint
+
+`GET /api/whatsapp-device`
+
+### Authentication
+
+- `X-API-KEY: {your_api_key}`
+- `Authorization: Bearer {login_token}`
+
+### Responses
+
+Always `200` for a signed-in user. Check `body.paired` and `body.device.status`.
+
+```json
+{
+  "message": "User has a paired WhatsApp device.",
+  "code": 200,
+  "body": {
+    "paired": true,
+    "device": {
+      "id": 7,
+      "user_id": "01a0...",
+      "hotel_id": "01a1...",
+      "phone_number": "201151793758",
+      "wa_user_id": "EG.1586110233134033",
+      "status": "active",
+      "created_at": "2026-11-08T12:00:00.000000Z",
+      "updated_at": "2026-11-08T12:00:00.000000Z"
+    }
+  }
+}
+```
+
+With no device, `message` is `User not paired.` and `body` is `{ "paired": false, "device": null }`.
+
+`X-Hotel-Id` is ignored, because a device stays in the user's home hotel. It works when the user's default hotel is suspended and they have another. With a super admin's [impersonation token](superadmin-impersonation-api-documentation.md) it returns the impersonated user's device.
+
+## 5. Unpair Your Own Device
+
+Removes the signed-in user's own device and voids any pairing code they haven't used, so a lost phone or an old number can be cut off. They can then pair again. Their login tokens stay. It's recorded as `user.whatsapp_device_unpaired`.
+
+### Endpoint
+
+`DELETE /api/whatsapp-device`
+
+### Responses
+
+`200` with `body: { "paired": false, "device": null }`, also when there was nothing to unpair.
+
+`403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), and the usual suspended `403` when the user has no active hotel left. `X-Hotel-Id` is ignored.
 
 ## Error Cases
 

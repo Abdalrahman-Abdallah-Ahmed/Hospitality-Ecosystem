@@ -106,6 +106,16 @@ super-admin reporting lives in `routes/superadmin.php`, which is registered in
 new route there cannot be left unprotected. Do not put tenant-facing endpoints
 in that file, and do not wrap its routes in their own group.
 
+A super admin can act as a hotel user for up to 30 minutes (spec 027). A session is
+a token of that user with an `impersonator_id`, so the stack above applies unchanged.
+`App\Support\Impersonation\CurrentImpersonation` is the only check for whether a
+request is one. `EventLogger::write()` then records the super admin as actor, with
+the user in `context.impersonated_user_id`. `User` refuses writes and new tokens during
+a session wherever they come from. The `not_impersonating` middleware gives the same
+answer before route-model binding: add it to any new route that creates a credential
+or edits a user. A model that is not audited but that a session can write uses
+`RecordsImpersonatedWrites`, which records field names only and only during a session.
+
 ### Layers
 
 | Directory | Role |
@@ -124,7 +134,8 @@ in that file, and do not wrap its routes in their own group.
 - **Responses**: always `apiResponse(string $message, int $code, mixed $body)`
   from `app/Helpers/Helper.php`. It unwraps Resources and returns
   `{ message, code, body }`. Do not hand-roll `response()->json()` in controllers.
-  Cross-account report endpoints with no model to wrap (`Superadmin\UsageController`,
+  `Superadmin\ImpersonationController` passes a plain array too, as login does for a
+  token. Cross-account report endpoints with no model to wrap (`Superadmin\UsageController`,
   `AiCostController`, `DashboardController`) pass plain arrays and use no Resource,
   and `Superadmin\DashboardController` adds cost to the usage section itself, because
   `CostVisibilityTest` keeps cost out of `app/Services/Reports/`.

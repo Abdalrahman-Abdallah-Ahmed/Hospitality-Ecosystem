@@ -293,6 +293,23 @@ HTTP `200 OK`
 - Logout removes the **current** access token only.
 - If the same user is logged in on multiple devices or sessions, other tokens remain active.
 
+### Impersonation Sessions
+
+With a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), logging out ends the session and records `platform.impersonation.ended`. An expired one returns `401`, and no event is written. A normal token's logout doesn't change.
+
+`GET /api/user` with an impersonation token adds this key, on that response only. With any other token the key is absent:
+
+```json
+{
+  "impersonation": {
+    "impersonator": { "id": "01a0...", "name": "Support Person" },
+    "expires_at": "2026-11-08T12:30:00+00:00"
+  }
+}
+```
+
+---
+
 ## 4. Set a New Password
 
 A user sets a password from an emailed link, either a new user's first link or a reset link a super admin sent. There is no self-service "forgot password" request. See [superadmin-accounts-api-documentation.md](superadmin-accounts-api-documentation.md).
