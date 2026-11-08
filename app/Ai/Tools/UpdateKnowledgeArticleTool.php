@@ -55,7 +55,7 @@ class UpdateKnowledgeArticleTool implements Tool, WritesData
                 'content' => ['sometimes', 'string'],
             ])->validate();
 
-            return app(ArticleCommands::class)->update($article, $changes, $this->hotel);
+            return app(ArticleCommands::class)->update($article, $changes);
         });
 
         if (is_string($result)) {

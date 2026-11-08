@@ -41,7 +41,7 @@ function vtSend($test, User $user, string $method, string $uri, array $payload =
 
 function vtCreate($test, Hotel $hotel, string $name = 'Standard EN', string $language = 'en', bool $default = false): VoucherTemplate
 {
-    $id = vtUpload($test, $hotel->owner, ['name' => $name, 'language' => $language, 'is_default' => $default ? '1' : '0'], vcImage(1240, 1754))
+    $id = vtUpload($test, adminOfHotel($hotel), ['name' => $name, 'language' => $language, 'is_default' => $default ? '1' : '0'], vcImage(1240, 1754))
         ->assertCreated()
         ->json('body.id');
 
@@ -58,7 +58,7 @@ function vtBox(string $id, string $field = 'guest.primary_name', array $extra = 
 it('stores an uploaded template with its original and a render copy', function (string $type, string $mime) {
     $hotel = avHotel();
 
-    $response = vtUpload($this, $hotel->owner, ['name' => 'Standard', 'language' => 'en'], vcImage(2480, 3508, $type))
+    $response = vtUpload($this, adminOfHotel($hotel), ['name' => 'Standard', 'language' => 'en'], vcImage(2480, 3508, $type))
         ->assertCreated()
         ->assertJsonPath('body.layout', [])
         ->assertJsonPath('body.image.mime_type', $mime)
@@ -82,7 +82,7 @@ it('stores an uploaded template with its original and a render copy', function (
 it('rejects an image that breaks a rule, naming the rule and storing nothing', function (Closure $image, string $key) {
     $hotel = avHotel();
 
-    vtUpload($this, $hotel->owner, ['name' => 'Bad', 'language' => 'en'], $image())
+    vtUpload($this, adminOfHotel($hotel), ['name' => 'Bad', 'language' => 'en'], $image())
         ->assertUnprocessable()
         ->assertJsonValidationErrors($key);
 
@@ -102,14 +102,14 @@ it('keeps names unique per hotel, ignoring case', function () {
     $other = avHotel();
     vtCreate($this, $hotel, 'Standard');
 
-    vtUpload($this, $hotel->owner, ['name' => 'STANDARD', 'language' => 'en'])->assertUnprocessable()->assertJsonValidationErrors('name');
-    vtUpload($this, $other->owner, ['name' => 'Standard', 'language' => 'en'])->assertCreated();
+    vtUpload($this, adminOfHotel($hotel), ['name' => 'STANDARD', 'language' => 'en'])->assertUnprocessable()->assertJsonValidationErrors('name');
+    vtUpload($this, adminOfHotel($other), ['name' => 'Standard', 'language' => 'en'])->assertCreated();
 });
 
 it('flattens a transparent image onto white for printing', function () {
     $hotel = avHotel();
 
-    $id = vtUpload($this, $hotel->owner, ['name' => 'Clear', 'language' => 'en'], vcImage(1240, 1754, 'png', transparent: true))->assertCreated()->json('body.id');
+    $id = vtUpload($this, adminOfHotel($hotel), ['name' => 'Clear', 'language' => 'en'], vcImage(1240, 1754, 'png', transparent: true))->assertCreated()->json('body.id');
     $template = VoucherTemplate::findOrFail($id);
 
     $render = imagecreatefromstring(Storage::disk(config('vouchers.disk'))->get($template->render_path));
@@ -124,7 +124,7 @@ it('saves a valid layout as sent, with defaults filled', function () {
     $hotel = avHotel();
     $template = vtCreate($this, $hotel);
 
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [
         vtBox('b1'),
         ['id' => 'b2', 'field' => 'free_text', 'text' => 'Welcome', 'x' => 0, 'y' => 0.9, 'w' => 1, 'h' => 0.1, 'font_size' => 10, 'color' => '#000000'],
     ]])->assertOk()
@@ -139,9 +139,9 @@ it('saves a valid layout as sent, with defaults filled', function () {
 it('rejects an invalid layout as a whole, naming the box, and keeps the old one', function (array $layout, string $key) {
     $hotel = avHotel();
     $template = vtCreate($this, $hotel);
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('keep')]])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('keep')]])->assertOk();
 
-    $response = vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => $layout])
+    $response = vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => $layout])
         ->assertUnprocessable()
         ->assertJsonValidationErrors($key);
 
@@ -168,7 +168,7 @@ it('keeps one default per language', function () {
     $first = vtCreate($this, $hotel, 'A', default: true);
     $second = vtCreate($this, $hotel, 'B');
 
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$second->id}", ['is_default' => true])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$second->id}", ['is_default' => true])->assertOk();
 
     expect($first->fresh()->is_default)->toBeFalse()
         ->and($second->fresh()->is_default)->toBeTrue();
@@ -182,7 +182,7 @@ it('moves the default flag with a language change', function () {
     $english = vtCreate($this, $hotel, 'EN', 'en', true);
     $arabic = vtCreate($this, $hotel, 'AR', 'ar', true);
 
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$english->id}", ['language' => 'ar'])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$english->id}", ['language' => 'ar'])->assertOk();
 
     expect($english->fresh()->is_default)->toBeTrue()
         ->and($english->fresh()->language->value)->toBe('ar')
@@ -192,11 +192,11 @@ it('moves the default flag with a language change', function () {
 it('keeps the layout when the image is replaced', function () {
     $hotel = avHotel();
     $template = vtCreate($this, $hotel);
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('b1')]])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('b1')]])->assertOk();
     $layout = $template->fresh()->layout;
     $oldRender = $template->fresh()->render_path;
 
-    vtUpload($this, $hotel->owner, [], vcImage(2480, 3508, 'webp'), "/api/voucher-templates/{$template->id}/image")
+    vtUpload($this, adminOfHotel($hotel), [], vcImage(2480, 3508, 'webp'), "/api/voucher-templates/{$template->id}/image")
         ->assertOk()
         ->assertJsonPath('body.image.width_px', 2480);
 
@@ -208,7 +208,7 @@ it('keeps the layout when the image is replaced', function () {
 it('lists every field with its kind and labels in both languages', function () {
     $hotel = avHotel();
 
-    $fields = vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates/fields')->assertOk()->json('body');
+    $fields = vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates/fields')->assertOk()->json('body');
 
     expect(array_column($fields, 'key'))->toBe(array_map(fn (VoucherField $f) => $f->value, VoucherField::cases()))
         ->and(collect($fields)->firstWhere('key', 'rooms.lines')['kind'])->toBe('list')
@@ -228,17 +228,17 @@ it('previews with sample data, a reservation, or an unsaved layout, storing and 
     Mail::fake();
     $hotel = avHotel();
     $template = vtCreate($this, $hotel);
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('g', 'guest.primary_name', ['w' => 0.8, 'h' => 0.08])]])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('g', 'guest.primary_name', ['w' => 0.8, 'h' => 0.08])]])->assertOk();
     $reservation = vcReservation($hotel);
     $events = EventLog::count();
 
-    $sample = vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview")->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    $sample = vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview")->assertOk()->assertHeader('Content-Type', 'application/pdf');
     expect(vcPdfText($sample->getContent()))->toContain('Alexandra');
 
-    $real = vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", ['reservation_id' => $reservation->id])->assertOk();
+    $real = vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", ['reservation_id' => $reservation->id])->assertOk();
     expect(vcPdfText($real->getContent()))->toContain('Layla Haddad');
 
-    $unsaved = vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", [
+    $unsaved = vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", [
         'layout' => [vtBox('n', 'free_text', ['text' => 'Unsaved layout text', 'w' => 0.8, 'h' => 0.08])],
     ])->assertOk();
     expect(vcPdfText($unsaved->getContent()))->toContain('Unsaved layout text')
@@ -253,12 +253,12 @@ it('checks preview date overrides against the previewed reservation\'s dates', f
     $template = vtCreate($this, $hotel);
     $reservation = vcReservation($hotel); // 2026-12-10 → 2026-12-13
 
-    vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", [
+    vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", [
         'reservation_id' => $reservation->id,
         'overrides' => ['arrival_date' => '2026-12-11'],
     ])->assertOk();
 
-    vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", [
+    vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", [
         'reservation_id' => $reservation->id,
         'overrides' => ['departure_date' => '2026-12-09'],
     ])->assertUnprocessable()->assertJsonValidationErrors('overrides.departure_date');
@@ -268,7 +268,7 @@ it('renames a default template without touching its default flag in the audit tr
     $hotel = avHotel();
     $template = vtCreate($this, $hotel, 'Main', default: true);
 
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}", ['name' => 'Renamed'])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}", ['name' => 'Renamed'])->assertOk();
 
     $updates = EventLog::where('subject_id', $template->id)->where('event_type', 'like', 'voucher_template.%')->where('event_type', '!=', 'voucher_template.created')->get();
 
@@ -282,7 +282,7 @@ it('still renders when the template image is replaced mid-render', function () {
     $template = vtCreate($this, $hotel);
     $stale = VoucherTemplate::find($template->id);
 
-    vtUpload($this, $hotel->owner, [], vcImage(2480, 3508), "/api/voucher-templates/{$template->id}/image")->assertOk();
+    vtUpload($this, adminOfHotel($hotel), [], vcImage(2480, 3508), "/api/voucher-templates/{$template->id}/image")->assertOk();
     expect(Storage::disk(config('vouchers.disk'))->exists($stale->render_path))->toBeFalse();
 
     $pdf = app(VoucherRenderer::class)
@@ -297,7 +297,7 @@ it('answers not found for a preview with another hotel\'s reservation', function
     $other = avHotel();
     $template = vtCreate($this, $hotel);
 
-    vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", ['reservation_id' => vcReservation($other)->id])->assertNotFound();
+    vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", ['reservation_id' => vcReservation($other)->id])->assertNotFound();
 });
 
 it('needs the voucher permission too to preview with a real reservation', function () {
@@ -322,11 +322,11 @@ it('lists only the hotel\'s templates, with filters, search and sort', function 
     vtCreate($this, $hotel, 'Beta', 'ar');
     vtCreate($this, $other, 'Gamma');
 
-    expect(vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates')->assertOk()->json('body.data'))->toHaveCount(2);
-    expect(vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates?filter[language]=ar')->json('body.data.0.name'))->toBe('Beta');
-    expect(vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates?filter[is_default]=1')->json('body.data.0.name'))->toBe('Alpha');
-    expect(vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates?search=Bet')->json('body.data'))->toHaveCount(1);
-    expect(vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates?sort=-name&per_page=1')->json('body.data.0.name'))->toBe('Beta');
+    expect(vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates')->assertOk()->json('body.data'))->toHaveCount(2);
+    expect(vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates?filter[language]=ar')->json('body.data.0.name'))->toBe('Beta');
+    expect(vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates?filter[is_default]=1')->json('body.data.0.name'))->toBe('Alpha');
+    expect(vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates?search=Bet')->json('body.data'))->toHaveCount(1);
+    expect(vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates?sort=-name&per_page=1')->json('body.data.0.name'))->toBe('Beta');
 });
 
 it('shows, streams and deletes a template only within its hotel', function () {
@@ -335,29 +335,29 @@ it('shows, streams and deletes a template only within its hotel', function () {
     $template = vtCreate($this, $hotel, 'Main', 'en', true);
     $original = $template->original_path;
 
-    vtSend($this, $hotel->owner, 'GET', "/api/voucher-templates/{$template->id}")->assertOk()->assertJsonPath('body.name', 'Main');
-    vtSend($this, $other->owner, 'GET', "/api/voucher-templates/{$template->id}")->assertNotFound();
-    vtSend($this, $other->owner, 'PUT', "/api/voucher-templates/{$template->id}", ['name' => 'X'])->assertNotFound();
-    vtSend($this, $other->owner, 'DELETE', "/api/voucher-templates/{$template->id}")->assertNotFound();
+    vtSend($this, adminOfHotel($hotel), 'GET', "/api/voucher-templates/{$template->id}")->assertOk()->assertJsonPath('body.name', 'Main');
+    vtSend($this, adminOfHotel($other), 'GET', "/api/voucher-templates/{$template->id}")->assertNotFound();
+    vtSend($this, adminOfHotel($other), 'PUT', "/api/voucher-templates/{$template->id}", ['name' => 'X'])->assertNotFound();
+    vtSend($this, adminOfHotel($other), 'DELETE', "/api/voucher-templates/{$template->id}")->assertNotFound();
 
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
+    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')
         ->get("/api/voucher-templates/{$template->id}/image")
         ->assertOk()
         ->assertHeader('Content-Type', 'image/png');
-    $this->withHeaders(['X-API-KEY' => 'test-api-key', 'Accept' => 'application/json'])->actingAs($other->owner, 'sanctum')
+    $this->withHeaders(['X-API-KEY' => 'test-api-key', 'Accept' => 'application/json'])->actingAs(adminOfHotel($other), 'sanctum')
         ->get("/api/voucher-templates/{$template->id}/image")
         ->assertNotFound();
 
-    vtSend($this, $hotel->owner, 'DELETE', "/api/voucher-templates/{$template->id}")->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'DELETE', "/api/voucher-templates/{$template->id}")->assertOk();
 
     expect(VoucherTemplate::withTrashed()->find($template->id)->trashed())->toBeTrue()
         ->and(Storage::disk(config('vouchers.disk'))->exists($original))->toBeTrue()
-        ->and(vtSend($this, $hotel->owner, 'GET', '/api/voucher-templates')->json('body.data'))->toBe([]);
+        ->and(vtSend($this, adminOfHotel($hotel), 'GET', '/api/voucher-templates')->json('body.data'))->toBe([]);
 
     // The name is free again, and vouchers fall back to the built-in layout.
     vtCreate($this, $hotel, 'Main');
     $reservation = vcReservation($hotel);
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk();
     expect(EventLog::where('event_type', 'reservation.voucher_generated')->sole()->context['voucher_template_id'])->toBeNull();
 });
 
@@ -366,7 +366,7 @@ it('keeps one hotel out of another hotel voucher templates (SPEC-013)', function
     $other = avHotel();
     $template = vtCreate($this, $hotel, 'Main');
     $before = $template->fresh()->toArray();
-    $intruder = $other->owner;
+    $intruder = adminOfHotel($other);
 
     vtSend($this, $intruder, 'GET', "/api/voucher-templates/{$template->id}")->assertNotFound();
     vtSend($this, $intruder, 'PUT', "/api/voucher-templates/{$template->id}", ['name' => 'Taken'])->assertNotFound();
@@ -436,11 +436,11 @@ it('stamps previews and refuses to preview a reservation that cannot get a vouch
     $hotel = avHotel();
     $template = vtCreate($this, $hotel);
 
-    $pdf = vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview")->assertOk()->getContent();
+    $pdf = vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview")->assertOk()->getContent();
     expect(vcPdfText($pdf))->toContain('PREVIEW');
 
     foreach (['cancelled', 'no_show'] as $status) {
-        vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", [
+        vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", [
             'reservation_id' => vcReservation($hotel, ['status' => $status])->id,
         ])->assertStatus(409);
     }
@@ -449,9 +449,9 @@ it('stamps previews and refuses to preview a reservation that cannot get a vouch
 it('applies overrides to a sample-data preview', function () {
     $hotel = avHotel();
     $template = vtCreate($this, $hotel);
-    vtSend($this, $hotel->owner, 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('g', 'guest.primary_name', ['w' => 0.8, 'h' => 0.08])]])->assertOk();
+    vtSend($this, adminOfHotel($hotel), 'PUT', "/api/voucher-templates/{$template->id}/layout", ['layout' => [vtBox('g', 'guest.primary_name', ['w' => 0.8, 'h' => 0.08])]])->assertOk();
 
-    $pdf = vtSend($this, $hotel->owner, 'POST', "/api/voucher-templates/{$template->id}/preview", [
+    $pdf = vtSend($this, adminOfHotel($hotel), 'POST', "/api/voucher-templates/{$template->id}/preview", [
         'overrides' => ['primary_guest_name' => 'Override Name', 'departure_date' => '2020-01-01'],
     ])->assertOk()->getContent();
 

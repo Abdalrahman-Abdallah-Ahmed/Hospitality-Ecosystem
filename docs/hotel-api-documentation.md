@@ -6,7 +6,7 @@ It covers `index`, `show` and `update`. Creating and deleting a hotel moved to t
 
 ## Important — This Is Not Where Most Hotels Get Created
 
-When a new hotel owner signs up, the hotel is created as part of **`POST /api/register`** (see `docs/register-api-update.md`, which supersedes the registration section in `docs/auth-api-documentation.md`), in the same transaction as the user account. That endpoint is open to any admin registering themselves plus their hotel in one call.
+When a new customer signs up, the hotel is created as part of **`POST /api/register`** (see `docs/register-api-update.md`, which supersedes the registration section in `docs/auth-api-documentation.md`), in the same transaction as the user account. The new user becomes the owner of the account created for that hotel. That endpoint is open to anyone registering themselves plus their hotel in one call.
 
 A super admin onboards a customer, or restores a deleted hotel, with `POST /api/superadmin/accounts/{account}/hotels`. A normal "sign up and create my hotel" flow should use `/api/register`.
 
@@ -45,16 +45,17 @@ Every action is gated by `App\Policies\HotelPolicy`. The policy has a `before()`
 
 | Action | Rule (non-super-admin) | Super admin |
 | --- | --- | --- |
-| `index` (list) | Allowed for an `admin`, and for an `employee` whose staff role grants `hotels.view`. Only the hotels they can reach and that aren't suspended. | Allowed — sees **every** hotel, not scoped to any owner. |
-| `show` | The user must be `admin`, **and** the hotel's `owner_id` must equal the user's own id. | Allowed for any hotel. |
-| `update` | Same as `show`: must be the owning `admin`. | Allowed for any hotel, regardless of owner. |
+| `index` (list) | Allowed for an `admin`, and for an `employee` whose staff role grants `hotels.view`. Only the hotels they can reach and that aren't suspended. | Allowed — sees **every** hotel. |
+| `show` | The user must be an `admin` who can reach the hotel: the account owner for every hotel of the account, and any other admin for their home hotel and the hotels they are a member of. | Allowed for any hotel. |
+| `update` | Same as `show`. | Allowed for any hotel. |
 
 Practical implications for the UI:
 
-- **`index` lists the hotels a user works in**, so a multi-hotel user can choose where to work with `X-Hotel-Id`. An admin gets the full hotel object. An employee gets a short record, and it doesn't open `show` or `update` for them.
+- **`index` lists the hotels a user works in**, so a multi-hotel user can choose where to work with `X-Hotel-Id`. It always lists all of them, whichever hotel is chosen, and ignores a stale `X-Hotel-Id`. An admin gets the full hotel object. An employee gets a short record, and it doesn't open `show` or `update` for them.
+- **`show` and `update` reach every hotel the admin can reach, whichever one is chosen.** They don't need `X-Hotel-Id`. Any admin of a hotel can edit its settings, not one particular admin.
 - **A suspended hotel is refused.** It leaves the list, and `show`/`update` return the [suspended `403`](auth-api-documentation.md#suspended-account-or-hotel) to whoever would otherwise pass. Anyone else gets the normal `403`, with no `reason`, and is never told it is suspended. A super admin isn't affected.
-- `show`/`update` for a regular admin: a `403` on their own hotel id should not normally happen; a `403` on someone else's hotel id means "not yours" — treat it like a 404.
-- A super admin's UI can freely browse and edit any hotel; there is no ownership restriction for that role anywhere in this resource.
+- `show`/`update` for a regular admin: a `403` on a hotel from their own list should not normally happen; a `403` on any other hotel id means "not yours" — treat it like a 404.
+- A super admin's UI can freely browse and edit any hotel.
 - **A soft-deleted hotel can't be reached by its staff.** It drops out of what a user can reach, by default or with `X-Hotel-Id`. Links and tokens are kept, so access returns if the hotel is restored.
 
 ## Response Format
@@ -80,7 +81,7 @@ Successful custom API responses use this structure:
 ```json
 {
   "id": "019f9b37-c265-726d-a6fe-f7eaa7852636",
-  "owner_id": "019f9b37-c260-7abc-9000-1234567890ab",
+  "hotel_group_id": "019f9b37-c260-7abc-9000-1234567890ab",
   "name": "Grand Harbor Hotel",
   "slug": "grand-harbor-hotel",
   "timezone": "Africa/Cairo",
@@ -116,7 +117,8 @@ Successful custom API responses use this structure:
 
 Field notes for the UI:
 
-- `id` and `owner_id` are UUID strings, not integers.
+- `id` and `hotel_group_id` are UUID strings, not integers. `hotel_group_id` is the account the hotel belongs to.
+- **There is no `owner_id` or `owner`** (*removed 2026-11-07*). A hotel belongs to its account, and the account has at most one owner: the user whose `group_role` is `owner`.
 - `branding` and `ai_preferences` are JSON object fields, returned as parsed JSON, not strings. The backend places no shape constraints on either — the frontend owns their structure.
 - `email` is only validated as a plain string (max length), not with an email-format rule. Validate format client-side.
 - `currency` is capped at 3 characters, `country_code` at 2 — these are not validated against ISO lists server-side; constrain input client-side (e.g. a currency/country picker).
@@ -223,7 +225,7 @@ HTTP `404` if the id doesn't exist at all:
 
 ### Error: Not Yours (Non-Super-Admin)
 
-HTTP `403` if the hotel exists but the caller is neither its owner nor a super admin — Laravel's default authorization-failure shape:
+HTTP `403` if the hotel exists but the caller can't reach it, or is an employee — Laravel's default authorization-failure shape:
 
 ```json
 { "message": "This action is unauthorized." }
@@ -271,7 +273,9 @@ merged over the stored settings, e.g. `{"proactive_settings": {"enabled": true}}
 for a bad time (`H:i`), `daily_cap` outside 1–3, `reminder.hours_before` outside 1–24, or an
 unknown key (`Unknown proactive setting [send_at_midnight].`).
 
-**`owner_id` and `hotel_group_id` are ignored**, for every caller, super admins included. Moving a hotel to another account goes through [`PUT /api/superadmin/hotels/{hotel}`](superadmin-accounts-api-documentation.md), and there is no API for transferring ownership directly.
+**`hotel_group_id` is ignored**, for every caller, super admins included, and so is a stray `owner_id`. Moving a hotel to another account goes through [`PUT /api/superadmin/hotels/{hotel}`](superadmin-accounts-api-documentation.md). Ownership belongs to the account, and a super admin assigns it through the user endpoints.
+
+**Team and category settings are checked against the hotel being edited**, whichever hotel the request otherwise works in.
 
 **`slug`** is unique across every hotel, including soft-deleted ones: a slug a deleted hotel still holds returns `422`.
 
@@ -281,7 +285,7 @@ HTTP `200 OK`. `body` is the updated [hotel object](#the-hotel-object).
 
 ### Error: Not Found / Not Yours
 
-Same as [show](#2-get-a-single-hotel): `404` if the id doesn't exist, `403` if the caller is neither the owner nor a super admin.
+Same as [show](#2-get-a-single-hotel): `404` if the id doesn't exist, `403` if the caller can't reach it or is an employee.
 
 ## Validation Errors
 
@@ -324,8 +328,8 @@ curl -X PUT http://your-domain.com/api/hotel/019f9b37-c265-726d-a6fe-f7eaa785263
 
 - Most hotels are created via `/api/register`, not this resource. Build a "manage my hotel" screen (`show`/`update` on the admin's own hotel) for regular admins. Super admin creation and deletion use `/api/superadmin`.
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
-- `index` is super-admin-only; `show`/`update` work for the owning admin **or** a super admin.
+- `index` lists every hotel the user can reach; `show`/`update` work for any admin who can reach the hotel, **or** a super admin.
 - List with `GET /api/hotel`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column`/`sort=-column`, paginate with `page`/`per_page`.
-- `owner_id` and `hotel_group_id` are ignored on update, so leave them out of edit forms.
+- `hotel_group_id` is ignored on update, so leave it out of edit forms. There is no `owner_id` any more, and `filter[owner_id]` or `sort=owner_id` return `422`.
 - `email`, `currency`, `country_code` are only length/type validated server-side — enforce format client-side.
 - `POST` and `DELETE` on these addresses return `405`.

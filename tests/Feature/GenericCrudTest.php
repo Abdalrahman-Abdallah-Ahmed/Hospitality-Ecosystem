@@ -37,8 +37,8 @@ it('lists all hotels for a super admin', function () {
     $ownerA = User::factory()->role(UserRole::ADMIN)->create();
     $ownerB = User::factory()->role(UserRole::ADMIN)->create();
 
-    Hotel::create(['owner_id' => $ownerA->id, 'name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
-    Hotel::create(['owner_id' => $ownerB->id, 'name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
 
     $response = asUser($superAdmin)->getJson('/api/hotel');
 
@@ -48,9 +48,9 @@ it('lists all hotels for a super admin', function () {
 
 it('limits an admin\'s hotel list to the hotels they can reach', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
-    Hotel::create(['owner_id' => $owner->id, 'name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
 
     $response = asUser($owner->fresh())->getJson('/api/hotel');
 
@@ -60,7 +60,8 @@ it('limits an admin\'s hotel list to the hotels they can reach', function () {
 
 it('updates a hotel partially via the generic update request', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Old Name', 'slug' => 'old-slug', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Old Name', 'slug' => 'old-slug', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
 
     $response = asUser($owner)->putJson("/api/hotel/{$hotel->id}", [
         'name' => 'New Name',
@@ -72,7 +73,8 @@ it('updates a hotel partially via the generic update request', function () {
 
 it('does not flag a hotel unique slug rule against itself on update', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $owner->update(['hotel_id' => $hotel->id]);
 
     $response = asUser($owner)->putJson("/api/hotel/{$hotel->id}", [
         'slug' => 'harbor',
@@ -81,10 +83,10 @@ it('does not flag a hotel unique slug rule against itself on update', function (
     $response->assertOk();
 });
 
-it('rejects a hotel update for a non-owner', function () {
+it('rejects a hotel update for an admin who cannot reach the hotel', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
     $stranger = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $response = asUser($stranger)->putJson("/api/hotel/{$hotel->id}", [
         'name' => 'Hijacked',
@@ -95,7 +97,7 @@ it('rejects a hotel update for a non-owner', function () {
 
 it('creates an activity for the caller hotel with decimal columns validated generically', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
 
     $response = asUser($owner)->postJson('/api/activity', [
@@ -112,11 +114,11 @@ it('creates an activity for the caller hotel with decimal columns validated gene
 
 it('rejects an activity whose category belongs to a different hotel', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
 
     $otherOwner = User::factory()->role(UserRole::ADMIN)->create();
-    $otherHotel = Hotel::create(['owner_id' => $otherOwner->id, 'name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
+    $otherHotel = Hotel::create(['name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
     $otherCategory = ActivityCategory::create(['hotel_id' => $otherHotel->id, 'name' => 'Other Category']);
 
     $response = asUser($owner)->postJson('/api/activity', [
@@ -130,7 +132,7 @@ it('rejects an activity whose category belongs to a different hotel', function (
 
 it('creates an activity category for the caller hotel', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
 
     $response = asUser($owner)->postJson('/api/activity-category', [
@@ -146,11 +148,11 @@ it('creates an activity category for the caller hotel', function () {
 
 it('ignores hotel_id on activity category update and keeps its own hotel', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $owner->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $owner->update(['hotel_id' => $hotel->id]);
 
     $category = ActivityCategory::create(['hotel_id' => $hotel->id, 'name' => 'Wellness']);
-    $otherHotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
+    $otherHotel = Hotel::create(['name' => 'Other', 'slug' => 'other', 'currency' => 'USD']);
 
     $response = asUser($owner)->putJson("/api/activity-category/{$category->id}", [
         'hotel_id' => $otherHotel->id,
@@ -163,7 +165,7 @@ it('ignores hotel_id on activity category update and keeps its own hotel', funct
 });
 
 it('builds reservation update rules that accept a valid enum status and ignore the record itself for uniqueness', function () {
-    $hotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
     $reservation = Reservation::create([
         'hotel_id' => $hotel->id,

@@ -30,7 +30,6 @@ function sqlAdmin(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Sql Dump Hotel',
         'slug' => 'sql-dump-hotel-'.$admin->id,
         'currency' => 'USD',

@@ -34,7 +34,6 @@ function elAdminWithHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Event Log Hotel',
         'slug' => 'event-log-hotel-'.uniqid(),
         'currency' => 'USD',

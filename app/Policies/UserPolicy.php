@@ -43,15 +43,16 @@ class UserPolicy
      */
     public function update(User $user, User $model): bool
     {
-        return $this->managesUser($user, $model);
+        return $this->managesUser($user, $model) && $this->mayChange($user, $model);
     }
 
     /**
-     * Determine whether the user can delete the model.
+     * Determine whether the user can delete the model. An owner is never
+     * deleted from here, by themselves or anyone else, except a super admin.
      */
     public function delete(User $user, User $model): bool
     {
-        return $this->managesUser($user, $model);
+        return $this->managesUser($user, $model) && $this->mayChange($user, $model) && ! $model->isOwner();
     }
 
     /**
@@ -71,18 +72,45 @@ class UserPolicy
     }
 
     /**
-     * An admin manages the non-super-admin users of their own hotel.
+     * An admin manages themselves and the non-super-admin users whose home is
+     * the hotel the request works in. Themselves wherever they work, since
+     * the index lists them in any hotel.
      *
      * The null guard is load-bearing: without it an admin with no hotel
      * matches every other hotel-less user, and super admins have no hotel.
      */
     private function managesUser(User $user, User $model): bool
     {
+        if (! $user->isAdmin()) {
+            return false;
+        }
+
+        if ($user->is($model)) {
+            return true;
+        }
+
         $hotelId = $user->hotel?->id;
 
-        return $user->isAdmin()
-            && ! $model->isSuperAdmin()
+        return ! $model->isSuperAdmin()
             && $hotelId !== null
             && $model->hotel_id === $hotelId;
+    }
+
+    /**
+     * Only the account owner changes another admin, or a user who reaches a
+     * hotel the acting admin can't. Otherwise an admin could reset that
+     * user's password and sign in as them, gaining their hotels.
+     */
+    private function mayChange(User $user, User $model): bool
+    {
+        if ($user->is($model) || $user->isOwner()) {
+            return true;
+        }
+
+        if ($model->isAdmin()) {
+            return false;
+        }
+
+        return array_diff($model->accessibleHotelIds() ?? [], $user->reachableHotelIds() ?? []) === [];
     }
 }

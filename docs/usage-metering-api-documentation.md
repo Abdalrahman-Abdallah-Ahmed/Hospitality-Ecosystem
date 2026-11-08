@@ -195,7 +195,7 @@ defaults, same shape for `seats` and `features`, same `not_measured` gaps —
 one account instead of an `accounts[]` array, so `hotel_group_id`, `seats` and
 `features` sit at the top level of the body.
 
-Open to a hotel-group **admin** or a holder of a `group_role`. An employee
+Open to any **admin** of the account, the account owner included. An employee
 gets 403: they work in a hotel, they do not represent the customer, and
 account-level consumption is commercial information about the account. A user
 belonging to no account gets 403 as well, with a message saying so.

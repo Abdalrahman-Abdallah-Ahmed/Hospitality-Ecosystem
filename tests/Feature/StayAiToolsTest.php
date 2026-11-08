@@ -34,9 +34,9 @@ function aiCall(object $tool, array $input): string
 it('checks a reservation in, audited as the AI acting for the admin', function () {
     [$hotel, $type, [$a, $b]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id, $b->id]);
-    $this->actingAs($hotel->owner);
+    $this->actingAs(adminOfHotel($hotel));
 
-    $answer = aiCall(new CheckInTool($hotel, $hotel->owner), ['reservation_id' => $reservation->reservation_id]);
+    $answer = aiCall(new CheckInTool($hotel, adminOfHotel($hotel)), ['reservation_id' => $reservation->reservation_id]);
 
     expect($answer)->toContain('Checked in')->toContain('checked_in')
         ->and(collect(fdStays($reservation))->pluck('status')->unique()->all())->toBe([StayStatus::IN_HOUSE]);
@@ -44,14 +44,14 @@ it('checks a reservation in, audited as the AI acting for the admin', function (
     $audit = EventLog::where('event_type', 'stay.checked_in')->get();
     expect($audit)->toHaveCount(2)
         ->and($audit->pluck('actor_kind')->map(fn ($kind) => $kind->value ?? $kind)->unique()->all())->toBe([ActorKind::AI_AGENT->value])
-        ->and($audit->pluck('actor_id')->unique()->all())->toBe([$hotel->owner->id]);
+        ->and($audit->pluck('actor_id')->unique()->all())->toBe([adminOfHotel($hotel)->id]);
 });
 
 it('assigns a named room to an unassigned line at check-in', function () {
     [$hotel, $type, [$a]] = fdHotel();
     $reservation = fdBook($hotel, $type, [null]);
 
-    aiCall(new CheckInTool($hotel, $hotel->owner), [
+    aiCall(new CheckInTool($hotel, adminOfHotel($hotel)), [
         'reservation_id' => $reservation->reservation_id,
         'assign' => [['room_type' => 'Deluxe', 'room_number' => $a->room_number]],
     ]);
@@ -64,7 +64,7 @@ it('reports the same reason the front desk gets, and changes nothing', function 
     [$hotel, $type] = fdHotel();
     $reservation = fdBook($hotel, $type, [null]);
 
-    $answer = aiCall(new CheckInTool($hotel, $hotel->owner), ['reservation_id' => $reservation->reservation_id]);
+    $answer = aiCall(new CheckInTool($hotel, adminOfHotel($hotel)), ['reservation_id' => $reservation->reservation_id]);
 
     expect($answer)->toBe('Not done: Assign or name a room first.')
         ->and(fdStays($reservation)[0]->fresh()->status)->toBe(StayStatus::EXPECTED);
@@ -87,9 +87,9 @@ it('refuses for a user without the permission', function () {
 it('checks only the named rooms out, with a cleaning task each', function () {
     [$hotel, $type, [$a, $b]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id, $b->id]);
-    aiCall(new CheckInTool($hotel, $hotel->owner), ['reservation_id' => $reservation->reservation_id]);
+    aiCall(new CheckInTool($hotel, adminOfHotel($hotel)), ['reservation_id' => $reservation->reservation_id]);
 
-    $answer = aiCall(new CheckOutTool($hotel, $hotel->owner), ['reservation_id' => $reservation->reservation_id, 'room_numbers' => [$a->room_number]]);
+    $answer = aiCall(new CheckOutTool($hotel, adminOfHotel($hotel)), ['reservation_id' => $reservation->reservation_id, 'room_numbers' => [$a->room_number]]);
 
     [$first, $second] = fdStays($reservation);
     expect($answer)->toContain('Checked out')
@@ -102,8 +102,8 @@ it('lists arrivals the same way the endpoint does', function () {
     [$hotel, $type, [$a]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id, null]);
 
-    $result = json_decode(aiCall(new GetStaysTool($hotel, $hotel->owner), ['list' => 'arrivals']), true);
-    $endpoint = fdGet($this, $hotel->owner, '/api/stays/arrivals')->json('body.stays');
+    $result = json_decode(aiCall(new GetStaysTool($hotel, adminOfHotel($hotel)), ['list' => 'arrivals']), true);
+    $endpoint = fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals')->json('body.stays');
 
     expect($result['stays'])->toHaveCount(count($endpoint))
         ->and(collect($result['stays'])->pluck('reservation')->unique()->all())->toBe([$reservation->reservation_id])
@@ -115,7 +115,7 @@ it('never finds another hotel\'s reservation', function () {
     [$other] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id]);
 
-    expect(aiCall(new CheckInTool($other, $other->owner), ['reservation_id' => $reservation->reservation_id]))
+    expect(aiCall(new CheckInTool($other, adminOfHotel($other)), ['reservation_id' => $reservation->reservation_id]))
         ->toBe('This hotel has no reservation with that code.');
 });
 
@@ -123,7 +123,7 @@ it('gives the Admin AI the three tools and the Concierge none, telling guests to
     [$hotel] = fdHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-ai', 'channel' => 'booking_com']);
 
-    $adminTools = collect((new AdminAdvisorAgent($hotel->owner))->tools())->map(fn ($tool) => $tool->inner()::class);
+    $adminTools = collect((new AdminAdvisorAgent(adminOfHotel($hotel)))->tools())->map(fn ($tool) => $tool->inner()::class);
     expect($adminTools)->toContain(CheckInTool::class, CheckOutTool::class, GetStaysTool::class);
 
     $concierge = new GuestConciergeAgent($guest, $hotel);

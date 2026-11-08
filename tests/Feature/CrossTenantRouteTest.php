@@ -74,7 +74,7 @@ function crossTenantRoute(string $method, string $uri): Route
 
 function crossTenantAdmin(Hotel $hotel): User
 {
-    return User::findOrFail($hotel->owner_id);
+    return adminOfHotel($hotel);
 }
 
 it('never shows another hotel\'s rows on a list or report route', function (string $method, string $uri) {
@@ -130,6 +130,50 @@ it('never finds or changes another hotel\'s record through a route parameter', f
         expect($record->newQueryWithoutScopes()->find($record->getKey())?->getAttributes())
             ->toBe($before[$index], "{$method} {$path} changed Hotel B's ".class_basename($record));
     }
+})->with(fn () => crossTenantRoutesFor('bound'));
+
+/*
+| Spec 025 (SC-009): an admin working in one hotel of an account, driven over
+| every bound tenant route. Hotel B's own admin gives the expected answer, so a
+| route that refuses for reasons of its own (a record's state, a disabled
+| feature) isn't mistaken for a hotel problem.
+*/
+it('gives an account owner who chooses a hotel the same answer as that hotel\'s own admin', function (string $method, string $uri) {
+    $hotelA = makeHotel();
+    $hotelB = makeHotel();
+    $hotelA->update(['hotel_group_id' => $hotelB->hotel_group_id]);
+    $owner = crossTenantAdmin($hotelA);
+    $owner->update(['hotel_group_id' => $hotelB->hotel_group_id, 'group_role' => 'owner']);
+    $factories = tenantOwnedModelFactories();
+    $path = '/'.$uri;
+
+    foreach (crossTenantBoundModels(crossTenantRoute($method, $uri)) as $name => $class) {
+        $path = str_replace(['{'.$name.'}', '{'.$name.'?}'], (string) $factories[$class]($hotelB)->getKey(), $path);
+    }
+
+    $expected = spRequest($this, crossTenantAdmin($hotelB), $method, $path)->getStatusCode();
+
+    expect(spRequest($this, $owner, $method, $path, headers: ['X-Hotel-Id' => $hotelB->id])->getStatusCode())
+        ->toBe($expected, "{$method} {$path}")
+        ->and(spRequest($this, $owner, $method, $path)->getStatusCode())
+        ->toBe(404, "{$method} {$path} with no hotel chosen");
+})->with(fn () => array_filter(crossTenantRoutesFor('bound'), fn (array $route) => $route[0] === 'GET'));
+
+it('keeps an admin out of a hotel of their account they are not assigned to', function (string $method, string $uri) {
+    $home = makeHotel();
+    $unassigned = makeHotel();
+    $unassigned->update(['hotel_group_id' => $home->hotel_group_id]);
+    $factories = tenantOwnedModelFactories();
+    $path = '/'.$uri;
+
+    foreach (crossTenantBoundModels(crossTenantRoute($method, $uri)) as $name => $class) {
+        $path = str_replace(['{'.$name.'}', '{'.$name.'?}'], (string) $factories[$class]($unassigned)->getKey(), $path);
+    }
+
+    $admin = crossTenantAdmin($home);
+
+    expect(spRequest($this, $admin, $method, $path)->getStatusCode())->toBe(404, "{$method} {$path}")
+        ->and(spRequest($this, $admin, $method, $path, headers: ['X-Hotel-Id' => $unassigned->id])->getStatusCode())->toBe(403, "{$method} {$path} choosing it");
 })->with(fn () => crossTenantRoutesFor('bound'));
 
 it('keeps every cross-account admin route from a hotel admin', function (string $method, string $uri) {

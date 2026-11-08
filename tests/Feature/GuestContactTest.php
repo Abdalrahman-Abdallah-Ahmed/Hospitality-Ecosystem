@@ -41,7 +41,6 @@ function contactHotel(): Hotel
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Contact Hotel',
         'slug' => 'contact-hotel-'.Str::lower(Str::random(6)),
         'currency' => 'USD',
@@ -215,7 +214,7 @@ it('still replies to the guest when contact stamping throws', function () {
 it('ignores contact fields sent through the guest update endpoint', function () {
     $hotel = contactHotel();
     $guest = contactGuest($hotel);
-    $admin = User::findOrFail($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
 
     $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($admin, 'sanctum')
         ->putJson("/api/guest/{$guest->id}", [

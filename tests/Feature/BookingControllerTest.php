@@ -195,7 +195,7 @@ function abCruise($hotel, array $attributes = [])
 
 function abDeskBooking($hotel, $activity, array $payload, ?User $user = null)
 {
-    return bookingApi($user ?? User::find($hotel->owner_id), 'POST', '/api/booking', [
+    return bookingApi($user ?? adminOfHotel($hotel), 'POST', '/api/booking', [
         'guest_id' => abGuest($hotel)->id,
         'activity_id' => $activity->id,
         'charge_model' => ChargeModel::PAY_ON_SITE->value,
@@ -276,7 +276,7 @@ it('requires a date for a catalogue booking but not for a free-text one', functi
 
     abDeskBooking($hotel, abCruise($hotel), [])->assertStatus(422)->assertJsonValidationErrors('scheduled_for');
 
-    bookingApi(User::find($hotel->owner_id), 'POST', '/api/booking', [
+    bookingApi(adminOfHotel($hotel), 'POST', '/api/booking', [
         'guest_id' => abGuest($hotel)->id,
         'item_name' => 'Private yacht charter',
         'charge_model' => ChargeModel::PAY_ON_SITE->value,
@@ -347,7 +347,7 @@ it('filters the list by activity, reservation, date range and open request', fun
     $linked = abBook($hotel, $spa, '2026-10-09', 2, ['reservation_id' => $reservation->id, 'guest_id' => $reservation->guest_id]);
     app(BookingCancellationService::class)->request($linked, Guest::withoutGlobalScope('hotel')->find($linked->guest_id), null);
 
-    $admin = User::find($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
 
     $week = bookingApi($admin, 'GET', "/api/booking?activity_id={$boat->id}&scheduled_from=2026-10-05&scheduled_to=2026-10-11")->assertOk()->json('body.data');
 
@@ -370,7 +370,7 @@ it('agrees with the calendar on how many people each day holds', function () {
     abBook($hotel, $boat, '2026-10-08', 3);
     abBook($hotel, $boat, '2026-10-08', 4);
     app(BookingService::class)->cancel(abBook($hotel, $boat, '2026-10-08', 5), 'changed plans');
-    $admin = User::find($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
 
     $listed = collect(bookingApi($admin, 'GET', "/api/booking?activity_id={$boat->id}&scheduled_from=2026-10-08&scheduled_to=2026-10-08")->json('body.data'))
         ->whereIn('status', ['pending', 'confirmed', 'realised'])
@@ -384,7 +384,7 @@ it('lists a page of bookings with a fixed number of queries', function () {
     $this->travelTo('2026-10-05 09:00:00');
     $hotel = avHotel();
     $boat = abActivity($hotel);
-    $admin = User::find($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
 
     $count = function () use ($admin) {
         DB::flushQueryLog();
@@ -459,7 +459,7 @@ it('needs no permission when no override is asked for', function () {
 it('answers ids that are not ids with a validation error', function () {
     $this->travelTo('2026-10-05 09:00:00');
     $hotel = avHotel();
-    $admin = User::find($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
 
     bookingApi($admin, 'GET', '/api/booking?activity_id=abc')->assertStatus(422)->assertJsonValidationErrors('activity_id');
     bookingApi($admin, 'GET', '/api/booking?reservation_id=abc')->assertStatus(422)->assertJsonValidationErrors('reservation_id');

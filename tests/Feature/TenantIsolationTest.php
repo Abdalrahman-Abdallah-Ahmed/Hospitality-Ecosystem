@@ -107,7 +107,21 @@ it('leaves a super admin unrestricted', function () {
     expect(Room::query()->count())->toBe(2);
 });
 
-it('gives a group admin every hotel in their group automatically', function () {
+it('refuses another account\'s owner and admin a hotel\'s own record', function (string $method) {
+    $hotel = makeHotel();
+    $strangerHotel = makeHotel();
+    $owner = adminOfHotel($strangerHotel);
+    $owner->update(['hotel_group_id' => $strangerHotel->hotel_group_id, 'group_role' => 'owner']);
+    $admin = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $strangerHotel->id]);
+
+    foreach ([$owner, $admin] as $stranger) {
+        spRequest($this, $stranger, $method, "/api/hotel/{$hotel->id}", ['city' => 'Taken'])->assertForbidden();
+    }
+
+    expect($hotel->fresh()->city)->not->toBe('Taken');
+})->with(['GET', 'PUT', 'PATCH']);
+
+it('gives an account owner every hotel in their account automatically', function () {
     $group = HotelGroup::create(['name' => 'Group', 'slug' => 'group-'.uniqid()]);
 
     $hotelA = makeHotel();
@@ -121,7 +135,7 @@ it('gives a group admin every hotel in their group automatically', function () {
     $director = User::factory()->role(UserRole::ADMIN)->create([
         'hotel_id' => null,
         'hotel_group_id' => $group->id,
-        'group_role' => 'group_admin',
+        'group_role' => 'owner',
     ]);
 
     $accessibleIds = $director->accessibleHotelIds();
@@ -213,7 +227,7 @@ it('never counts or reveals another hotel\'s rooms and bookings in availability'
     $departure = now()->addDays(6)->toDateString();
     avBook($hotelB, $typeB, $arrival, $departure, units: 4);
 
-    $lookup = fn (array $extra = []) => $this->withHeaders(wp5Headers())->actingAs($hotelA->owner, 'sanctum')
+    $lookup = fn (array $extra = []) => $this->withHeaders(wp5Headers())->actingAs(adminOfHotel($hotelA), 'sanctum')
         ->getJson('/api/availability?'.http_build_query(['arrival_date' => $arrival, 'departure_date' => $departure, ...$extra]));
 
     $lookup()->assertOk()
@@ -237,8 +251,8 @@ it('never lets an availability AI tool built for one hotel see another hotel\'s 
     avBook($hotelB, $typeB, now()->addDays(3)->toDateString(), now()->addDays(4)->toDateString(), units: 2);
     $dates = ['arrival_date' => now()->addDays(3)->toDateString(), 'departure_date' => now()->addDays(4)->toDateString()];
 
-    $admin = (string) (new GetAvailabilityTool($hotelA, $hotelA->owner))->handle(new Request($dates));
-    $named = (string) (new GetAvailabilityTool($hotelA, $hotelA->owner))->handle(new Request([...$dates, 'room_type' => 'Penthouse']));
+    $admin = (string) (new GetAvailabilityTool($hotelA, adminOfHotel($hotelA)))->handle(new Request($dates));
+    $named = (string) (new GetAvailabilityTool($hotelA, adminOfHotel($hotelA)))->handle(new Request([...$dates, 'room_type' => 'Penthouse']));
     $guest = (string) (new GetGuestAvailabilityTool($hotelA))->handle(new Request([...$dates, 'room_type' => 'Penthouse']));
 
     expect($admin)->not->toContain('Penthouse')->not->toContain($typeB->id)
@@ -253,7 +267,7 @@ it('never shows or lets anyone act on another hotel\'s stays', function () {
     $reservationB = fdBook($hotelB, $typeB, [$roomB->id]);
     [$stayB] = fdStays($reservationB);
     fdBook($hotelA, $typeA, [$roomA->id]);
-    $adminA = $hotelA->owner;
+    $adminA = adminOfHotel($hotelA);
 
     // Lists show only the admin's own hotel.
     foreach (['/api/stays/arrivals', '/api/stays'] as $uri) {
@@ -286,7 +300,7 @@ it('never shows or lets anyone act on another hotel\'s stays', function () {
 it('keeps one hotel out of another hotel housekeeping and maintenance (FR-034)', function () {
     [$hotelA, $roomA, $cleaningA] = hkVacatedRoom($this);
     [$hotelB, $roomB, $cleaningB] = hkVacatedRoom($this);
-    $adminA = $hotelA->owner;
+    $adminA = adminOfHotel($hotelA);
 
     // Another hotel's room or task cannot be acted on.
     hkPut($this, $adminA, "/api/room/{$roomB->id}/housekeeping-status", ['housekeeping_status' => 'clean', 'reason' => 'x'])->assertNotFound();
@@ -298,7 +312,7 @@ it('keeps one hotel out of another hotel housekeeping and maintenance (FR-034)',
     fdPost($this, $adminA, "/api/room/{$roomA->id}/out-of-order", ['reason' => 'x', 'task_id' => $cleaningB->id])->assertForbidden();
 
     // Lists show only the caller's own hotel.
-    fdPost($this, $hotelB->owner, "/api/task/{$cleaningB->id}/issues", ['description' => 'Their leak'])->assertCreated();
+    fdPost($this, adminOfHotel($hotelB), "/api/task/{$cleaningB->id}/issues", ['description' => 'Their leak'])->assertCreated();
     $board = collect(fdGet($this, $adminA, '/api/housekeeping/board')->assertOk()->json('body.rooms'))->pluck('room.id');
     $maintenance = collect(fdGet($this, $adminA, '/api/maintenance/tasks')->assertOk()->json('body.data'))->pluck('room.id');
     expect($board)->toContain($roomA->id)->not->toContain($roomB->id)
@@ -317,7 +331,7 @@ it('keeps one hotel out of another hotel activity availability, bookings and can
     $this->travelTo('2026-10-05 09:00:00');
     $hotelA = avHotel();
     $hotelB = avHotel();
-    $adminA = User::find($hotelA->owner_id);
+    $adminA = adminOfHotel($hotelA);
     $activityA = abActivity($hotelA, ['daily_capacity' => 5]);
     $activityB = abActivity($hotelB, ['daily_capacity' => 5]);
     abBook($hotelA, $activityA, '2026-10-09', 2);
@@ -479,7 +493,7 @@ it('never lets another hotel mark or undo a no-show (SPEC-012)', function () {
     [$hotelB, $typeB, [$roomB]] = fdHotel();
     $reservationB = fdBook($hotelB, $typeB, [$roomB->id]);
     [$stayB] = fdStays($reservationB);
-    $adminA = $hotelA->owner;
+    $adminA = adminOfHotel($hotelA);
 
     foreach ([
         "/api/reservation/{$reservationB->id}/no-show",
@@ -567,7 +581,7 @@ it('generates insights for the caller\'s own hotel only (spec 017)', function ()
     $hotelA = makeHotel();
     makeHotel();
 
-    $this->actingAs(User::findOrFail($hotelA->owner_id))
+    $this->actingAs(adminOfHotel($hotelA))
         ->withHeaders(['X-API-KEY' => 'test-api-key'])
         ->postJson('/api/ai-insights', ['hotel_id' => 'not-this-one'])
         ->assertCreated();

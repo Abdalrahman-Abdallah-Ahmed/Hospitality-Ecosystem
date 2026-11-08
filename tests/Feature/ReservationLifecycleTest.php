@@ -23,12 +23,12 @@ function lcReservation($test, string $status): Reservation
     [$stay] = fdStays($reservation);
 
     match ($status) {
-        'checked_in' => fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk(),
+        'checked_in' => fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk(),
         'checked_out' => [
-            fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk(),
-            fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk(),
+            fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk(),
+            fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk(),
         ],
-        'no_show' => fdPost($test, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk(),
+        'no_show' => fdPost($test, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk(),
         default => null,
     };
 
@@ -37,7 +37,7 @@ function lcReservation($test, string $status): Reservation
 
 function lcPut($test, Reservation $reservation, array $payload)
 {
-    $owner = $reservation->hotel()->first()->owner;
+    $owner = adminOfHotel($reservation->hotel()->first());
 
     return $test->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($owner, 'sanctum')
         ->putJson("/api/reservation/{$reservation->id}", $payload);

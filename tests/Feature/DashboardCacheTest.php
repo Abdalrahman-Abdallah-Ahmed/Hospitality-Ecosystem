@@ -39,7 +39,7 @@ function pendingTaskFor(Hotel $hotel): Task
 
 it('recalculates the figures at most once within 60 seconds', function () {
     $hotel = makeHotel();
-    $admin = User::findOrFail($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
 
     $first = dashboardFor($this, $admin)->assertOk()->json('body');
 
@@ -69,15 +69,15 @@ it('never shows one hotel another hotel\'s figures', function () {
     pendingTaskFor($hotelA);
     pendingTaskFor($hotelA);
 
-    $a = dashboardFor($this, User::findOrFail($hotelA->owner_id))->assertOk()->json('body.pending_tasks');
-    $b = dashboardFor($this, User::findOrFail($hotelB->owner_id))->assertOk()->json('body.pending_tasks');
+    $a = dashboardFor($this, adminOfHotel($hotelA))->assertOk()->json('body.pending_tasks');
+    $b = dashboardFor($this, adminOfHotel($hotelB))->assertOk()->json('body.pending_tasks');
 
     expect($a)->toBe(2)->and($b)->toBe(0);
 });
 
 it('still refuses an employee without dashboard.view when a cached copy exists', function () {
     $hotel = makeHotel();
-    dashboardFor($this, User::findOrFail($hotel->owner_id))->assertOk();
+    dashboardFor($this, adminOfHotel($hotel))->assertOk();
 
     $employee = fdEmployee($hotel, [Permission::TASKS_VIEW]);
 
@@ -96,7 +96,7 @@ it('keys the cache on what the caller can see, not on their home hotel', functio
     expect(dashboardFor($this, $superAdmin)->assertOk()->json('body.pending_tasks'))->toBe(3);
 
     // ...which must never be served to that hotel's own admin.
-    expect(dashboardFor($this, User::findOrFail($hotelA->owner_id))->assertOk()->json('body.pending_tasks'))->toBe(1);
+    expect(dashboardFor($this, adminOfHotel($hotelA))->assertOk()->json('body.pending_tasks'))->toBe(1);
 });
 
 it('serves nested rooms and VIP stays from the cache, not empty objects', function () {
@@ -110,8 +110,8 @@ it('serves nested rooms and VIP stays from the cache, not empty objects', functi
     $reservation = fdBook($hotel, $type, [$room->id]);
     $reservation->guest->update(['is_vip' => true]);
 
-    $fresh = dashboardFor($this, $hotel->owner)->assertOk()->json('body');
-    $cached = dashboardFor($this, $hotel->owner)->assertOk()->json('body');
+    $fresh = dashboardFor($this, adminOfHotel($hotel))->assertOk()->json('body');
+    $cached = dashboardFor($this, adminOfHotel($hotel))->assertOk()->json('body');
 
     expect($cached['today_arrivals'][0]['rooms'])->toBeArray()->toBeList()->not->toBeEmpty()
         ->and($cached['today_arrivals'][0]['rooms'][0]['room_type'])->toBeArray()->not->toBeEmpty()

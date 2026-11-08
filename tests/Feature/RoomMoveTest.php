@@ -22,7 +22,7 @@ beforeEach(function () {
     config(['app.api_key' => 'test-api-key']);
 
     [$this->hotel, $this->type, $this->rooms] = fdHotel(4);
-    $this->admin = $this->hotel->owner;
+    $this->admin = adminOfHotel($this->hotel);
     $this->reservation = fdBook($this->hotel, $this->type, [$this->rooms[0]->id]);
     [$this->stay] = fdStays($this->reservation);
     fdPost($this, $this->admin, "/api/stays/{$this->stay->id}/check-in")->assertOk();
@@ -162,7 +162,7 @@ it('needs reservations.move_room, and hides other hotels\' stays', function () {
     rmMove($this, fdEmployee($this->hotel, [Permission::RESERVATIONS_ASSIGN_ROOM, Permission::STAYS_CHECK_IN]), $this->stay, $payload)->assertForbidden();
 
     [$other] = fdHotel(1);
-    rmMove($this, $other->owner, $this->stay, $payload)->assertNotFound();
+    rmMove($this, adminOfHotel($other), $this->stay, $payload)->assertNotFound();
 
     rmMove($this, fdEmployee($this->hotel, [Permission::RESERVATIONS_MOVE_ROOM]), $this->stay, $payload)->assertOk();
 });

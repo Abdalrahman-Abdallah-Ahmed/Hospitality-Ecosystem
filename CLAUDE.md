@@ -42,6 +42,16 @@ middleware (`ResolveTenant`).
   Use the escape hatches deliberately; never to make a failing isolation test pass.
 - `tests/TestCase.php` resets `TenantContext` between tests because it is
   process-static. Keep it that way.
+- **An admin's request works in one hotel** (spec 025): the one named by
+  `X-Hotel-Id`, or their default. The `hotel_choice` middleware (`UseChosenHotel`)
+  narrows the scope to it and sets the in-memory `$user->hotel` relation, never the
+  stored `hotel_id`. So `$user->hotel` and `resolveHotel()` mean "the hotel this
+  request works in"; read `hotel_id` only for the stored home hotel. Employees keep
+  their whole scope and their home hotel. Only `GET /api/hotel`, the hotel's own
+  record (`HotelPolicy`, through `accessibleHotelIds()`), logout and the WhatsApp
+  device routes reach further.
+- An account owner (`group_role` set, `User::isOwner()`) reaches every hotel of
+  the account; any other user reaches their home and member hotels.
 
 ### Access control — staff roles and permissions
 
@@ -52,8 +62,12 @@ What a user may do is decided by `App\Enums\Permission`, not by their role name:
   `Permission::employeeDefaults()` when they have no role. See `User::permissions()`.
 - Policies check `$this->allows($user, Permission::X, $record)` from
   `App\Policies\Concerns\ChecksPermissions`, which is the permission **plus** the
-  same-hotel check. Never write `isAdmin()` / `isEmployee()` in a policy for a
-  hotel resource.
+  same-hotel check against `$user->hotel`, the hotel the request works in. Never
+  write `isAdmin()` / `isEmployee()` in a policy for a hotel resource.
+- Admins are managed by the account owner alone: only the owner (or a super
+  admin) creates, promotes, edits or deletes another admin (`UserPolicy`,
+  `UserController`). An account has at most one owner, enforced by the
+  `users_one_owner_per_account` index.
 
 **Every new module or resource must add its permissions alongside the existing
 ones.** When adding one:
@@ -82,7 +96,7 @@ permissions without a separate change.
 ### Request flow
 
 ```
-api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  (policy authorize)  →  controller
+api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  not_suspended  →  hotel_choice  →  (policy authorize)  →  controller
 ```
 
 Middleware aliases are registered in `bootstrap/app.php`. Cross-account

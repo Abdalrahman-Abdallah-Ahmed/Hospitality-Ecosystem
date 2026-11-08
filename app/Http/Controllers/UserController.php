@@ -18,11 +18,14 @@ use Illuminate\Http\JsonResponse;
 class UserController extends Controller
 {
     /**
-     * Columns that decide which hotels a user can reach. Only a super admin
-     * may write them: an admin who could would join themselves to another
-     * account and read its data through the tenant scope.
+     * Columns that decide which hotels a user can reach. Never written here,
+     * for any caller: an admin who could would join themselves to another
+     * account, and these have rules that live in
+     * App\Services\Superadmin\UserAdministration.
      */
     private const ACCOUNT_ATTRIBUTES = ['hotel_group_id', 'group_role'];
+
+    private const ADMIN_GRANT_REFUSAL = 'Only the account owner can create or promote an admin.';
 
     private const RELATIONS = ['hotel', 'team', 'staffRole'];
 
@@ -61,6 +64,10 @@ class UserController extends Controller
 
         if (UserAdministration::refusesSuperAdminGrant($request->validated('role'))) {
             return apiResponse(UserAdministration::SUPER_ADMIN_REFUSAL, 403);
+        }
+
+        if ($this->refusesAdminGrant($request, null)) {
+            return apiResponse(self::ADMIN_GRANT_REFUSAL, 403);
         }
 
         $validated = $this->assignableAttributes($request);
@@ -115,6 +122,16 @@ class UserController extends Controller
             return apiResponse(UserAdministration::SUPER_ADMIN_REFUSAL, 403);
         }
 
+        if ($this->refusesAdminGrant($request, $user)) {
+            return apiResponse(self::ADMIN_GRANT_REFUSAL, 403);
+        }
+
+        $changesRole = $request->safe()->has('role') && $request->validated('role') !== $user->role->value;
+
+        if ($changesRole && $user->isOwner() && ! $request->user()->isSuperAdmin()) {
+            return apiResponse('An account owner\'s role can only be changed by a super admin.', 403);
+        }
+
         // A super admin must never know another user's password. Their own is fine.
         if ($request->user()->isSuperAdmin() && $user->isNot($request->user()) && $request->safe()->has('password')) {
             return apiResponse('A super admin cannot set another user\'s password. Send a password email instead.', 403);
@@ -154,11 +171,28 @@ class UserController extends Controller
             $validated['staff_role_id'] = null;
         }
 
+        // accessibleHotelIds() ignores role, so a role left in place would keep
+        // account-wide reach. Only a super admin gets here for an owner.
+        $demotesOwner = $changesRole && $user->group_role !== null;
+
+        if ($demotesOwner) {
+            $validated = [...$validated, 'group_role' => null, 'hotel_group_id' => null];
+        }
+
         $previousStaffRoleId = $user->staff_role_id;
+        $previousAccess = $user->only(['role', 'group_role', 'hotel_group_id']);
 
         $user->update($validated);
 
         $this->recordStaffRoleAssignment($user, from: $previousStaffRoleId);
+
+        // Account-wide access was removed, which /api/superadmin/users/{id}/access
+        // audits as a platform event. The same change made here is too.
+        if ($demotesOwner) {
+            EventLogger::recordPlatform('platform.user.access_changed', $user, collect($previousAccess)
+                ->map(fn ($from, string $key) => ['from' => EventLogger::normalize($from), 'to' => EventLogger::normalize($user->getAttribute($key))])
+                ->all());
+        }
 
         return apiResponse('User updated successfully.', 200, UserResource::make($user->load(self::RELATIONS)));
     }
@@ -191,16 +225,28 @@ class UserController extends Controller
     }
 
     /**
+     * Whether this request would make someone an admin who isn't one, sent by
+     * someone other than the account owner or a super admin. Otherwise an admin
+     * could promote an employee, sign in as them, and gain any hotel they are a
+     * member of.
+     */
+    private function refusesAdminGrant(FormRequest $request, ?User $target): bool
+    {
+        $caller = $request->user();
+
+        return $request->validated('role') === UserRole::ADMIN->value
+            && ! $target?->isAdmin()
+            && ! $caller->isOwner()
+            && ! $caller->isSuperAdmin();
+    }
+
+    /**
      * hotel_id is never written from the payload — store() resolves it and
      * update() keeps the current one. Account membership is dropped the same
-     * way for anyone but a super admin.
+     * way, for every caller.
      */
     private function assignableAttributes(FormRequest $request): array
     {
-        $ignored = $request->user()->isSuperAdmin()
-            ? ['hotel_id']
-            : ['hotel_id', ...self::ACCOUNT_ATTRIBUTES];
-
-        return unsetAttributes($request->validated(), $ignored);
+        return unsetAttributes($request->validated(), ['hotel_id', ...self::ACCOUNT_ATTRIBUTES]);
     }
 }

@@ -20,6 +20,7 @@ class ResolveTenant
         if ($user = $request->user()) {
             $hotelIds = $user->accessibleHotelIds();
             TenantContext::setHotelIds($hotelIds);
+            TenantContext::setReachableHotelIds($user->getKey(), $hotelIds);
 
             // Optional header lets a multi-hotel user pick one property to work in.
             $requested = $request->header('X-Hotel-Id');

@@ -43,9 +43,9 @@ it('tells every Housekeeping team member once about a check-out clean', function
     [$hotel, $type, [$room]] = fdHotel(1);
     $members = teamMembers($hotel, $hotel->housekeeping_team_id, 2);
     [$stay] = fdStays(fdBook($hotel, $type, [$room->id]));
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk();
 
     foreach ($members as $member) {
         expect(noticesTo($member))->toBe(1);
@@ -57,8 +57,8 @@ it('tells only the assignee when a person is assigned, and the new person on rea
     [$first, $second] = teamMembers($hotel, $hotel->housekeeping_team_id, 2);
     Notification::fake();
 
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $first->id])->assertOk();
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $second->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $first->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $second->id])->assertOk();
 
     expect(noticesTo($first))->toBe(1)
         ->and(noticesTo($second))->toBe(1);
@@ -68,11 +68,11 @@ it('does not tell a team member again when the task is narrowed to them', functi
     [$hotel, $type, [$room]] = fdHotel(1);
     [$member] = teamMembers($hotel, $hotel->housekeeping_team_id, 1);
     [$stay] = fdStays(fdBook($hotel, $type, [$room->id]));
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk();
     $task = Task::where('room_id', $room->id)->sole();
 
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $member->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $member->id])->assertOk();
 
     expect(noticesTo($member))->toBe(1);
 });
@@ -80,9 +80,9 @@ it('does not tell a team member again when the task is narrowed to them', functi
 it('sends nothing when a task is saved without changing its assignee', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
     [$member] = teamMembers($hotel, $hotel->housekeeping_team_id, 1);
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $member->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $member->id])->assertOk();
 
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $member->id, 'title' => 'Renamed'])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $member->id, 'title' => 'Renamed'])->assertOk();
 
     expect(noticesTo($member))->toBe(1);
 });
@@ -91,9 +91,9 @@ it('tells a person again when a task comes back to them', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
     [$first, $second] = teamMembers($hotel, $hotel->housekeeping_team_id, 2);
 
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $first->id])->assertOk();
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $second->id])->assertOk();
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['assigned_to_user_id' => $first->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $first->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $second->id])->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['assigned_to_user_id' => $first->id])->assertOk();
 
     expect(noticesTo($first))->toBe(2);
 });
@@ -114,7 +114,7 @@ it('does not fan out to other teams', function () {
     $frontOffice = Team::create(['hotel_id' => $hotel->id, 'name' => 'Front Office', 'is_active' => true]);
     [$member] = teamMembers($hotel, $frontOffice->id, 1);
 
-    fdPost($this, $hotel->owner, '/api/task', ['hotel_id' => $hotel->id, 'title' => 'Welcome pack', 'assigned_to_team_id' => $frontOffice->id])->assertCreated();
+    fdPost($this, adminOfHotel($hotel), '/api/task', ['hotel_id' => $hotel->id, 'title' => 'Welcome pack', 'assigned_to_team_id' => $frontOffice->id])->assertCreated();
 
     expect(noticesTo($member))->toBe(0);
 });
@@ -124,18 +124,18 @@ it('alerts the admins once a day when an automatic task reaches a team with no m
 
     foreach ($rooms as $room) {
         [$stay] = fdStays(fdBook($hotel, $type, [$room->id]));
-        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
-        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+        fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
+        fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk();
     }
 
-    Notification::assertSentToTimes($hotel->owner, HousekeepingRoutingNotification::class, 1);
+    Notification::assertSentToTimes(adminOfHotel($hotel), HousekeepingRoutingNotification::class, 1);
 });
 
 it('tells the Maintenance team about a reported issue', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
     [$engineer] = teamMembers($hotel, $hotel->maintenance_team_id, 1);
 
-    fdPost($this, $hotel->owner, "/api/task/{$cleaning->id}/issues", ['description' => 'Leak'])->assertCreated();
+    fdPost($this, adminOfHotel($hotel), "/api/task/{$cleaning->id}/issues", ['description' => 'Leak'])->assertCreated();
 
     expect(noticesTo($engineer))->toBe(1);
 });
@@ -146,5 +146,5 @@ it('still tells the admins about a task the AI created', function () {
 
     app(CreationNotificationService::class)->taskCreated($task, createdByAi: true);
 
-    Notification::assertSentTo($hotel->owner, AiTaskCreatedNotification::class);
+    Notification::assertSentTo(adminOfHotel($hotel), AiTaskCreatedNotification::class);
 });

@@ -17,7 +17,7 @@ beforeEach(function () {
 // scopeFilter / scopeSearch, called directly on the model
 
 it('filters a model by an exact column match', function () {
-    $hotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     Reservation::create(['hotel_id' => $hotel->id, 'guest_id' => $guest->id, 'reservation_id' => 'RES-1', 'arrival_date' => '2026-09-01', 'departure_date' => '2026-09-04', 'status' => 'confirmed']);
@@ -30,7 +30,7 @@ it('filters a model by an exact column match', function () {
 });
 
 it('filters a model with an array value using whereIn', function () {
-    $hotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
     Reservation::create(['hotel_id' => $hotel->id, 'guest_id' => $guest->id, 'reservation_id' => 'RES-1', 'arrival_date' => '2026-09-01', 'departure_date' => '2026-09-04', 'status' => 'confirmed']);
@@ -43,7 +43,7 @@ it('filters a model with an array value using whereIn', function () {
 });
 
 it('silently ignores a filter key that is not a real column', function () {
-    $hotel = Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $results = Hotel::filter(['not_a_real_column' => 'anything'])->get();
 
@@ -51,8 +51,8 @@ it('silently ignores a filter key that is not a real column', function () {
 });
 
 it('searches a model text columns for a term', function () {
-    Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
-    Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
 
     $results = Hotel::search('Harbor')->get();
 
@@ -61,8 +61,8 @@ it('searches a model text columns for a term', function () {
 });
 
 it('returns everything when the search term is empty', function () {
-    Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
-    Hotel::create(['owner_id' => User::factory()->create()->id, 'name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
 
     expect(Hotel::search(null)->get())->toHaveCount(2);
     expect(Hotel::search('')->get())->toHaveCount(2);
@@ -72,7 +72,7 @@ it('returns everything when the search term is empty', function () {
 
 it('filters reservations by status through the index endpoint', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = Hotel::create(['owner_id' => $admin->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
     $admin->update(['hotel_id' => $hotel->id]);
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-1', 'channel' => 'booking_com']);
 
@@ -90,7 +90,7 @@ it('filters reservations by status through the index endpoint', function () {
 
 it('rejects an unknown filter column on the index endpoint', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
-    Hotel::create(['owner_id' => $admin->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')->actingAs($admin, 'sanctum')
         ->getJson('/api/reservation?filter[not_a_column]=x');
@@ -101,8 +101,8 @@ it('rejects an unknown filter column on the index endpoint', function () {
 it('searches hotels by name through the index endpoint', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    Hotel::create(['owner_id' => $admin->id, 'name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
-    Hotel::create(['owner_id' => $admin->id, 'name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Grand Harbor Hotel', 'slug' => 'grand-harbor', 'currency' => 'USD']);
+    Hotel::create(['name' => 'Seaside Resort', 'slug' => 'seaside-resort', 'currency' => 'USD']);
 
     $response = $this->withHeader('X-API-KEY', 'test-api-key')->actingAs($superAdmin, 'sanctum')
         ->getJson('/api/hotel?search=Harbor');

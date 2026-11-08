@@ -87,7 +87,7 @@ function cvSeed(): array
     Embeddings::fake();
 
     [$hotel, $type, [$room]] = fdHotel(1);
-    $admin = $hotel->owner;
+    $admin = adminOfHotel($hotel);
 
     $hotel->hotelGroup->update(['contract_value_monthly' => 4242.42, 'contract_currency' => 'EUR']);
 

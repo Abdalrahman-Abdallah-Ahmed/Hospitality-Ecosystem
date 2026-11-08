@@ -34,13 +34,13 @@ it('gives the Admin AI exactly the numbers the endpoint gives staff', function (
     avBook($hotel, $deluxe, atDays(5), atDays(7), units: 2);
     avType($hotel, 'Suite');
 
-    $result = (string) (new GetAvailabilityTool($hotel, $hotel->owner))->handle(new Request([
+    $result = (string) (new GetAvailabilityTool($hotel, adminOfHotel($hotel)))->handle(new Request([
         'arrival_date' => atDays(4),
         'departure_date' => atDays(8),
     ]));
 
     $expected = AvailabilityResource::make(app(AvailabilityService::class)->forHotel($hotel, atDays(4), atDays(8)))->resolve();
-    $endpoint = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
+    $endpoint = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')
         ->getJson('/api/availability?'.http_build_query(['arrival_date' => atDays(4), 'departure_date' => atDays(8)]))
         ->json('body');
 
@@ -52,7 +52,7 @@ it('narrows the Admin AI lookup to a room type named in any case', function () {
     avType($hotel, 'Deluxe');
     avType($hotel, 'Suite');
 
-    $result = json_decode((string) (new GetAvailabilityTool($hotel, $hotel->owner))->handle(new Request([
+    $result = json_decode((string) (new GetAvailabilityTool($hotel, adminOfHotel($hotel)))->handle(new Request([
         'arrival_date' => atDays(1), 'departure_date' => atDays(2), 'room_type' => 'suite',
     ])), true);
 
@@ -73,7 +73,7 @@ it('tells the Admin AI plainly about an unknown type or a bad range', function (
     $hotel = avHotel();
     avType($hotel, 'Deluxe');
 
-    expect((string) (new GetAvailabilityTool($hotel, $hotel->owner))->handle(new Request($input)))->toBe($message);
+    expect((string) (new GetAvailabilityTool($hotel, adminOfHotel($hotel)))->handle(new Request($input)))->toBe($message);
 })->with([
     'unknown type' => [fn () => ['arrival_date' => atDays(1), 'departure_date' => atDays(2), 'room_type' => 'Penthouse'], 'This hotel has no room type called "Penthouse".'],
     '32 nights' => [fn () => ['arrival_date' => atDays(1), 'departure_date' => atDays(33)], 'Availability can be checked for at most 31 nights at a time.'],
@@ -129,7 +129,7 @@ it('gives both agents their availability tool', function () {
     $hotel = avHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'external_id' => 'ext-av', 'channel' => 'booking_com', 'first_name' => 'Mona']);
 
-    $admin = collect(AdminAdvisorAgent::make(user: $hotel->owner)->tools())->map(fn ($tool) => $tool->inner()::class);
+    $admin = collect(AdminAdvisorAgent::make(user: adminOfHotel($hotel))->tools())->map(fn ($tool) => $tool->inner()::class);
     $concierge = collect(GuestConciergeAgent::make(guest: $guest, hotel: $hotel, reservation: null)->tools())->map(fn ($tool) => $tool::class);
 
     expect($admin)->toContain(GetAvailabilityTool::class)->not->toContain(GetGuestAvailabilityTool::class)

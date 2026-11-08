@@ -29,7 +29,6 @@ function txnAdminWithHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Transaction Import Hotel',
         'slug' => 'txn-import-hotel-'.uniqid(),
         'currency' => 'USD',

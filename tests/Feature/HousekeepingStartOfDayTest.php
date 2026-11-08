@@ -40,7 +40,7 @@ function stayOverRoom($test, int $nights = 3, string $timezone = 'UTC'): array
         'departure_date' => now($timezone)->addDays($nights)->toDateString(),
     ]);
     [$stay] = fdStays($reservation);
-    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     $test->travelBack();
 
     return [$hotel->fresh(), $room->fresh()];
@@ -155,7 +155,7 @@ it('dirties every room of a multi-room stay', function () {
     [$hotel, $type, $rooms] = fdHotel(2);
     $this->travelTo(now()->subDay()->startOfDay()->addHours(14));
     $reservation = fdBook($hotel, $type, [$rooms[0]->id, $rooms[1]->id], ['departure_date' => now()->addDays(3)->toDateString()]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/check-in")->assertOk();
     $this->travelBack();
 
     runStartOfDay();

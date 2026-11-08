@@ -88,10 +88,10 @@ it('serializes a check-out and taking the same room out of order', function () {
     app(StayLifecycleService::class)->checkIn($stay);
     $maintenance = app(MaintenanceService::class);
 
-    assertWaitsForRoomLock($this, $room->id, fn () => $maintenance->takeOutOfOrder($room, $hotel->owner, 'Leak'));
+    assertWaitsForRoomLock($this, $room->id, fn () => $maintenance->takeOutOfOrder($room, adminOfHotel($hotel), 'Leak'));
 
     app(StayLifecycleService::class)->checkOut($stay->fresh());
-    $maintenance->takeOutOfOrder($room, $hotel->owner, 'Leak');
+    $maintenance->takeOutOfOrder($room, adminOfHotel($hotel), 'Leak');
 
     expect(Room::withoutGlobalScope('hotel')->find($room->id)->status->value)->toBe('out_of_order')
         ->and(DB::table('stays')->where('room_id', $room->id)->where('status', 'in_house')->count())->toBe(0);
@@ -131,10 +131,10 @@ it('keeps one maintenance task when the same issue is reported twice', function 
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
     $maintenance = app(MaintenanceService::class);
 
-    assertWaitsForRoomLock($this, $room->id, fn () => $maintenance->reportIssue($cleaning, $hotel->owner, 'Leak', Priority::NORMAL, false));
+    assertWaitsForRoomLock($this, $room->id, fn () => $maintenance->reportIssue($cleaning, adminOfHotel($hotel), 'Leak', Priority::NORMAL, false));
 
-    $maintenance->reportIssue($cleaning, $hotel->owner, 'Leak', Priority::NORMAL, false);
-    $maintenance->reportIssue($cleaning, $hotel->owner, 'Leak', Priority::NORMAL, false);
+    $maintenance->reportIssue($cleaning, adminOfHotel($hotel), 'Leak', Priority::NORMAL, false);
+    $maintenance->reportIssue($cleaning, adminOfHotel($hotel), 'Leak', Priority::NORMAL, false);
 
     expect(Task::withoutGlobalScope('hotel')->where('source_task_id', $cleaning->id)->count())->toBe(1);
 });

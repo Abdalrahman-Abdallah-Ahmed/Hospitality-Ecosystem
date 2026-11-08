@@ -22,7 +22,6 @@ function hotelForActivities(): Hotel
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
@@ -74,7 +73,7 @@ it('does not let an employee change activities', function () {
 
 function activityAdmin(Hotel $hotel): User
 {
-    return User::query()->findOrFail($hotel->owner_id);
+    return adminOfHotel($hotel);
 }
 
 it('stores and returns an activity timeframe', function () {

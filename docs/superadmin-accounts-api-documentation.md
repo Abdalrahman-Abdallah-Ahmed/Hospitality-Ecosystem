@@ -40,7 +40,7 @@ List endpoints take the usual `search`, `sort` (`-field` for descending), `page`
 
 1. `POST /accounts` creates the account.
 2. `POST /accounts/{account}/hotels` creates each hotel.
-3. `POST /users` with `hotel_id` and `role=admin` creates the first admin, who becomes the hotel's owner if it has none.
+3. `POST /users` with `hotel_id` and `role=admin` creates the first admin. Send `group_role=owner` to make them the account's owner, who reaches every hotel in it. Without it they reach only their hotel: nobody is made an owner automatically.
 4. The admin receives an email, sets a password through [`POST /api/reset-password`](auth-api-documentation.md#4-set-a-new-password), and logs in.
 
 The super admin never knows the password. Every write is recorded in the audit trail with the super admin as actor, where no hotel user can read it.
@@ -101,7 +101,7 @@ Responses use the same hotel object as [the hotel API](hotel-api-documentation.m
 
 `name` and `slug` are required. `timezone`, `currency`, `country_code`, `city`, `address`, `email`, `phone` and `whatsapp_number` are optional. A new hotel without a timezone or currency takes the account's defaults.
 
-A new hotel gets its default teams and categories, and has no owner until its first admin is created.
+A new hotel gets its default teams and categories. It has no owner of its own: the account's owner, if it has one, reaches it at once.
 
 ### Slugs and restoring
 
@@ -118,9 +118,10 @@ Editing a hotel's slug to one any hotel holds, including a soft-deleted one, ret
 Users attached only through their home hotel follow it. A move returns `422` while any of these is true, because someone would end up linked across accounts:
 
 - the hotel has memberships;
-- a user based at the hotel is attached directly to its account;
-- a user based at the hotel has memberships in other hotels;
-- the hotel's owner is based at another hotel.
+- a user based at the hotel is attached directly to its account, such as a customer who registered themselves and owns their account. `PUT /users/{user}/access` with `group_role: null` detaches them;
+- a user based at the hotel has memberships in other hotels.
+
+The account's owner stops reaching a hotel that moves out, and the destination's owner reaches it at once. Nobody becomes the destination's owner by moving: assign one afterwards if needed.
 
 The destination must be a live account.
 
@@ -150,7 +151,7 @@ Responses use the same user object as [the user API](user-management-api-documen
 | `role` | required, `admin` or `employee` |
 | `hotel_id` | required, a live hotel. It can't be changed later |
 | `hotel_group_id` | optional. The hotel must belong to this account |
-| `group_role` | optional, `owner` or `group_admin`, for admins only. Also attaches the user to the hotel's account |
+| `group_role` | optional, `owner`, for admins only. Also attaches the user to the hotel's account. `422` with `This account already has an owner.` if it has one |
 
 The user gets a random password nobody knows, and an email with a link that lasts 72 hours. A `password` in the request is ignored.
 
@@ -167,15 +168,16 @@ The response includes `reset_email_sent`. When it is `false`, the email failed b
 | Field | Rules |
 | --- | --- |
 | `role` | `admin` or `employee` |
-| `group_role` | `owner`, `group_admin` or `null`. Admins only. Attaches the user to their account, and `422` if they have none |
+| `group_role` | `owner` or `null`. Admins only. `owner` attaches the user to their account, `422` if they have none, and `422` with `This account already has an owner.` if it has another. `null` ends the ownership and clears `hotel_group_id` |
 | `hotel_ids` | Replaces the user's memberships. A hotel being added must be live and in the user's account, or `422` |
 | `staff_role_id` | Employees only, or `422`. From the user's home hotel, or `403` |
 | `team_id` | A team in the user's home hotel, or `403`. `null` clears it |
 
 - The home hotel stays reachable whether or not it is in `hotel_ids`.
 - A membership in a soft-deleted hotel isn't touched, so restoring the hotel returns access.
-- Becoming an admin removes the staff role, and makes the user the owner of their home hotel if it has none.
-- Becoming an employee removes the account-wide role, and ends ownership of every hotel they own.
+- Becoming an admin removes the staff role. It never makes the user an owner.
+- Becoming an employee removes the account-wide role and clears `hotel_group_id`.
+- An account has at most one owner, and may have none, which changes nothing for its hotels' admins. To replace an owner, send `group_role: null` for the current one, then `owner` for the new one.
 
 ### Password email
 

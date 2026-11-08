@@ -35,7 +35,7 @@ function guestIdsAs($test, User $user, array $headers = []): array
 
 it('hides a deleted home hotel, with or without naming it, and restores access after', function () {
     $hotel = makeHotel();
-    $admin = $hotel->owner;
+    $admin = adminOfHotel($hotel);
     $guest = gsGuest($hotel);
 
     expect(guestIdsAs($this, $admin))->toBe([$guest->id]);
@@ -44,8 +44,10 @@ it('hides a deleted home hotel, with or without naming it, and restores access a
     $admin = $admin->fresh();
 
     expect(guestIdsAs($this, $admin))->toBeEmpty()
-        ->and(guestIdsAs($this, $admin, ['X-Hotel-Id' => $hotel->id]))->toBeEmpty()
         ->and($admin->accessibleHotelIds())->toBe([]);
+
+    $this->withHeaders([...apiHeaders(), 'X-Hotel-Id' => $hotel->id])->actingAs($admin, 'sanctum')
+        ->getJson('/api/guest')->assertForbidden();
 
     $hotel->restore();
 
@@ -103,7 +105,7 @@ it('falls back to the user\'s other hotel when their home hotel is deleted', fun
 
 it('lands nothing new in a deleted hotel', function () {
     $hotel = makeHotel();
-    $admin = $hotel->owner;
+    $admin = adminOfHotel($hotel);
     $hotel->delete();
 
     $this->withHeaders(apiHeaders())->actingAs($admin->fresh(), 'sanctum')->postJson('/api/guest', [
@@ -117,7 +119,7 @@ it('lands nothing new in a deleted hotel', function () {
 
 it('still lets a user with nothing left log in, seeing nothing', function () {
     $hotel = makeHotel();
-    $admin = $hotel->owner;
+    $admin = adminOfHotel($hotel);
     $admin->update(['password' => 'A-Password1!']);
     gsGuest($hotel);
     $hotel->delete();

@@ -121,7 +121,7 @@ it('leaves transactions out of the booking while the ledger is off', function ()
 
 it('writes no ledger row anywhere in an MVP stay while the ledger is off', function () {
     [$hotel, $type, $rooms] = fdHotel(1);
-    $admin = $hotel->owner;
+    $admin = adminOfHotel($hotel);
     $reservation = fdBook($hotel, $type, [$rooms[0]->id]);
     [$stay] = fdStays($reservation);
 

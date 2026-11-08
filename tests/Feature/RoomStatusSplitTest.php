@@ -53,7 +53,7 @@ it('moves maintenance and blocked rooms to out of order and dirty, and keeps the
 it('keeps a blocked room with a guest in it occupied and reports it', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
     [$stay] = fdStays(fdBook($hotel, $type, [$room->id]));
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
 
     rerunStatusSplit(fn () => DB::table('rooms')->where('id', $room->id)->update(['housekeeping_status' => 'blocked']));
 

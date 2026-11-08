@@ -24,7 +24,6 @@ it('recognizes an admin phone number, unpaired by default', function () {
         'phone_number' => '+201151793758',
     ]);
     $hotel = Hotel::create([
-        'owner_id' => $user->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -45,7 +44,6 @@ it('marks an admin as devicePaired once they have an active WhatsAppDevice', fun
         'phone_number' => '+201151793758',
     ]);
     $hotel = Hotel::create([
-        'owner_id' => $user->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -70,7 +68,6 @@ it('does not mark an admin as devicePaired when their device is inactive', funct
         'phone_number' => '+201151793758',
     ]);
     $hotel = Hotel::create([
-        'owner_id' => $user->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -93,7 +90,6 @@ it('does not mark an admin as devicePaired when their device is inactive', funct
 it('recognizes a guest phone number and resolves the hotel through their current reservation', function () {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Seaside Hotel',
         'slug' => 'seaside-hotel',
         'currency' => 'USD',
@@ -120,7 +116,6 @@ it('recognizes a guest phone number and resolves the hotel through their current
 
 it('keeps reservation authority with the primary guest while showing their full party', function () {
     $hotel = Hotel::create([
-        'owner_id' => User::factory()->create()->id,
         'name' => 'Party Hotel',
         'slug' => 'party-hotel',
         'currency' => 'USD',
@@ -165,13 +160,11 @@ it('keeps reservation authority with the primary guest while showing their full 
 it('resolves the guest hotel through their current reservation instead of their stored hotel_id', function () {
     $owner = User::factory()->create();
     $staleHotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Stale Hotel',
         'slug' => 'stale-hotel',
         'currency' => 'USD',
     ]);
     $currentHotel = Hotel::create([
-        'owner_id' => User::factory()->create()->id,
         'name' => 'Current Hotel',
         'slug' => 'current-hotel',
         'currency' => 'USD',
@@ -206,7 +199,6 @@ it('recognizes an unrecognized phone number as unknown', function () {
 function recognitionHotel(string $name): Hotel
 {
     return Hotel::create([
-        'owner_id' => User::factory()->create()->id,
         'name' => $name,
         'slug' => str($name)->slug().'-'.uniqid(),
         'currency' => 'USD',

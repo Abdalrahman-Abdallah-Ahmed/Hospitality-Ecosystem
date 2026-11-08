@@ -27,13 +27,13 @@ class ArticleCommands
      *
      * @throws DomainRuleException for a global article, which is not managed here
      */
-    public function update(KnowledgeBaseArticle $article, array $attributes, ?Hotel $hotel = null): KnowledgeBaseArticle
+    public function update(KnowledgeBaseArticle $article, array $attributes): KnowledgeBaseArticle
     {
         if ($article->hotel_id === null) {
             throw new DomainRuleException('Article not found.', 404);
         }
 
-        $article->update($hotel ? [...$attributes, 'hotel_id' => $hotel->id] : $attributes);
+        $article->update($attributes);
 
         return $article;
     }

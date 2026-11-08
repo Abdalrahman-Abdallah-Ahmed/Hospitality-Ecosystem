@@ -21,7 +21,6 @@ function stayTestHotel(): Hotel
 {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Stay Test Hotel',
         'slug' => 'stay-test-hotel-'.uniqid(),
         'currency' => 'USD',

@@ -3,10 +3,12 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\GroupRole;
 use App\Enums\Permission;
 use App\Enums\UserRole;
 use App\Models\Concerns\Filterable;
 use App\Services\Metering\MeteringService;
+use App\Support\Tenancy\TenantContext;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -40,6 +42,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'role' => UserRole::class,
+            'group_role' => GroupRole::class,
         ];
     }
 
@@ -262,6 +265,21 @@ class User extends Authenticatable
     }
 
     /**
+     * accessibleHotelIds(), read from the request's tenant context when
+     * ResolveTenant already worked it out for this user, so a policy check
+     * doesn't query it again. Unlike TenantContext::hotelIds(), this is not
+     * narrowed to the hotel the request works in.
+     *
+     * @return array<int, string>|null
+     */
+    public function reachableHotelIds(): ?array
+    {
+        return TenantContext::knowsReachableHotelIds($this->getKey())
+            ? TenantContext::reachableHotelIds($this->getKey())
+            : $this->accessibleHotelIds();
+    }
+
+    /**
      * Users attached to any of these accounts: directly, through a live home
      * hotel, or through a live membership.
      *
@@ -310,5 +328,14 @@ class User extends Authenticatable
     public function isEmployee(): bool
     {
         return $this->role === UserRole::EMPLOYEE;
+    }
+
+    /**
+     * Whether this user owns an account, under the same condition on which
+     * accessibleHotelIds() gives them all of it.
+     */
+    public function isOwner(): bool
+    {
+        return $this->group_role !== null && $this->hotel_group_id !== null;
     }
 }

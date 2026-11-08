@@ -41,6 +41,7 @@ class AiAdvisorController extends Controller
                 ->where('id', $conversationId)
                 ->where('participant_type', Conversation::participantType($user))
                 ->where('participant_id', Conversation::participantKey($user))
+                ->where('hotel_id', $user->hotel->id)
                 ->exists();
 
             if (! $ownsConversation) {

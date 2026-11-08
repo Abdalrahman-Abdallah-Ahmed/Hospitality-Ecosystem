@@ -141,7 +141,7 @@ describe('every path', function () {
         putenv('API_KEY=test-api-key');
         config(['app.api_key' => 'test-api-key']);
 
-        $this->admin = $this->hotel->owner;
+        $this->admin = adminOfHotel($this->hotel);
         // A spare room, so availability never decides these tests.
         avRooms($this->hotel, $this->type, 2);
         $this->today = fn (int $days = 0) => now()->addDays($days)->toDateString();

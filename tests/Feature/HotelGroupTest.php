@@ -87,7 +87,6 @@ it('requires a hotel group at the database level', function () {
 
     expect(fn () => DB::table('hotels')->insert([
         'id' => (string) Str::uuid(),
-        'owner_id' => $owner->id,
         'hotel_group_id' => null,
         'name' => 'Accountless',
         'slug' => 'accountless-'.uniqid(),

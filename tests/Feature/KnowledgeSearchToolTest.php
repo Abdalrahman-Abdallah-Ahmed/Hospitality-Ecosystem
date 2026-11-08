@@ -38,7 +38,6 @@ function hotelForKnowledgeSearch(): Hotel
     $owner = User::factory()->create();
 
     return Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$owner->id,
         'currency' => 'USD',

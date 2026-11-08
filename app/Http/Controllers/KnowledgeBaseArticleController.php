@@ -85,17 +85,8 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->rejectGlobal($knowledgeBaseArticle);
         $this->authorize('update', $knowledgeBaseArticle);
-        $user = $request->user();
-        $hotel = null;
 
-        if (! $user->isSuperAdmin()) {
-            $hotel = $user->hotel;
-            if (! $hotel) {
-                return apiResponse('You do not belong to any hotel.', 403);
-            }
-        }
-
-        app(ArticleCommands::class)->update($knowledgeBaseArticle, unsetAttributes($request->validated(), ['hotel_id']), $hotel);
+        app(ArticleCommands::class)->update($knowledgeBaseArticle, unsetAttributes($request->validated(), ['hotel_id']));
 
         return apiResponse('Article updated successfully.', 200, KnowledgeBaseArticleResource::make($knowledgeBaseArticle->load(['hotel'])));
     }

@@ -21,7 +21,6 @@ function whatsappDeviceOwner(array $overrides = []): array
 {
     $user = User::factory()->create($overrides);
     $hotel = Hotel::create([
-        'owner_id' => $user->id,
         'name' => 'Demo Hotel',
         'slug' => 'demo-hotel-'.uniqid(),
         'currency' => 'USD',

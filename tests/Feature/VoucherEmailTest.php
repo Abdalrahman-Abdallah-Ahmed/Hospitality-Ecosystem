@@ -31,7 +31,7 @@ beforeEach(function () {
 
 function veEmail($test, Hotel $hotel, Reservation $reservation, array $payload = [], $user = null): TestResponse
 {
-    return vcPost($test, $user ?? $hotel->owner, "/api/reservation/{$reservation->id}/voucher/email", ['request_key' => (string) Str::uuid(), ...$payload]);
+    return vcPost($test, $user ?? adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher/email", ['request_key' => (string) Str::uuid(), ...$payload]);
 }
 
 function veRun(string $requestId): void
@@ -142,7 +142,7 @@ it('lists a reservation\'s email requests, newest first', function () {
     $this->travel(1)->minutes();
     veEmail($this, $hotel, $reservation, ['request_key' => 'newer']);
 
-    $rows = vcGet($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher/emails")->assertOk()->json('body.data');
+    $rows = vcGet($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher/emails")->assertOk()->json('body.data');
 
     expect($rows)->toHaveCount(2)
         ->and($rows[0]['created_at'] >= $rows[1]['created_at'])->toBeTrue();
@@ -155,7 +155,7 @@ it('keeps another hotel out and needs the email permission', function () {
     $reservation = vcReservation($hotel);
 
     veEmail($this, $other, $reservation)->assertNotFound();
-    vcGet($this, $other->owner, "/api/reservation/{$reservation->id}/voucher/emails")->assertNotFound();
+    vcGet($this, adminOfHotel($other), "/api/reservation/{$reservation->id}/voucher/emails")->assertNotFound();
 
     veEmail($this, $hotel, $reservation, user: vcEmployee($hotel, [Permission::RESERVATIONS_VOUCHER_EMAIL]))->assertStatus(202);
     veEmail($this, $hotel, $reservation, user: vcEmployee($hotel, [Permission::RESERVATIONS_VOUCHER]))->assertForbidden();
@@ -307,8 +307,8 @@ it('sorts and bounds the email history like other lists', function () {
     veEmail($this, $hotel, $reservation, ['request_key' => 'a', 'email' => 'b@test.test']);
     veEmail($this, $hotel, $reservation, ['request_key' => 'b', 'email' => 'a@test.test']);
 
-    expect(vcGet($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher/emails?sort=recipient")->assertOk()->json('body.data.0.recipient'))->toBe('a@test.test');
-    vcGet($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher/emails?per_page=1000")->assertUnprocessable();
+    expect(vcGet($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher/emails?sort=recipient")->assertOk()->json('body.data.0.recipient'))->toBe('a@test.test');
+    vcGet($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher/emails?per_page=1000")->assertUnprocessable();
 });
 
 it('marks the request failed when the last try fails', function () {

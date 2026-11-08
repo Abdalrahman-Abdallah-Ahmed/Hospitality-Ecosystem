@@ -25,7 +25,6 @@ function adminWithOwnHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel-'.$admin->id,
         'currency' => 'USD',
@@ -114,7 +113,7 @@ it('rejects a room missing the required schema-derived hotel_id', function () {
 
 it('rejects a non-admin user from creating a room', function () {
     $worker = User::factory()->role(UserRole::EMPLOYEE)->create();
-    $hotel = Hotel::create(['owner_id' => $worker->id, 'name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
+    $hotel = Hotel::create(['name' => 'Harbor', 'slug' => 'harbor', 'currency' => 'USD']);
 
     $this->withHeaders(roomApiHeaders())->actingAs($worker, 'sanctum')
         ->postJson('/api/room', ['hotel_id' => $hotel->id, 'room_type_id' => roomTypeIdFor($hotel)])

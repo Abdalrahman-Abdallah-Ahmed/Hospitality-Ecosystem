@@ -5,7 +5,6 @@ use App\Exceptions\AiSpendCeilingExceededException;
 use App\Models\HotelGroup;
 use App\Models\KnowledgeChunk;
 use App\Models\KnowledgeDocument;
-use App\Models\User;
 use App\Services\AiCost\AiSpendCeiling;
 use App\Support\Ai\AiCostContext;
 use App\Support\Knowledge\Extraction\ExtractionResult;
@@ -162,7 +161,7 @@ it('attributes the vision call to the hotel, and stops at the spend ceiling befo
     // account spent or its ceiling (SPEC-091); the amounts go to the log.
     expect($blocked->error)->toBe('The daily AI usage limit was reached; try again tomorrow.');
 
-    $shown = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(User::find($blocked->hotel->owner_id), 'sanctum')
+    $shown = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($blocked->hotel), 'sanctum')
         ->getJson("/api/knowledge-documents/{$blocked->id}")
         ->assertOk()
         ->getContent();

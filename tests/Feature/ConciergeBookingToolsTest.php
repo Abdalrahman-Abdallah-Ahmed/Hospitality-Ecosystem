@@ -201,7 +201,7 @@ it('passes a cancellation request to staff without touching the booking', functi
         ->and($request->assigned_to_team_id)->toBeNull()
         ->and($request->reservation_id)->toBe($reservation->id);
 
-    Notification::assertSentTo($hotel->owner()->first(), BookingCancellationRequestedNotification::class);
+    Notification::assertSentTo(adminOfHotel($hotel), BookingCancellationRequestedNotification::class);
 });
 
 it('does not open a second request when the guest asks again', function () {

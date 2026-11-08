@@ -24,7 +24,6 @@ function adminWithOwnedHotelForArticles(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',

@@ -40,7 +40,7 @@ it('lists today\'s and late arrivals, flagging the late one, and leaves cancelle
     fdBook($hotel, $type, [$c->id], ['status' => 'cancelled']);
     fdBook($hotel, $type, [null], ['arrival_date' => now()->addDay()->toDateString(), 'departure_date' => now()->addDays(3)->toDateString()]);
 
-    $response = fdGet($this, $hotel->owner, '/api/stays/arrivals')->assertOk()
+    $response = fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals')->assertOk()
         ->assertJsonPath('body.date', now()->toDateString());
 
     expect(listedIds($response))->toEqualCanonicalizing([$today->id, $late->id, $stale->id]);
@@ -62,15 +62,15 @@ it('lists departures due today and overdue ones, and everyone in the house', fun
     [$staying] = fdStays(fdBook($hotel, $type, [$c->id], ['departure_date' => now()->addDays(5)->toDateString()]));
 
     foreach ([$dueToday, $overdue, $staying] as $stay) {
-        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+        fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     }
     $this->travelBack();
 
-    $departures = fdGet($this, $hotel->owner, '/api/stays/departures')->assertOk();
+    $departures = fdGet($this, adminOfHotel($hotel), '/api/stays/departures')->assertOk();
     expect(listedIds($departures))->toEqualCanonicalizing([$dueToday->id, $overdue->id]);
     expect(collect($departures->json('body.stays'))->keyBy('id')[$overdue->id]['is_overdue'])->toBeTrue();
 
-    expect(listedIds(fdGet($this, $hotel->owner, '/api/stays/in-house')->assertOk()))
+    expect(listedIds(fdGet($this, adminOfHotel($hotel), '/api/stays/in-house')->assertOk()))
         ->toEqualCanonicalizing([$dueToday->id, $overdue->id, $staying->id]);
 });
 
@@ -78,10 +78,10 @@ it('lists another day when asked, and rejects a malformed date', function () {
     [$hotel, $type, [$a]] = fdHotel();
     [$tomorrow] = fdStays(fdBook($hotel, $type, [$a->id], ['arrival_date' => now()->addDay()->toDateString(), 'departure_date' => now()->addDays(3)->toDateString()]));
 
-    expect(listedIds(fdGet($this, $hotel->owner, '/api/stays/arrivals')))->toBe([]);
-    expect(listedIds(fdGet($this, $hotel->owner, '/api/stays/arrivals?date='.now()->addDay()->toDateString())))->toBe([$tomorrow->id]);
+    expect(listedIds(fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals')))->toBe([]);
+    expect(listedIds(fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals?date='.now()->addDay()->toDateString())))->toBe([$tomorrow->id]);
 
-    fdGet($this, $hotel->owner, '/api/stays/arrivals?date=tomorrow')->assertUnprocessable();
+    fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals?date=tomorrow')->assertUnprocessable();
 });
 
 it('makes a super admin name the hotel', function () {
@@ -99,14 +99,14 @@ it('filters and searches the stays index, and shows one stay', function () {
     fdBook($hotel, $type, [$b->id]);
     [$stay] = fdStays($first);
 
-    $index = fn (string $query) => collect(fdGet($this, $hotel->owner, "/api/stays?{$query}")->assertOk()->json('body.data'))->pluck('id')->all();
+    $index = fn (string $query) => collect(fdGet($this, adminOfHotel($hotel), "/api/stays?{$query}")->assertOk()->json('body.data'))->pluck('id')->all();
 
     expect($index('filter[reservation_id]='.$first->id))->toBe([$stay->id])
         ->and($index('filter[room_id]='.$a->id))->toBe([$stay->id])
         ->and($index('search=FINDME'))->toBe([$stay->id])
         ->and($index('filter[status]=expected'))->toHaveCount(2);
 
-    fdGet($this, $hotel->owner, "/api/stays/{$stay->id}")->assertOk()
+    fdGet($this, adminOfHotel($hotel), "/api/stays/{$stay->id}")->assertOk()
         ->assertJsonPath('body.id', $stay->id)
         ->assertJsonPath('body.reservation_room_id', $stay->reservation_room_id);
 });
@@ -137,7 +137,7 @@ it('shows the arrivals of a 500-room hotel in under 2 seconds with a fixed numbe
     DB::enableQueryLog();
     $started = microtime(true);
 
-    $response = fdGet($this, $hotel->owner, '/api/stays/arrivals')->assertOk();
+    $response = fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals')->assertOk();
 
     $elapsed = microtime(true) - $started;
     $queries = collect(DB::getQueryLog())->filter(fn ($query) => str_contains($query['query'], 'stays') || str_contains($query['query'], 'guests') || str_contains($query['query'], 'reservation'))->count();

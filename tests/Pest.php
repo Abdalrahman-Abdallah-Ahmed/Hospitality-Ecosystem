@@ -166,7 +166,6 @@ function wp5AdminWithHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Close The Loop Hotel',
         'slug' => 'close-the-loop-'.uniqid(),
         'currency' => 'USD',
@@ -266,7 +265,6 @@ function adminWithHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel-'.$admin->id,
         'currency' => 'USD',
@@ -351,13 +349,12 @@ function createReservationWithRooms(Hotel $hotel, array $lines, array $attribute
 */
 
 /**
- * A hotel whose owner is its admin (`$hotel->owner`).
+ * A hotel whose owner is its admin (`adminOfHotel($hotel)`).
  */
 function avHotel(string $timezone = 'UTC'): Hotel
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Availability Hotel',
         'slug' => 'availability-hotel-'.$admin->id,
         'currency' => 'USD',
@@ -547,10 +544,10 @@ function hkVacatedRoom($test, string $timezone = 'UTC'): array
         'departure_date' => now()->addDay()->toDateString(),
     ]);
     [$stay] = fdStays($reservation);
-    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     $test->travelBack();
     $test->travelTo(now()->startOfDay()->addHours(11));
-    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk();
 
     $task = Task::withoutGlobalScope('hotel')->where('room_id', $room->id)->sole();
 
@@ -640,7 +637,7 @@ function gsHotel(string $timezone = 'UTC'): array
 {
     $hotel = avHotel($timezone);
 
-    return [$hotel->owner, $hotel->fresh()];
+    return [adminOfHotel($hotel), $hotel->fresh()];
 }
 
 /**
@@ -814,7 +811,7 @@ function knHotel(): array
 {
     $hotel = avHotel();
 
-    return [$hotel->owner, $hotel->fresh()];
+    return [adminOfHotel($hotel), $hotel->fresh()];
 }
 
 /**
@@ -930,7 +927,7 @@ function aatHotel(string $timezone = 'UTC'): array
 {
     $hotel = avHotel($timezone);
 
-    return [$hotel->fresh(), $hotel->owner, avType($hotel, 'Deluxe')];
+    return [$hotel->fresh(), adminOfHotel($hotel), avType($hotel, 'Deluxe')];
 }
 
 /**
@@ -1156,7 +1153,7 @@ function rapHotel(string $timezone = 'Asia/Riyadh'): Hotel
 
 function rapAdmin(Hotel $hotel): User
 {
-    return $hotel->owner;
+    return adminOfHotel($hotel);
 }
 
 /**
@@ -1353,7 +1350,7 @@ function cmaHotel(string $timezone = 'Asia/Riyadh'): Hotel
 
 function cmaAdmin(Hotel $hotel): User
 {
-    return $hotel->owner;
+    return adminOfHotel($hotel);
 }
 
 /**
@@ -1607,7 +1604,6 @@ function makeHotel(): Hotel
 {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Hotel '.uniqid(),
         'slug' => 'hotel-'.uniqid(),
         'currency' => 'USD',
@@ -1615,6 +1611,14 @@ function makeHotel(): Hotel
     $owner->update(['hotel_id' => $hotel->id]);
 
     return $hotel;
+}
+
+/**
+ * The admin based at a hotel, which every makeHotel()-style fixture has.
+ */
+function adminOfHotel(Hotel $hotel): User
+{
+    return $hotel->users()->where('role', UserRole::ADMIN)->orderBy('created_at')->firstOrFail();
 }
 
 /**

@@ -101,7 +101,7 @@ function gLiveLines(string $reservationId): int
 it('saves a reservation that fits the rooms left', function () {
     [$hotel, $deluxe] = gDeluxe(5, 2);
 
-    gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 3]]))->assertCreated();
+    gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 3]]))->assertCreated();
 });
 
 it('rejects a reservation that oversells a night, saying which type, night and by how many, and saves nothing', function () {
@@ -109,7 +109,7 @@ it('rejects a reservation that oversells a night, saying which type, night and b
     $reservations = Reservation::withoutGlobalScope('hotel')->count();
     $lines = ReservationRoom::withoutGlobalScope('hotel')->count();
 
-    gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 3]]))
+    gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 3]]))
         ->assertUnprocessable()
         ->assertJsonPath('errors.rooms.0', 'Not enough rooms available: Deluxe is short by 1 on 2027-03-13.')
         ->assertJsonPath('shortfalls', [[
@@ -124,18 +124,18 @@ it('rejects a reservation that oversells a night, saying which type, night and b
 
 it('never counts a reservation\'s own lines against it', function () {
     [$hotel, $deluxe] = gDeluxe(2);
-    $id = gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 2]]))->assertCreated()->json('body.id');
+    $id = gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 2]]))->assertCreated()->json('body.id');
     $lineIds = ReservationRoom::where('reservation_id', $id)->pluck('id')->map(fn ($id) => ['id' => $id])->all();
 
-    gPut($this, $hotel->owner, $id, ['special_requests' => 'Late arrival', 'rooms' => $lineIds])->assertOk();
+    gPut($this, adminOfHotel($hotel), $id, ['special_requests' => 'Late arrival', 'rooms' => $lineIds])->assertOk();
 });
 
 it('rejects adding a line on a full night', function () {
     [$hotel, $deluxe] = gDeluxe(2);
-    $id = gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 2]]))->assertCreated()->json('body.id');
+    $id = gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id, 'quantity' => 2]]))->assertCreated()->json('body.id');
     $lines = ReservationRoom::where('reservation_id', $id)->pluck('id')->map(fn ($id) => ['id' => $id])->all();
 
-    gPut($this, $hotel->owner, $id, ['rooms' => [...$lines, ['room_type_id' => $deluxe->id]]])
+    gPut($this, adminOfHotel($hotel), $id, ['rooms' => [...$lines, ['room_type_id' => $deluxe->id]]])
         ->assertUnprocessable()
         ->assertJsonPath('shortfalls.0.nights', [
             ['date' => '2027-03-12', 'short' => 1],
@@ -151,9 +151,9 @@ it('rejects extending or moving the dates onto a full night', function (array $d
     $deluxe = avType($hotel, 'Deluxe');
     avRooms($hotel, $deluxe, 1);
     avBook($hotel, $deluxe, '2027-03-15', '2027-03-16');
-    $id = gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id]]))->assertCreated()->json('body.id');
+    $id = gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id]]))->assertCreated()->json('body.id');
 
-    gPut($this, $hotel->owner, $id, $dates)
+    gPut($this, adminOfHotel($hotel), $id, $dates)
         ->assertUnprocessable()
         ->assertJsonPath('shortfalls.0.nights.0', ['date' => '2027-03-15', 'short' => 1]);
 
@@ -166,11 +166,11 @@ it('rejects extending or moving the dates onto a full night', function (array $d
 it('checks a deleted reservation re-created with the same reference like a new one', function () {
     [$hotel, $deluxe] = gDeluxe(1);
     $payload = gPayload($hotel, [['room_type_id' => $deluxe->id]]);
-    $id = gPost($this, $hotel->owner, $payload)->assertCreated()->json('body.id');
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')->deleteJson("/api/reservation/{$id}")->assertOk();
+    $id = gPost($this, adminOfHotel($hotel), $payload)->assertCreated()->json('body.id');
+    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')->deleteJson("/api/reservation/{$id}")->assertOk();
     avBook($hotel, $deluxe, '2027-03-12', '2027-03-15');
 
-    gPost($this, $hotel->owner, $payload)->assertUnprocessable()->assertJsonPath('shortfalls.0.room_type_id', $deluxe->id);
+    gPost($this, adminOfHotel($hotel), $payload)->assertUnprocessable()->assertJsonPath('shortfalls.0.room_type_id', $deluxe->id);
 
     expect(Reservation::withTrashed()->find($id)->trashed())->toBeTrue()
         ->and(ReservationRoom::withoutGlobalScope('hotel')->where('reservation_id', $id)->pluck('status')->map->value->all())->toBe(['reserved']);
@@ -190,7 +190,7 @@ it('does not check changes that only free rooms, even on an overbooked night', f
         'special requests only' => ['special_requests' => 'Quiet room'],
     };
 
-    gPut($this, $hotel->owner, $reservation->id, $payload)->assertOk();
+    gPut($this, adminOfHotel($hotel), $reservation->id, $payload)->assertOk();
 })->with(['shorter stay', 'one line removed', 'cancelled', 'special requests only']);
 
 it('confirms a pending reservation on an overbooked night, since it adds nothing', function () {
@@ -200,7 +200,7 @@ it('confirms a pending reservation on an overbooked night, since it adds nothing
     $pending = avBook($hotel, $deluxe, '2027-03-12', '2027-03-15', 'pending');
     avBook($hotel, $deluxe, '2027-03-12', '2027-03-15');
 
-    gPut($this, $hotel->owner, $pending->id, ['status' => 'confirmed'])->assertOk();
+    gPut($this, adminOfHotel($hotel), $pending->id, ['status' => 'confirmed'])->assertOk();
 });
 
 it('refuses an overbook override from someone without reservations.overbook, before writing anything', function () {
@@ -239,7 +239,7 @@ it('saves an overbooking with the permission and audits who did it and the short
 it('lets an admin overbook', function () {
     [$hotel, $deluxe] = gDeluxe(1, 1);
 
-    gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id]], ['overbook_override' => true]))->assertCreated();
+    gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id]], ['overbook_override' => true]))->assertCreated();
 });
 
 it('lists only the request\'s own room types as short', function () {
@@ -250,7 +250,7 @@ it('lists only the request\'s own room types as short', function () {
     $family = avType($hotel, 'Family');
     avRooms($hotel, $family, 2);
 
-    $response = gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id], ['room_type_id' => $family->id]]))
+    $response = gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id], ['room_type_id' => $family->id]]))
         ->assertUnprocessable();
 
     expect(collect($response->json('shortfalls'))->pluck('room_type_id')->all())->toBe([$deluxe->id]);
@@ -289,7 +289,7 @@ it('records imported reservations beyond availability as they are, showing up as
     $path = tempnam(sys_get_temp_dir(), 'reservations').'.csv';
     file_put_contents($path, "guest_phone,arrival_date,departure_date,room_type\n555-0101,2027-03-12,2027-03-13,Deluxe\n555-0102,2027-03-12,2027-03-13,Deluxe\n555-0103,2027-03-12,2027-03-13,Deluxe");
 
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
+    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')
         ->post('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)], ['Accept' => 'application/json'])
         ->assertStatus(202);
 
@@ -302,11 +302,11 @@ it('records imported reservations beyond availability as they are, showing up as
 
 it('checks bringing a cancelled reservation back like new lines', function () {
     [$hotel, $deluxe] = gDeluxe(1);
-    $id = gPost($this, $hotel->owner, gPayload($hotel, [['room_type_id' => $deluxe->id]]))->assertCreated()->json('body.id');
-    gPut($this, $hotel->owner, $id, ['status' => 'cancelled'])->assertOk();
+    $id = gPost($this, adminOfHotel($hotel), gPayload($hotel, [['room_type_id' => $deluxe->id]]))->assertCreated()->json('body.id');
+    gPut($this, adminOfHotel($hotel), $id, ['status' => 'cancelled'])->assertOk();
     avBook($hotel, $deluxe, '2027-03-12', '2027-03-15');
 
-    gPut($this, $hotel->owner, $id, ['status' => 'confirmed'])
+    gPut($this, adminOfHotel($hotel), $id, ['status' => 'confirmed'])
         ->assertUnprocessable()
         ->assertJsonPath('shortfalls.0.room_type_id', $deluxe->id);
 

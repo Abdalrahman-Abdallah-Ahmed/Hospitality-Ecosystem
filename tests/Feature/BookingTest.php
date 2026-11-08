@@ -276,7 +276,6 @@ function bookingAdminWithHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Booking Hotel',
         'slug' => 'booking-hotel-'.uniqid(),
         'currency' => 'USD',

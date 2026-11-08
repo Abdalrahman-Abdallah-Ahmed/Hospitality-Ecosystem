@@ -4,6 +4,7 @@ use App\Ai\Agents\AdminAdvisorAgent;
 use App\Enums\UserRole;
 use App\Models\Hotel;
 use App\Models\User;
+use App\Services\Ai\AdvisorTurn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Embeddings;
 use Laravel\Ai\Models\Conversation;
@@ -25,7 +26,6 @@ function adminWithOwnedHotelForAdvisor(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
@@ -111,4 +111,21 @@ it('rejects continuing a conversation that belongs to a different admin', functi
             'conversation_id' => $conversationId,
         ])
         ->assertStatus(404);
+});
+
+it('keeps a WhatsApp advisor conversation per hotel, so a "yes" never confirms in another', function () {
+    [$admin, $hotel] = adminWithOwnedHotelForAdvisor();
+    $turn = app(AdvisorTurn::class);
+
+    $first = $turn->whatsAppConversation($admin);
+
+    expect(Conversation::find($first)->hotel_id)->toBe($hotel->id)
+        ->and($turn->whatsAppConversation($admin))->toBe($first);
+
+    $other = Hotel::create(['name' => 'Other', 'slug' => 'other-'.$admin->id, 'currency' => 'USD']);
+    $admin->update(['hotel_id' => $other->id]);
+    $moved = $turn->whatsAppConversation($admin->fresh());
+
+    expect($moved)->not->toBe($first)
+        ->and(Conversation::find($moved)->hotel_id)->toBe($other->id);
 });
