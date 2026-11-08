@@ -21,12 +21,12 @@ beforeEach(function () {
 
 function reservationCheckIn($test, Reservation $reservation, array $payload = [])
 {
-    return fdPost($test, $reservation->hotel->owner, "/api/reservation/{$reservation->id}/check-in", $payload);
+    return fdPost($test, adminOfHotel($reservation->hotel), "/api/reservation/{$reservation->id}/check-in", $payload);
 }
 
 function reservationCheckOut($test, Reservation $reservation, array $payload = [])
 {
-    return fdPost($test, $reservation->hotel->owner, "/api/reservation/{$reservation->id}/check-out", $payload);
+    return fdPost($test, adminOfHotel($reservation->hotel), "/api/reservation/{$reservation->id}/check-out", $payload);
 }
 
 it('gives a two-room reservation two stays', function () {
@@ -81,7 +81,7 @@ it('checks in only the rooms still waiting, and marks the reservation checked in
     $reservation = fdBook($hotel, $type, [$a->id, $b->id]);
     [$first, $second] = fdStays($reservation);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$first->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$first->id}/check-in")->assertOk();
     expect($reservation->fresh()->status->value)->toBe('checked_in')
         ->and($second->fresh()->status)->toBe(StayStatus::EXPECTED);
 
@@ -99,10 +99,10 @@ it('keeps the reservation checked in until its last room is out', function () {
     [$first, $second] = fdStays($reservation);
     reservationCheckIn($this, $reservation)->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$first->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$first->id}/check-out")->assertOk();
     expect($reservation->fresh()->status->value)->toBe('checked_in');
 
-    fdPost($this, $hotel->owner, "/api/stays/{$second->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$second->id}/check-out")->assertOk();
     expect($reservation->fresh()->status->value)->toBe('checked_out');
 });
 
@@ -125,9 +125,9 @@ it('refuses to check the last room out while another never arrived, until that r
     [$hotel, $type, [$a]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id, null]);
     [$first, $waiting] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$first->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$first->id}/check-in")->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$first->id}/check-out")
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$first->id}/check-out")
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['stays.expected' => 'Cancel the rooms that did not arrive first: '.$reservation->reservation_id.' Deluxe (unassigned).']);
     reservationCheckOut($this, $reservation)->assertUnprocessable()->assertJsonValidationErrors(['stays.expected']);
@@ -135,11 +135,11 @@ it('refuses to check the last room out while another never arrived, until that r
     expect($first->fresh()->status)->toBe(StayStatus::IN_HOUSE);
 
     // Cancel the room that never came, then the last room can leave.
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
+    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')
         ->putJson("/api/reservation/{$reservation->id}", ['rooms' => [['id' => $first->reservation_room_id]]])
         ->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$first->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$first->id}/check-out")->assertOk();
 
     expect($reservation->fresh()->status->value)->toBe('checked_out')
         ->and($waiting->fresh()->status)->toBe(StayStatus::CANCELLED);

@@ -34,7 +34,6 @@ function adminWithOwnedHotelForUsers(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
@@ -42,6 +41,11 @@ function adminWithOwnedHotelForUsers(): array
     $admin->update(['hotel_id' => $hotel->id]);
 
     return [$admin->fresh(), $hotel];
+}
+
+function makeAccountOwner(User $admin, Hotel $hotel): void
+{
+    $admin->update(['hotel_group_id' => $hotel->hotel_group_id, 'group_role' => 'owner']);
 }
 
 function staffForUsers(Hotel $hotel, array $overrides = []): User
@@ -114,11 +118,10 @@ it('only lists users belonging to the admin own hotel', function () {
 
 it('lets an admin see only themself when their own hotel_id column is not set', function () {
     // hotel_id is the single source of truth for a user's hotel — owning a
-    // hotel via Hotel.owner_id does not associate the admin with its staff
+    // hotel through its account does not associate the admin with its staff
     // unless hotel_id is also backfilled (as /api/register does).
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
@@ -364,8 +367,24 @@ it('rejects an admin promoting themselves to super admin', function () {
     expect($admin->fresh()->isSuperAdmin())->toBeFalse();
 });
 
-it('still lets an admin create another admin for their own hotel', function () {
+it('refuses an admin who is not the account owner creating another admin', function () {
+    [$admin] = adminWithOwnedHotelForUsers();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
+        ->postJson('/api/users', [
+            'name' => 'Co-Manager',
+            'email' => 'co-manager@example.com',
+            'password' => 'Password123!',
+            'role' => UserRole::ADMIN->value,
+        ])
+        ->assertStatus(403);
+
+    expect(User::where('email', 'co-manager@example.com')->exists())->toBeFalse();
+});
+
+it('lets the account owner create another admin for their hotel', function () {
     [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    makeAccountOwner($admin, $hotel);
 
     $this->withHeaders(userManagementApiHeaders())->actingAs($admin, 'sanctum')
         ->postJson('/api/users', [
@@ -558,16 +577,21 @@ it('still lets a super admin edit another super admin\'s details', function () {
     expect($target->fresh()->name)->toBe('Renamed');
 });
 
-it('still lets a super admin link a regular user to an account on the tenant endpoint', function () {
+it('ignores account attributes from a super admin on the tenant endpoint', function () {
     [, $hotel] = adminWithOwnedHotelForUsers();
     $staff = staffForUsers($hotel);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
     $this->withHeaders(userManagementApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/users/{$staff->id}", ['hotel_group_id' => $hotel->hotel_group_id, 'group_role' => 'group_admin'])
+        ->putJson("/api/users/{$staff->id}", ['hotel_group_id' => $hotel->hotel_group_id, 'group_role' => 'owner'])
         ->assertOk();
 
-    expect($staff->fresh()->group_role)->toBe('group_admin');
+    expect($staff->fresh()->group_role)->toBeNull()
+        ->and($staff->fresh()->hotel_group_id)->toBeNull();
+
+    $this->withHeaders(userManagementApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->putJson("/api/users/{$staff->id}", ['group_role' => 'emperor'])
+        ->assertStatus(422);
 });
 
 // destroy
@@ -667,6 +691,7 @@ it('rejects assigning a staff role belonging to a different hotel', function () 
 
 it('rejects giving a staff role to an admin', function () {
     [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    makeAccountOwner($admin, $hotel);
     $coManager = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
     $role = staffRoleForUsers($hotel);
 
@@ -679,6 +704,7 @@ it('rejects giving a staff role to an admin', function () {
 
 it('clears the staff role of an employee promoted to admin', function () {
     [$admin, $hotel] = adminWithOwnedHotelForUsers();
+    makeAccountOwner($admin, $hotel);
     $role = staffRoleForUsers($hotel);
     $staff = staffForUsers($hotel, ['staff_role_id' => $role->id]);
 

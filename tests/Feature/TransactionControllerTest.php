@@ -25,7 +25,6 @@ function txnCtrlAdminWithHotel(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Txn Controller Hotel',
         'slug' => 'txn-ctrl-hotel-'.uniqid(),
         'currency' => 'USD',

@@ -22,11 +22,11 @@ use Illuminate\Support\Facades\Validator;
 class HotelController extends Controller
 {
     /**
-     * Columns that decide who a hotel belongs to. Never written here, for any
-     * caller: moving a hotel between accounts has rules that protect both
+     * The column that decides who a hotel belongs to. Never written here, for
+     * any caller: moving a hotel between accounts has rules that protect both
      * customers, which live in App\Services\Superadmin\HotelAdministration.
      */
-    private const PLATFORM_ATTRIBUTES = ['hotel_group_id', 'owner_id'];
+    private const PLATFORM_ATTRIBUTES = ['hotel_group_id'];
 
     /**
      * Display a listing of the resource.
@@ -77,7 +77,11 @@ class HotelController extends Controller
             unsetAttributes($request->validated(), self::PLATFORM_ATTRIBUTES),
         );
 
-        if ($error = $this->invalidHousekeepingDefaults($hotel, $validated)) {
+        // In this hotel's scope: its teams are hotel-scoped, and an admin can
+        // edit a hotel other than the one the request works in.
+        $error = TenantContext::runForHotel($hotel->getKey(), fn () => $this->invalidHousekeepingDefaults($hotel, $validated));
+
+        if ($error) {
             return $error;
         }
 

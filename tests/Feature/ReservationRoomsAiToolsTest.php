@@ -14,7 +14,7 @@ function aiToolsHotel(): Hotel
 {
     $owner = User::factory()->create();
 
-    return Hotel::create(['owner_id' => $owner->id, 'name' => 'Tools Hotel', 'slug' => 'tools-'.$owner->id, 'currency' => 'USD']);
+    return Hotel::create(['name' => 'Tools Hotel', 'slug' => 'tools-'.$owner->id, 'currency' => 'USD']);
 }
 
 it('shows a guest only their own reservation rooms and a per-type summary', function () {

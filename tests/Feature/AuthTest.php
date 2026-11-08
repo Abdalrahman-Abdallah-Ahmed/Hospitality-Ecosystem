@@ -56,7 +56,6 @@ it('returns the staff role and effective permissions on login', function () {
 
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Login Hotel',
         'slug' => 'login-hotel-'.$admin->id,
         'currency' => 'USD',

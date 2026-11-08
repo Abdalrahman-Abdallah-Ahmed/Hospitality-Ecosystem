@@ -17,7 +17,6 @@ class HotelResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'owner_id' => $this->owner_id,
             'hotel_group_id' => $this->hotel_group_id,
             'name' => $this->name,
             'slug' => $this->slug,
@@ -46,7 +45,6 @@ class HotelResource extends JsonResource
             // Platform-wide and read-only: the frontend hides the Transactions
             // menu from it (spec 019 FR-009).
             'transactions_enabled' => Features::enabled(Features::TRANSACTIONS),
-            'owner' => UserResource::make($this->whenLoaded('owner')),
             'hotel_group' => HotelGroupResource::make($this->whenLoaded('hotelGroup')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

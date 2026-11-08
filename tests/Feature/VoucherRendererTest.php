@@ -117,9 +117,9 @@ it('uses the hotel default template for the guest language, and the built-in lay
     $reservation = vcReservation($hotel);
     $template = app(VoucherTemplateService::class)->create($hotel, ['name' => 'Main', 'language' => 'en', 'is_default' => true], vcImage(1240, 1754), null);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk();
     $template->delete();
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk();
 
     expect(EventLog::where('event_type', 'reservation.voucher_generated')->orderBy('occurred_at')->orderBy('id')->get()->map(fn ($e) => $e->context['voucher_template_id'])->all())
         ->toEqualCanonicalizing([$template->id, null]);

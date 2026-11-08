@@ -14,7 +14,6 @@ use App\Enums\RecommendationStatus;
 use App\Enums\SenderType;
 use App\Enums\StayStatus;
 use App\Enums\TaskStatus;
-use App\Enums\UserRole;
 use App\Jobs\ProcessInboundWhatsAppMessageJob;
 use App\Models\Activity;
 use App\Models\ActivityCategory;
@@ -27,7 +26,6 @@ use App\Models\Recommendation;
 use App\Models\Reservation;
 use App\Models\Stay;
 use App\Models\Task;
-use App\Models\User;
 use App\Models\WhatsAppInboundMessage;
 use App\Services\Metering\MeteringService;
 use App\Services\Pitching\PitchCoordinator;
@@ -57,7 +55,6 @@ beforeEach(function () {
 function pitchHotel(string $timezone = 'Asia/Riyadh'): Hotel
 {
     return Hotel::create([
-        'owner_id' => User::factory()->role(UserRole::ADMIN)->create()->id,
         'name' => 'Pitch Hotel',
         'slug' => 'pitch-hotel-'.Str::lower(Str::random(6)),
         'currency' => 'USD',

@@ -48,7 +48,6 @@ function exportAdmin(string $name = 'Export Harbor Hotel'): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => $name,
         'slug' => Str::slug($name).'-'.$admin->id,
         'currency' => 'USD',

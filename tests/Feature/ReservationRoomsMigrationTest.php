@@ -27,7 +27,7 @@ function migrationHotel(): Hotel
 {
     $owner = User::factory()->create();
 
-    return Hotel::create(['owner_id' => $owner->id, 'name' => 'Legacy Hotel', 'slug' => 'legacy-'.$owner->id, 'currency' => 'USD']);
+    return Hotel::create(['name' => 'Legacy Hotel', 'slug' => 'legacy-'.$owner->id, 'currency' => 'USD']);
 }
 
 /**

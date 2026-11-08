@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\UserInvitationNotification;
 use App\Services\Superadmin\Concerns\AppliesAuditedChanges;
 use App\Support\Audit\EventLogger;
+use App\Support\Superadmin\SecondOwner;
 use App\Support\Tenancy\TenantContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password;
@@ -74,7 +75,7 @@ class UserAdministration
     {
         $this->refuseSuperAdminGrant($attributes['role'] ?? null);
 
-        $user = DB::transaction(function () use ($attributes) {
+        $user = SecondOwner::rethrow(fn () => DB::transaction(function () use ($attributes) {
             $hotel = Hotel::findOrFail($attributes['hotel_id']);
 
             $user = User::create([
@@ -83,14 +84,10 @@ class UserAdministration
                 'password' => Str::password(32),
             ]);
 
-            if ($user->isAdmin()) {
-                $this->claimOwnership($hotel->getKey(), $user);
-            }
-
             EventLogger::recordPlatform('platform.user.created', $user, $this->createdChanges($user));
 
             return $user;
-        });
+        }));
 
         return [$user, $this->sendFirstLink($user)];
     }
@@ -120,8 +117,7 @@ class UserAdministration
     {
         $this->refuseSuperAdminGrant($input['role'] ?? null);
 
-        return TenantContext::withoutScope(fn () => DB::transaction(function () use ($user, $input) {
-            $wasAdmin = $user->isAdmin();
+        return SecondOwner::rethrow(fn () => TenantContext::withoutScope(fn () => DB::transaction(function () use ($user, $input) {
             $role = $input['role'] ?? $user->role->value;
             $isAdmin = $role === UserRole::ADMIN->value;
             $membershipsBefore = $this->liveMembershipIds($user);
@@ -141,7 +137,6 @@ class UserAdministration
 
             if (isset($changes['role'])) {
                 DB::table('hotel_user')->where('user_id', $user->getKey())->update(['role' => $role]);
-                $this->moveOwnershipWithRole($user, $wasAdmin);
             }
 
             $membershipsAfter = $this->liveMembershipIds($user);
@@ -155,7 +150,7 @@ class UserAdministration
             }
 
             return $user;
-        }));
+        })));
     }
 
     /**
@@ -274,19 +269,6 @@ class UserAdministration
     }
 
     /**
-     * Left in place, a former admin's ownership would block every later admin
-     * from owning the hotel.
-     */
-    private function moveOwnershipWithRole(User $user, bool $wasAdmin): void
-    {
-        if ($wasAdmin) {
-            Hotel::withTrashed()->where('owner_id', $user->getKey())->update(['owner_id' => null]);
-        } elseif ($user->hotel_id) {
-            $this->claimOwnership($user->hotel_id, $user);
-        }
-    }
-
-    /**
      * A failed send leaves no token behind, so the operator's immediate retry
      * isn't throttled.
      */
@@ -310,32 +292,26 @@ class UserAdministration
     }
 
     /**
-     * Only ever fills an empty owner, so an existing owner is never replaced.
-     */
-    private function claimOwnership(string $hotelId, User $user): void
-    {
-        Hotel::whereKey($hotelId)->whereNull('owner_id')->update(['owner_id' => $user->getKey()]);
-    }
-
-    /**
+     * Ending an account-wide role also clears the direct account link, which
+     * would otherwise refuse every later move of this user's home hotel. They
+     * still resolve to the account through that hotel.
+     *
      * @param  array<string, mixed>  $input
-     * @return array<string, string|null>
+     * @return array<string, mixed>
      */
     private function groupRoleAttributes(User $user, array $input, bool $isAdmin): array
     {
         $sent = array_key_exists('group_role', $input);
         $groupRole = $sent ? $input['group_role'] : $user->group_role;
 
-        if (! $isAdmin) {
-            if ($sent && $groupRole !== null) {
-                throw new DomainRuleException('Only admins can be given an account-wide role.', 422);
-            }
-
-            return ['group_role' => null];
+        if (! $isAdmin && $sent && $groupRole !== null) {
+            throw new DomainRuleException('Only admins can be given an account-wide role.', 422);
         }
 
-        if ($groupRole === null) {
-            return ['group_role' => null];
+        if (! $isAdmin || $groupRole === null) {
+            return $sent || $user->group_role !== null
+                ? ['group_role' => null, 'hotel_group_id' => null]
+                : ['group_role' => null];
         }
 
         // accessibleHotelIds() ignores a group role with no account.

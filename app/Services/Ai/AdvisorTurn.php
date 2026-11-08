@@ -5,6 +5,7 @@ namespace App\Services\Ai;
 use App\Ai\Agents\AdminAdvisorAgent;
 use App\Exceptions\DomainRuleException;
 use App\Exceptions\PendingConfirmationChangedException;
+use App\Models\Hotel;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -16,6 +17,7 @@ use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\ConversationStore;
 use Laravel\Ai\Models\Conversation;
 use Laravel\Ai\Responses\AgentResponse;
+use LogicException;
 
 /**
  * One turn of the admin advisor, for the chat endpoint and the WhatsApp staff
@@ -286,31 +288,61 @@ class AdvisorTurn
      */
     public function whatsAppConversation(User $admin): string
     {
+        $hotel = $this->conversationHotel($admin);
+
         $existing = Conversation::query()
             ->where('participant_type', Conversation::participantType($admin))
             ->where('participant_id', Conversation::participantKey($admin))
+            ->where('hotel_id', $hotel->getKey())
             ->where('title', self::WHATSAPP_CONVERSATION_TITLE)
             ->latest('updated_at')
             ->value('id');
 
-        return $existing ?? $this->conversations->storeConversation(
-            Conversation::participantType($admin),
-            Conversation::participantKey($admin),
-            self::WHATSAPP_CONVERSATION_TITLE,
-        );
+        return $existing ?? $this->storeConversation($admin, $hotel, self::WHATSAPP_CONVERSATION_TITLE);
     }
 
     /**
      * Created before the turn, so the tools know the conversation id while
      * they run and can record it in the audit trail (R3).
+     *
+     * Tied to the admin's current hotel, because the tools are rebuilt for the
+     * hotel of each request. A waiting action confirmed from another hotel
+     * would otherwise run there (spec 025).
      */
     private function startConversation(User $admin, string $message): string
     {
-        return $this->conversations->storeConversation(
-            Conversation::participantType($admin),
-            Conversation::participantKey($admin),
-            Str::limit($message !== '' ? $message : 'Advisor', 50, preserveWords: true),
-        );
+        return $this->storeConversation($admin, $this->conversationHotel($admin), Str::limit($message !== '' ? $message : 'Advisor', 50, preserveWords: true));
+    }
+
+    /**
+     * The hotel the advisor's tools are built for: the one the request works
+     * in, or the home hotel on WhatsApp.
+     */
+    private function conversationHotel(User $admin): Hotel
+    {
+        return $admin->hotel ?? throw new LogicException('An advisor conversation needs the hotel the admin works in.');
+    }
+
+    /**
+     * The store has no hotel column of its own, so the hotel is set right
+     * after, in one transaction: a conversation saved without one could never
+     * be continued.
+     */
+    private function storeConversation(User $admin, Hotel $hotel, string $title): string
+    {
+        return DB::transaction(function () use ($admin, $hotel, $title): string {
+            $id = $this->conversations->storeConversation(
+                Conversation::participantType($admin),
+                Conversation::participantKey($admin),
+                $title,
+            );
+
+            DB::table(config('ai.conversations.tables.conversations', 'agent_conversations'))
+                ->where('id', $id)
+                ->update(['hotel_id' => $hotel->getKey()]);
+
+            return $id;
+        });
     }
 
     /**

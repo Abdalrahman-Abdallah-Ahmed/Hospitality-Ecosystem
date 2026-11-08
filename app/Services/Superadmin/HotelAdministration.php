@@ -101,15 +101,11 @@ class HotelAdministration
         }
 
         if ((clone $homeUsers)->whereNotNull('hotel_group_id')->exists()) {
-            throw new DomainRuleException('This hotel has staff attached to its account. Detach them before moving it to another account.', 422);
+            throw new DomainRuleException('This hotel has staff attached to its account. Clear their account-wide role before moving it to another account.', 422);
         }
 
         if (DB::table('hotel_user')->whereIn('user_id', (clone $homeUsers)->select('id'))->exists()) {
             throw new DomainRuleException('This hotel has staff with memberships in other hotels. Remove them before moving it to another account.', 422);
-        }
-
-        if ($hotel->owner_id && User::whereKey($hotel->owner_id)->value('hotel_id') !== $hotel->getKey()) {
-            throw new DomainRuleException('This hotel is owned by someone based at another hotel. Change that before moving it to another account.', 422);
         }
     }
 }

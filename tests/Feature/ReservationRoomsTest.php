@@ -58,7 +58,6 @@ function rrAdmin(): array
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Rooms Hotel',
         'slug' => 'rooms-hotel-'.$admin->id,
         'currency' => 'USD',

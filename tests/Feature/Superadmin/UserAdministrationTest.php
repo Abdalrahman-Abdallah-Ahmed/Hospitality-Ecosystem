@@ -88,7 +88,6 @@ it('onboards a customer from nothing to an admin opening their hotel, with no SQ
     ])->assertCreated()->assertJsonPath('body.reset_email_sent', true)->json('body.id');
 
     $admin = User::find($userId);
-    expect(Hotel::find($hotelId)->owner_id)->toBe($userId);
 
     $token = null;
     Notification::assertSentTo($admin, UserInvitationNotification::class, function ($notification) use (&$token) {
@@ -180,23 +179,6 @@ it('attaches a new admin with an account-wide role to the hotel\'s account', fun
         ->json('body.id');
 
     expect(User::find($id)->accessibleHotelIds())->toEqualCanonicalizing([$hotel->id, $second->id]);
-});
-
-it('makes a new admin the owner only when the hotel has none', function () {
-    $hotel = userHotel(userAccount());
-
-    $first = userAdmin($this)->postJson('/api/superadmin/users', newUserPayload($hotel))->json('body.id');
-    userAdmin($this)->postJson('/api/superadmin/users', newUserPayload($hotel, ['email' => 'second@example.com']))->assertCreated();
-
-    expect($hotel->fresh()->owner_id)->toBe($first);
-});
-
-it('does not make a new employee the owner', function () {
-    $hotel = userHotel(userAccount());
-
-    userAdmin($this)->postJson('/api/superadmin/users', newUserPayload($hotel, ['role' => 'employee']))->assertCreated();
-
-    expect($hotel->fresh()->owner_id)->toBeNull();
 });
 
 it('keeps the user and says so when the first email cannot be sent, and a resend is not throttled', function () {
@@ -491,7 +473,7 @@ it('keeps memberships out of tenant user responses', function () {
     $hotel = makeHotel();
     $staff = User::factory()->create(['hotel_id' => $hotel->id]);
 
-    $body = $this->withHeaders(apiHeaders())->actingAs($hotel->owner, 'sanctum')
+    $body = $this->withHeaders(apiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->getJson("/api/users/{$staff->id}")->assertOk()->json('body');
 
     expect($body)->not->toHaveKey('hotel_ids');
@@ -623,10 +605,10 @@ it('attaches an admin to their account when given an account-wide role', functio
     $second = userHotel($account, 'second');
     $user = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $home->id]);
 
-    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['group_role' => 'group_admin'])
+    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['group_role' => 'owner'])
         ->assertOk()
         ->assertJsonPath('body.hotel_group_id', $account->id)
-        ->assertJsonPath('body.group_role', 'group_admin');
+        ->assertJsonPath('body.group_role', 'owner');
 
     expect($user->fresh()->accessibleHotelIds())->toEqualCanonicalizing([$home->id, $second->id]);
 });
@@ -707,39 +689,6 @@ it('applies the team rules', function () {
 
     userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['team_id' => null])
         ->assertOk()->assertJsonPath('body.team_id', null);
-});
-
-it('makes a promoted employee the owner of an ownerless home hotel, and frees the hotel on demotion', function () {
-    $account = userAccount();
-    $hotel = userHotel($account);
-    $alsoOwned = userHotel($account, 'also');
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
-
-    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['role' => 'admin'])->assertOk();
-    expect($hotel->fresh()->owner_id)->toBe($user->id);
-
-    $alsoOwned->update(['owner_id' => $user->id]);
-    $alsoOwned->delete();
-
-    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['role' => 'employee'])->assertOk();
-
-    expect($hotel->fresh()->owner_id)->toBeNull()
-        ->and(Hotel::withTrashed()->find($alsoOwned->id)->owner_id)->toBeNull();
-
-    // The next admin created can own the hotel.
-    $next = userAdmin($this)->postJson('/api/superadmin/users', newUserPayload($hotel))->assertCreated()->json('body.id');
-    expect($hotel->fresh()->owner_id)->toBe($next);
-});
-
-it('does not replace an existing owner when an employee is promoted', function () {
-    $hotel = userHotel(userAccount());
-    $owner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
-    $hotel->update(['owner_id' => $owner->id]);
-    $user = User::factory()->create(['hotel_id' => $hotel->id]);
-
-    userAdmin($this)->putJson("/api/superadmin/users/{$user->id}/access", ['role' => 'admin'])->assertOk();
-
-    expect($hotel->fresh()->owner_id)->toBe($owner->id);
 });
 
 it('records one event per access change, and none when nothing changes', function () {

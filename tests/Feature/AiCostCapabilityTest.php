@@ -105,7 +105,7 @@ it('leaves margin empty when no contract value is recorded', function () {
 it('keeps the cost report from hotel admins and employees', function () {
     [$hotel] = fdHotel(1);
 
-    foreach ([$hotel->owner, fdEmployee($hotel, Permission::cases())] as $user) {
+    foreach ([adminOfHotel($hotel), fdEmployee($hotel, Permission::cases())] as $user) {
         $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')
             ->getJson('/api/superadmin/ai-cost')
             ->assertForbidden();

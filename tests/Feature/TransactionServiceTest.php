@@ -16,7 +16,6 @@ function ledgerHotel(): Hotel
 {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Ledger Hotel',
         'slug' => 'ledger-hotel-'.uniqid(),
         'currency' => 'USD',

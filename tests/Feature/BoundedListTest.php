@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\EntryPointDiscovery;
 
@@ -23,7 +22,7 @@ beforeEach(function () {
 it('pages every list route and refuses an oversized page', function () {
     $exceptions = (require base_path('tests/Inventory/entry_points.php'))['route_exceptions']['bounded_list'];
     $hotel = makeHotel();
-    $admin = User::findOrFail($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
     $checked = 0;
 
     foreach (EntryPointDiscovery::tenantRoutes() as $key => $route) {

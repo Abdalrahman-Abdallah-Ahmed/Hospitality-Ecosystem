@@ -55,3 +55,37 @@ it('runs the check before a record in the URL is looked up', function () {
         ->toBeLessThan(array_search(SubstituteBindings::class, $priority, true))
         ->toBeGreaterThan(array_search(ResolveTenant::class, $priority, true));
 });
+
+it('works in one chosen hotel on every authenticated route, apart from those named', function () {
+    $exempt = ['POST api/logout', 'POST logout', 'GET api/hotel', 'POST api/connect', 'GET api/check-paired'];
+    $missing = [];
+    $checked = 0;
+
+    foreach (Route::getRoutes()->getRoutes() as $route) {
+        $middleware = $route->gatherMiddleware();
+
+        if (! in_array('auth:sanctum', $middleware, true) || in_array('super_admin', $middleware, true)) {
+            continue;
+        }
+
+        foreach (array_diff($route->methods(), ['HEAD']) as $method) {
+            $name = $method.' '.$route->uri();
+            $applies = in_array('hotel_choice', $middleware, true) && ! in_array('hotel_choice', $route->excludedMiddleware(), true);
+
+            if (in_array($name, $exempt, true)) {
+                expect($applies)->toBeFalse("{$name} is listed as exempt, but runs hotel_choice");
+
+                continue;
+            }
+
+            $checked++;
+
+            if (! $applies) {
+                $missing[] = $name;
+            }
+        }
+    }
+
+    expect($missing)->toBe([])
+        ->and($checked)->toBeGreaterThan(100);
+});

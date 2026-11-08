@@ -37,7 +37,7 @@ it('checks the reservation in through the real check-in, marked deprecated', fun
     [$hotel, $type, [$a, $b]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id, $b->id]);
 
-    putReservation($this, $hotel->owner, $reservation, ['status' => 'checked_in'])
+    putReservation($this, adminOfHotel($hotel), $reservation, ['status' => 'checked_in'])
         ->assertOk()
         ->assertHeader('Deprecation', 'true')
         ->assertHeader('Link', "</api/reservation/{$reservation->id}/check-in>; rel=\"successor-version\"")
@@ -51,7 +51,7 @@ it('applies the check-in rules on the deprecated path: no room, no check-in', fu
     [$hotel, $type] = fdHotel();
     $reservation = fdBook($hotel, $type, [null]);
 
-    putReservation($this, $hotel->owner, $reservation, ['status' => 'checked_in'])->assertUnprocessable();
+    putReservation($this, adminOfHotel($hotel), $reservation, ['status' => 'checked_in'])->assertUnprocessable();
 
     expect($reservation->fresh()->status->value)->toBe('confirmed');
 });
@@ -59,9 +59,9 @@ it('applies the check-in rules on the deprecated path: no room, no check-in', fu
 it('checks the reservation out on the deprecated path, with cleaning tasks', function () {
     [$hotel, $type, [$a]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id]);
-    putReservation($this, $hotel->owner, $reservation, ['status' => 'checked_in'])->assertOk();
+    putReservation($this, adminOfHotel($hotel), $reservation, ['status' => 'checked_in'])->assertOk();
 
-    putReservation($this, $hotel->owner, $reservation, ['status' => 'checked_out'])
+    putReservation($this, adminOfHotel($hotel), $reservation, ['status' => 'checked_out'])
         ->assertOk()
         ->assertHeader('Link', "</api/reservation/{$reservation->id}/check-out>; rel=\"successor-version\"");
 
@@ -74,7 +74,7 @@ it('needs the stays permission on top of reservations.update', function (string 
     $reservation = fdBook($hotel, $type, [$a->id]);
 
     if ($status === 'checked_out') {
-        putReservation($this, $hotel->owner, $reservation, ['status' => 'checked_in'])->assertOk();
+        putReservation($this, adminOfHotel($hotel), $reservation, ['status' => 'checked_in'])->assertOk();
     }
 
     $granted = array_values(array_filter(
@@ -100,12 +100,12 @@ it('creates a checked-in reservation by creating it confirmed and checking it in
         'rooms' => [['room_type_id' => $type->id, 'room_id' => $a->id]],
     ];
 
-    fdPost($this, $hotel->owner, '/api/reservation', [...$payload, 'status' => 'checked_in'])
+    fdPost($this, adminOfHotel($hotel), '/api/reservation', [...$payload, 'status' => 'checked_in'])
         ->assertCreated()
         ->assertHeader('Deprecation', 'true')
         ->assertJsonPath('body.status', 'checked_in');
 
-    fdPost($this, $hotel->owner, '/api/reservation', [...$payload, 'reservation_id' => 'RES-PAST', 'status' => 'checked_out'])
+    fdPost($this, adminOfHotel($hotel), '/api/reservation', [...$payload, 'reservation_id' => 'RES-PAST', 'status' => 'checked_out'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['status' => 'Only the reservation import can record a checked-out reservation.']);
 });
@@ -113,9 +113,9 @@ it('creates a checked-in reservation by creating it confirmed and checking it in
 it('refuses to cancel a reservation with a guest in the house', function () {
     [$hotel, $type, [$a]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/check-in")->assertOk();
 
-    putReservation($this, $hotel->owner, $reservation, ['status' => 'cancelled'])
+    putReservation($this, adminOfHotel($hotel), $reservation, ['status' => 'cancelled'])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['status' => 'Check out the in-house rooms first.']);
 });
@@ -124,9 +124,9 @@ it('refuses to drop a room whose guest is in', function () {
     [$hotel, $type, [$a, $b]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id, $b->id]);
     [$first, $second] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/check-in")->assertOk();
 
-    putReservation($this, $hotel->owner, $reservation, ['rooms' => [['id' => $second->reservation_room_id]]])
+    putReservation($this, adminOfHotel($hotel), $reservation, ['rooms' => [['id' => $second->reservation_room_id]]])
         ->assertUnprocessable();
 
     expect($first->fresh()->status)->toBe(StayStatus::IN_HOUSE);
@@ -135,9 +135,9 @@ it('refuses to drop a room whose guest is in', function () {
 it('refuses to delete a reservation with a guest in the house, and deletes its stays otherwise', function () {
     [$hotel, $type, [$a, $b]] = fdHotel();
     $inHouse = fdBook($hotel, $type, [$a->id]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$inHouse->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$inHouse->id}/check-in")->assertOk();
     $waiting = fdBook($hotel, $type, [$b->id]);
-    $delete = fn (Reservation $reservation) => $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
+    $delete = fn (Reservation $reservation) => $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')
         ->deleteJson("/api/reservation/{$reservation->id}");
 
     $delete($inHouse)->assertUnprocessable()->assertJsonValidationErrors(['reservation' => 'Check out the in-house rooms first.']);
@@ -152,11 +152,11 @@ it('moves an in-house guest to another room and leaves the old one dirty', funct
     [$hotel, $type, [$a, $b]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$a->id]);
     [$stay] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
 
     // Through the room move now (spec 020); the general edit refuses it.
-    putReservation($this, $hotel->owner, $reservation, ['rooms' => [['id' => $stay->reservation_room_id, 'room_id' => $b->id]]])->assertUnprocessable();
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/move-room", ['room_id' => $b->id, 'reason' => 'Noise'])->assertOk();
+    putReservation($this, adminOfHotel($hotel), $reservation, ['rooms' => [['id' => $stay->reservation_room_id, 'room_id' => $b->id]]])->assertUnprocessable();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/move-room", ['room_id' => $b->id, 'reason' => 'Noise'])->assertOk();
 
     expect($stay->fresh()->room_id)->toBe($b->id)
         ->and($b->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED)
@@ -169,7 +169,7 @@ it('lets the import record a checked-out stay as history, with no cleaning task'
     $path = tempnam(sys_get_temp_dir(), 'reservations').'.csv';
     file_put_contents($path, "guest_phone,arrival_date,departure_date,room_type,status\n555-0101,2026-01-10,2026-01-12,Deluxe,checked_out");
 
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')
+    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')
         ->post('/api/reservation/import', ['file' => new UploadedFile($path, 'reservations.csv', 'text/csv', null, true)], ['Accept' => 'application/json'])
         ->assertStatus(202);
 

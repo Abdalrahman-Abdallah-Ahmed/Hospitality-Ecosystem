@@ -49,7 +49,7 @@ function abRequested(string $reason = 'Flight changed'): array
 
 function abAdmin($hotel): User
 {
-    return User::find($hotel->owner_id);
+    return adminOfHotel($hotel);
 }
 
 it('emails each hotel admin once, and nothing else', function () {
@@ -97,7 +97,7 @@ it('approves a request by cancelling the booking with the guest reason', functio
     expect($booking->fresh()->cancellation_reason)->toBe('Flight changed')
         ->and($task->status)->toBe(TaskStatus::COMPLETED)
         ->and($task->resolution)->toBe(CancellationResolution::APPROVED)
-        ->and($task->resolved_by_user_id)->toBe($hotel->owner_id)
+        ->and($task->resolved_by_user_id)->toBe(adminOfHotel($hotel)->id)
         ->and($task->resolved_at)->not->toBeNull();
 });
 
@@ -178,7 +178,7 @@ it('lists open requests oldest first, without answered ones', function () {
 it('still records the request when the hotel has no admin to email', function () {
     Log::spy();
     $hotel = avHotel();
-    User::whereKey($hotel->owner_id)->update(['role' => UserRole::EMPLOYEE]);
+    adminOfHotel($hotel)->update(['role' => UserRole::EMPLOYEE]);
     $booking = abBook($hotel, abActivity($hotel), '2026-10-09', 1);
 
     ['created' => $created] = app(BookingCancellationService::class)->request($booking, Guest::withoutGlobalScope('hotel')->find($booking->guest_id), null);

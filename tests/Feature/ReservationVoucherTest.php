@@ -52,7 +52,7 @@ it('returns a one-page PDF with every voucher field and no total by default', fu
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    $response = vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")
+    $response = vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")
         ->assertOk()
         ->assertHeader('Content-Type', 'application/pdf');
 
@@ -77,7 +77,7 @@ it('shows the total only when asked', function () {
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    $text = vcPdfText(vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['show_total' => true])->assertOk()->getContent());
+    $text = vcPdfText(vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['show_total' => true])->assertOk()->getContent());
 
     expect($text)->toContain('750.00 USD');
 });
@@ -86,7 +86,7 @@ it('prints Arabic labels right to left for an Arabic-speaking guest', function (
     $hotel = vrHotel();
     $reservation = vcReservation($hotel, primary: ['preferred_language' => 'ar-SA']);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk();
 
     $data = app(VoucherDataBuilder::class)->fromReservation($reservation, VoucherLanguage::AR);
     $html = app(VoucherRenderer::class)->defaultHtml($data);
@@ -102,7 +102,7 @@ it('prints English for a guest with another or no language', function (string $l
     $hotel = vrHotel();
     $reservation = vcReservation($hotel, primary: ['preferred_language' => $language]);
 
-    $text = vcPdfText(vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk()->getContent());
+    $text = vcPdfText(vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk()->getContent());
 
     expect($text)->toContain('Reservation Voucher');
 })->with(['french' => 'fr', 'blank' => '']);
@@ -111,7 +111,7 @@ it('refuses a voucher for a cancelled or no-show reservation', function (string 
     $hotel = vrHotel();
     $reservation = vcReservation($hotel, ['status' => $status]);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertStatus(409);
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertStatus(409);
 
     expect(EventLog::where('event_type', 'reservation.voucher_generated')->exists())->toBeFalse();
 })->with(['cancelled', 'no_show']);
@@ -120,7 +120,7 @@ it('issues a voucher for a pending reservation showing its status', function () 
     $hotel = vrHotel();
     $reservation = vcReservation($hotel, ['status' => 'pending']);
 
-    $text = vcPdfText(vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk()->getContent());
+    $text = vcPdfText(vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk()->getContent());
 
     expect($text)->toContain('Pending');
 });
@@ -129,12 +129,12 @@ it('audits each generation with its options', function () {
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['show_total' => true, 'staff_note' => 'Pickup at 14:00'])->assertOk();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['show_total' => true, 'staff_note' => 'Pickup at 14:00'])->assertOk();
 
     $event = EventLog::where('event_type', 'reservation.voucher_generated')->sole();
 
     expect($event->subject_id)->toBe($reservation->id)
-        ->and($event->actor_id)->toBe($hotel->owner->id)
+        ->and($event->actor_id)->toBe(adminOfHotel($hotel)->id)
         ->and($event->context)->toMatchArray(['language' => 'en', 'show_total' => true, 'voucher_template_id' => null])
         ->and($event->changes['staff_note'])->toBe('Pickup at 14:00');
 });
@@ -143,7 +143,7 @@ it('downloads as an attachment when asked', function () {
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    $response = vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher?download=1")->assertOk();
+    $response = vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher?download=1")->assertOk();
 
     expect($response->headers->get('Content-Disposition'))->toStartWith('attachment;');
 });
@@ -156,7 +156,7 @@ it('prints the room type but never a room number', function () {
     $reservation = vcReservation($hotel);
     ReservationRoom::where('reservation_id', $reservation->id)->first()->update(['room_type_id' => $type->id, 'room_id' => $room->id]);
 
-    $text = vcPdfText(vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher")->assertOk()->getContent());
+    $text = vcPdfText(vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher")->assertOk()->getContent());
 
     expect($text)->toContain('Deluxe')
         ->and($text)->not->toContain('4711');
@@ -167,7 +167,7 @@ it('never changes the reservation', function () {
     $reservation = vcReservation($hotel);
     $before = [Reservation::find($reservation->id)->toArray(), ReservationGuest::where('reservation_id', $reservation->id)->get()->toArray(), ReservationRoom::where('reservation_id', $reservation->id)->get()->toArray()];
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", [
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", [
         'overrides' => ['primary_guest_name' => 'ACME Travel LLC', 'arrival_date' => '2026-12-11', 'adults' => 4],
         'staff_note' => 'Note',
     ])->assertOk();
@@ -182,7 +182,7 @@ it('answers not found for another hotel\'s reservation', function () {
     $other = vrHotel();
     $reservation = vcReservation($hotel);
 
-    vcPost($this, $other->owner, "/api/reservation/{$reservation->id}/voucher")->assertNotFound();
+    vcPost($this, adminOfHotel($other), "/api/reservation/{$reservation->id}/voucher")->assertNotFound();
 });
 
 it('lets an employee generate a voucher only with the voucher permission', function () {
@@ -203,7 +203,7 @@ it('uses a named template and its language whatever the guest speaks', function 
     $reservation = vcReservation($hotel);
     $arabic = vrTemplate($hotel, 'ar', [vrBox('g', 'guest.primary_name', 0.2)], default: false);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['template_id' => $arabic->id])->assertOk();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['template_id' => $arabic->id])->assertOk();
 
     expect(EventLog::where('event_type', 'reservation.voucher_generated')->sole()->context)
         ->toMatchArray(['voucher_template_id' => $arabic->id, 'language' => 'ar']);
@@ -217,15 +217,15 @@ it('answers not found for another hotel\'s or a deleted template', function () {
     $deleted = vrTemplate($hotel, 'en', [], name: 'Old');
     $deleted->delete();
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['template_id' => $foreign->id])->assertNotFound();
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['template_id' => $deleted->id])->assertNotFound();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['template_id' => $foreign->id])->assertNotFound();
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['template_id' => $deleted->id])->assertNotFound();
 });
 
 it('prints every allowed override and recomputes the nights', function () {
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    $text = vcPdfText(vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['overrides' => [
+    $text = vcPdfText(vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['overrides' => [
         'primary_guest_name' => 'ACME Travel LLC',
         'other_guest_names' => ['Jane Roe'],
         'arrival_date' => '2026-12-11',
@@ -253,7 +253,7 @@ it('rejects overrides of fields that cannot be overridden', function (string $ke
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['overrides' => [$key => 'X']])
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['overrides' => [$key => 'X']])
         ->assertUnprocessable()
         ->assertJsonValidationErrors("overrides.{$key}");
 })->with(['reference', 'status', 'foo']);
@@ -262,7 +262,7 @@ it('rejects a displayed departure that is not after the displayed arrival', func
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['overrides' => ['departure_date' => '2026-12-10']])
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['overrides' => ['departure_date' => '2026-12-10']])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('overrides.departure_date');
 });
@@ -272,7 +272,7 @@ it('says when a sent note has no place on the template', function () {
     $reservation = vcReservation($hotel);
     vrTemplate($hotel, 'en', [vrBox('g', 'guest.primary_name', 0.2)]);
 
-    $response = vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", ['staff_note' => 'Pickup 14:00'])->assertOk();
+    $response = vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", ['staff_note' => 'Pickup 14:00'])->assertOk();
 
     expect($response->headers->get('X-Voucher-Unplaced'))->toBe('voucher.staff_note');
 });
@@ -281,7 +281,7 @@ it('records the validated overrides and note on the audit entry', function () {
     $hotel = vrHotel();
     $reservation = vcReservation($hotel);
 
-    vcPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/voucher", [
+    vcPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/voucher", [
         'overrides' => ['primary_guest_name' => 'ACME Travel LLC'],
         'staff_note' => 'For the visa office',
     ])->assertOk();

@@ -27,7 +27,7 @@ function issueUri(Task $task): string
 it('creates one maintenance task for the room, linked to the cleaning task and its reporter', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
 
-    $response = fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Shower leaking at the base', 'priority' => 'high'])
+    $response = fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Shower leaking at the base', 'priority' => 'high'])
         ->assertCreated()
         ->assertJsonPath('body.created', true)
         ->assertJsonPath('body.out_of_order.requested', false);
@@ -36,7 +36,7 @@ it('creates one maintenance task for the room, linked to the cleaning task and i
 
     expect($task->room_id)->toBe($room->id)
         ->and($task->source_task_id)->toBe($cleaning->id)
-        ->and($task->created_by_user_id)->toBe($hotel->owner->id)
+        ->and($task->created_by_user_id)->toBe(adminOfHotel($hotel)->id)
         ->and($task->assigned_to_team_id)->toBe($hotel->maintenance_team_id)
         ->and($task->task_category_id)->toBe($hotel->maintenance_task_category_id)
         ->and($task->priority->value)->toBe('high')
@@ -46,7 +46,7 @@ it('creates one maintenance task for the room, linked to the cleaning task and i
 it('takes the room out of order when it cannot be sold and the reporter may do that', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
 
-    $response = fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Ceiling leak', 'room_unsellable' => true])
+    $response = fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Ceiling leak', 'room_unsellable' => true])
         ->assertCreated()
         ->assertJsonPath('body.out_of_order.applied', true);
 
@@ -72,14 +72,14 @@ it('creates the task but leaves the room on sale when the reporter cannot take r
 it('creates the task but leaves an occupied room occupied', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
     [$stay] = fdStays(fdBook($hotel, $type, [$room->id]));
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     $cleaning = Task::create([
         'hotel_id' => $hotel->id, 'room_id' => $room->id, 'title' => 'Stay-over clean', 'status' => 'in_progress',
         'task_category_id' => $hotel->cleaning_task_category_id, 'assigned_to_team_id' => $hotel->housekeeping_team_id,
     ]);
     app(HousekeepingService::class)->taskCreated($cleaning);
 
-    fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Toilet blocked', 'room_unsellable' => true])
+    fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Toilet blocked', 'room_unsellable' => true])
         ->assertCreated()
         ->assertJsonPath('body.out_of_order.applied', false)
         ->assertJsonPath('body.out_of_order.reason', fn (string $reason) => str_contains($reason, 'in-house guest'));
@@ -90,8 +90,8 @@ it('creates the task but leaves an occupied room occupied', function () {
 it('returns the same task when the same report is sent twice', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
 
-    $first = fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Shower leaking'])->assertCreated();
-    fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => '  shower LEAKING '])
+    $first = fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Shower leaking'])->assertCreated();
+    fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => '  shower LEAKING '])
         ->assertOk()
         ->assertJsonPath('body.created', false)
         ->assertJsonPath('body.maintenance_task.id', $first->json('body.maintenance_task.id'));
@@ -101,13 +101,13 @@ it('returns the same task when the same report is sent twice', function () {
 
 it('accepts a report on a clean completed today, and refuses one completed yesterday', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
-    hkSetTaskStatus($this, $hotel->owner, $cleaning, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $cleaning, 'completed')->assertOk();
 
-    fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Scratched desk'])->assertCreated();
+    fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Scratched desk'])->assertCreated();
 
     $this->travel(1)->days();
 
-    fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Another thing'])->assertUnprocessable();
+    fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Another thing'])->assertUnprocessable();
 });
 
 it('refuses a report on a task that is not housekeeping, or has no room', function () {
@@ -118,15 +118,15 @@ it('refuses a report on a task that is not housekeeping, or has no room', functi
         'task_category_id' => $hotel->cleaning_task_category_id, 'assigned_to_team_id' => $hotel->housekeeping_team_id,
     ]);
 
-    fdPost($this, $hotel->owner, issueUri($other), ['description' => 'x'])->assertUnprocessable();
-    fdPost($this, $hotel->owner, issueUri($noRoom), ['description' => 'x'])->assertUnprocessable();
+    fdPost($this, adminOfHotel($hotel), issueUri($other), ['description' => 'x'])->assertUnprocessable();
+    fdPost($this, adminOfHotel($hotel), issueUri($noRoom), ['description' => 'x'])->assertUnprocessable();
 });
 
 it('still creates the task, unassigned, when the hotel has no maintenance defaults', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
     $hotel->update(['maintenance_team_id' => null, 'maintenance_task_category_id' => null]);
 
-    $response = fdPost($this, $hotel->owner, issueUri($cleaning), ['description' => 'Broken window'])->assertCreated();
+    $response = fdPost($this, adminOfHotel($hotel), issueUri($cleaning), ['description' => 'Broken window'])->assertCreated();
 
     expect($response->json('body.maintenance_task.assigned_to_team_id'))->toBeNull();
 });

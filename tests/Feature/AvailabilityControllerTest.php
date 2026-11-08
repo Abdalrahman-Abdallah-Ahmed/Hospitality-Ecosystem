@@ -47,7 +47,7 @@ it('returns the per-type, per-night grid in the documented shape', function () {
     $dates = acDates(10, 13);
     avBook($hotel, $deluxe, now()->addDays(11)->toDateString(), now()->addDays(12)->toDateString(), units: 2);
 
-    $response = acGet($this, $hotel->owner, $dates)->assertOk();
+    $response = acGet($this, adminOfHotel($hotel), $dates)->assertOk();
 
     $response->assertJsonPath('message', 'Availability retrieved successfully.')
         ->assertJsonPath('body.arrival_date', $dates['arrival_date'])
@@ -79,7 +79,7 @@ it('limits the result to the named room types, inactive ones included', function
     avType($hotel, 'Deluxe');
     $retired = avType($hotel, 'Retired', active: false);
 
-    $response = acGet($this, $hotel->owner, [...acDates(1, 2), 'room_type_ids' => [$retired->id]])->assertOk();
+    $response = acGet($this, adminOfHotel($hotel), [...acDates(1, 2), 'room_type_ids' => [$retired->id]])->assertOk();
 
     expect(collect($response->json('body.room_types'))->pluck('room_type.name')->all())->toBe(['Retired']);
 });
@@ -87,7 +87,7 @@ it('limits the result to the named room types, inactive ones included', function
 it('rejects invalid ranges', function (array $dates, string $field) {
     $hotel = avHotel();
 
-    acGet($this, $hotel->owner, $dates)->assertUnprocessable()->assertJsonValidationErrors($field);
+    acGet($this, adminOfHotel($hotel), $dates)->assertUnprocessable()->assertJsonValidationErrors($field);
 })->with([
     'departure not after arrival' => [fn () => acDates(5, 5), 'departure_date'],
     'more than 90 nights' => [fn () => acDates(1, 92), 'departure_date'],
@@ -103,7 +103,7 @@ it('gives the same answer for an unknown, deleted or other hotel\'s room type', 
     $deleted->delete();
 
     foreach ([$foreign->id, $deleted->id, '9f1c0000-0000-4000-8000-000000000000'] as $id) {
-        acGet($this, $hotel->owner, [...acDates(1, 2), 'room_type_ids' => [$id]])
+        acGet($this, adminOfHotel($hotel), [...acDates(1, 2), 'room_type_ids' => [$id]])
             ->assertStatus(422)
             ->assertJsonPath('message', 'One or more of the selected room types are invalid.');
     }
@@ -139,7 +139,7 @@ it('writes nothing to the audit log', function () {
     avRooms($hotel, avType($hotel, 'Deluxe'), 2);
     $before = EventLog::withoutGlobalScopes()->count();
 
-    acGet($this, $hotel->owner, acDates(1, 30))->assertOk();
+    acGet($this, adminOfHotel($hotel), acDates(1, 30))->assertOk();
 
     expect(EventLog::withoutGlobalScopes()->count())->toBe($before);
 });
@@ -150,7 +150,7 @@ it('returns one cell per type per night, types by name, nights without gaps', fu
         avRooms($hotel, avType($hotel, $name), 2);
     }
 
-    $response = acGet($this, $hotel->owner, acDates(1, 15))->assertOk();
+    $response = acGet($this, adminOfHotel($hotel), acDates(1, 15))->assertOk();
     $rows = $response->json('body.room_types');
 
     expect(collect($rows)->pluck('room_type.name')->all())->toBe(['Deluxe', 'Family', 'Standard', 'Suite'])
@@ -168,7 +168,7 @@ it('shows an overbooked night as zero sellable and how far over it is', function
     avRooms($hotel, $deluxe, 1);
     avBook($hotel, $deluxe, now()->addDays(3)->toDateString(), now()->addDays(4)->toDateString(), units: 2);
 
-    acGet($this, $hotel->owner, acDates(3, 4))
+    acGet($this, adminOfHotel($hotel), acDates(3, 4))
         ->assertOk()
         ->assertJsonPath('body.room_types.0.nights.0.sellable', 0)
         ->assertJsonPath('body.room_types.0.nights.0.overbooked', 1);
@@ -178,7 +178,7 @@ it('returns zeros, not an error, for a type with no rooms', function () {
     $hotel = avHotel();
     avType($hotel, 'Empty');
 
-    acGet($this, $hotel->owner, acDates(1, 3))
+    acGet($this, adminOfHotel($hotel), acDates(1, 3))
         ->assertOk()
         ->assertJsonPath('body.room_types.0.bookable_for_stay', 0)
         ->assertJsonPath('body.room_types.0.nights.1.total', 0);

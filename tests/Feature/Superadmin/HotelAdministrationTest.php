@@ -60,7 +60,7 @@ it('creates a hotel under an account with the operational defaults', function ()
     ])->assertCreated()->json('body');
 
     expect($body['hotel_group_id'])->toBe($account->id)
-        ->and($body['owner_id'])->toBeNull()
+        ->and($body)->not->toHaveKey('owner_id')
         ->and($body['city'])->toBe('Alexandria')
         ->and($body['is_active'])->toBeTrue();
 
@@ -84,7 +84,7 @@ it('ignores client-sent owner and default team fields on a hotel create', functi
         'housekeeping_team_id' => $foreignTeam->id,
     ])->assertCreated()->json('body');
 
-    expect($body['owner_id'])->toBeNull()
+    expect($body)->not->toHaveKey('owner_id')
         ->and($body['housekeeping_team_id'])->not->toBe($foreignTeam->id);
 });
 
@@ -202,7 +202,6 @@ it('lists hotels across accounts and filters by account', function () {
 
 it('refuses a malformed account filter rather than failing on the database', function () {
     hotelAdmin($this)->getJson('/api/superadmin/hotels?filter[hotel_group_id]=not-a-uuid')->assertStatus(422);
-    hotelAdmin($this)->getJson('/api/superadmin/hotels?filter[owner_id]=abc')->assertStatus(422);
 });
 
 it('keeps a hotel create working when the seat recount fails', function () {
@@ -250,7 +249,6 @@ it('moves a hotel whose users are attached only by home hotel, with users and se
     $to = hotelAccount('to');
     $hotel = hotelIn($from);
     $owner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
-    $hotel->update(['owner_id' => $owner->id]);
 
     expect(propertyCount($from))->toBe(1);
 
@@ -287,12 +285,59 @@ it('refuses each hotel move that would leave someone linked across accounts', fu
         $other = hotelIn($from, 'other');
         DB::table('hotel_user')->insert(['id' => Str::uuid(), 'user_id' => $user->id, 'hotel_id' => $other->id, 'role' => 'employee']);
     }],
-    'the owner\'s home hotel is elsewhere' => [function (Hotel $hotel, HotelGroup $from) {
-        $other = hotelIn($from, 'other');
-        $owner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $other->id]);
-        $hotel->update(['owner_id' => $owner->id]);
-    }],
 ]);
+
+it('moves a self-registered customer\'s hotel once their account-wide role is cleared', function () {
+    Notification::fake();
+    $to = hotelAccount('to');
+    $existing = User::factory()->role(UserRole::ADMIN)->create(['hotel_group_id' => $to->id, 'group_role' => 'owner']);
+
+    $body = $this->withHeaders(apiHeaders())->postJson('/api/register', [
+        'name' => 'Alice',
+        'email' => 'alice@example.com',
+        'password' => 'Password123!',
+        'password_confirmation' => 'Password123!',
+        'hotel' => ['name' => 'Alice Hotel', 'city' => 'Cairo'],
+    ])->assertCreated()->json('body');
+    $customer = User::findOrFail($body['user']['id']);
+    $hotelId = $body['hotel']['id'];
+
+    hotelAdmin($this)->putJson("/api/superadmin/hotels/{$hotelId}", ['hotel_group_id' => $to->id])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'This hotel has staff attached to its account. Clear their account-wide role before moving it to another account.');
+
+    hotelAdmin($this)->putJson("/api/superadmin/users/{$customer->id}/access", ['group_role' => null])->assertOk();
+    expect($customer->fresh()->accessibleHotelIds())->toBe([$hotelId]);
+
+    hotelAdmin($this)->putJson("/api/superadmin/hotels/{$hotelId}", ['hotel_group_id' => $to->id])->assertOk();
+
+    $fresh = $customer->fresh();
+
+    expect($fresh->account()->id)->toBe($to->id)
+        ->and($fresh->isOwner())->toBeFalse()
+        ->and($fresh->accessibleHotelIds())->toBe([$hotelId])
+        ->and($existing->fresh()->accessibleHotelIds())->toBe([$hotelId]);
+
+    hotelAdmin($this)->putJson("/api/superadmin/users/{$customer->id}/access", ['group_role' => 'owner'])
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'This account already has an owner.');
+});
+
+it('moves a hotel out of one owner\'s reach and into another\'s, with no further step', function () {
+    $from = hotelAccount('from');
+    $to = hotelAccount('to');
+    $home = hotelIn($from, 'home');
+    $moved = hotelIn($from, 'moved');
+    $sourceOwner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $home->id, 'hotel_group_id' => $from->id, 'group_role' => 'owner']);
+    $destinationOwner = User::factory()->role(UserRole::ADMIN)->create(['hotel_group_id' => $to->id, 'group_role' => 'owner']);
+
+    expect($sourceOwner->accessibleHotelIds())->toContain($moved->id);
+
+    hotelAdmin($this)->putJson("/api/superadmin/hotels/{$moved->id}", ['hotel_group_id' => $to->id])->assertOk();
+
+    expect($sourceOwner->fresh()->accessibleHotelIds())->toBe([$home->id])
+        ->and($destinationOwner->fresh()->accessibleHotelIds())->toBe([$moved->id]);
+});
 
 it('refuses to move a hotel into a deleted account', function () {
     $to = hotelAccount('to');

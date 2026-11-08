@@ -12,7 +12,6 @@ function identityTestHotel(): Hotel
 {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Identity Test Hotel',
         'slug' => 'identity-test-hotel-'.uniqid(),
         'currency' => 'USD',

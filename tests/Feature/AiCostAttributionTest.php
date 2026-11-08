@@ -315,7 +315,6 @@ it('does not lose the AI response when cost logging fails', function () {
     [$admin, $hotel] = (function () {
         $admin = User::factory()->role(UserRole::ADMIN)->create();
         $hotel = Hotel::create([
-            'owner_id' => $admin->id,
             'name' => 'Advisor Hotel',
             'slug' => 'advisor-'.$admin->id,
             'currency' => 'EUR',

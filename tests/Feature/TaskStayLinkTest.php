@@ -37,7 +37,7 @@ function inHouseReservation($test, int $rooms = 1): array
 {
     [$hotel, $type, $roomList] = fdHotel($rooms + 1);
     $reservation = fdBook($hotel, $type, array_map(fn ($room) => $room->id, array_slice($roomList, 0, $rooms)));
-    fdPost($test, $hotel->owner, "/api/reservation/{$reservation->id}/check-in")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/check-in")->assertOk();
 
     return [$hotel, $reservation, fdStays($reservation)];
 }
@@ -45,7 +45,7 @@ function inHouseReservation($test, int $rooms = 1): array
 it('links the check-out cleaning task to the departed stay', function () {
     [$hotel, , [$stay]] = inHouseReservation($this);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk();
 
     expect(Task::withoutGlobalScope('hotel')->sole()->stay_id)->toBe($stay->id);
 });
@@ -53,7 +53,7 @@ it('links the check-out cleaning task to the departed stay', function () {
 it('lets staff link a task to a stay, filling in its room, reservation and guest', function () {
     [$hotel, $reservation, [$stay]] = inHouseReservation($this);
 
-    $response = taskRequest($this, $hotel->owner, 'POST', '/api/task', ['title' => 'Extra pillows', 'stay_id' => $stay->id])
+    $response = taskRequest($this, adminOfHotel($hotel), 'POST', '/api/task', ['title' => 'Extra pillows', 'stay_id' => $stay->id])
         ->assertCreated()
         ->assertJsonPath('body.stay_id', $stay->id);
 
@@ -66,22 +66,22 @@ it('rejects another hotel\'s stay, and a room or reservation that does not match
     [$otherHotel, , [$foreignStay]] = inHouseReservation($this);
     $otherRoom = fdStays(Reservation::find($stay->reservation_id))[1]->room_id;
 
-    taskRequest($this, $hotel->owner, 'POST', '/api/task', ['title' => 'X', 'stay_id' => $foreignStay->id])
+    taskRequest($this, adminOfHotel($hotel), 'POST', '/api/task', ['title' => 'X', 'stay_id' => $foreignStay->id])
         ->assertForbidden();
-    taskRequest($this, $hotel->owner, 'POST', '/api/task', ['title' => 'X', 'stay_id' => $stay->id, 'room_id' => $otherRoom])
+    taskRequest($this, adminOfHotel($hotel), 'POST', '/api/task', ['title' => 'X', 'stay_id' => $stay->id, 'room_id' => $otherRoom])
         ->assertUnprocessable();
 
     $task = Task::create(['hotel_id' => $hotel->id, 'title' => 'Existing', 'room_id' => $otherRoom]);
-    taskRequest($this, $hotel->owner, 'PUT', "/api/task/{$task->id}", ['stay_id' => $stay->id])
+    taskRequest($this, adminOfHotel($hotel), 'PUT', "/api/task/{$task->id}", ['stay_id' => $stay->id])
         ->assertUnprocessable();
 });
 
 it('filters tasks by stay', function () {
     [$hotel, , [$first, $second]] = inHouseReservation($this, rooms: 2);
-    $mine = taskRequest($this, $hotel->owner, 'POST', '/api/task', ['title' => 'Mine', 'stay_id' => $first->id])->json('body.id');
-    taskRequest($this, $hotel->owner, 'POST', '/api/task', ['title' => 'Theirs', 'stay_id' => $second->id]);
+    $mine = taskRequest($this, adminOfHotel($hotel), 'POST', '/api/task', ['title' => 'Mine', 'stay_id' => $first->id])->json('body.id');
+    taskRequest($this, adminOfHotel($hotel), 'POST', '/api/task', ['title' => 'Theirs', 'stay_id' => $second->id]);
 
-    $ids = collect(taskRequest($this, $hotel->owner, 'GET', "/api/task?filter[stay_id]={$first->id}")->assertOk()->json('body.data'))->pluck('id')->all();
+    $ids = collect(taskRequest($this, adminOfHotel($hotel), 'GET', "/api/task?filter[stay_id]={$first->id}")->assertOk()->json('body.data'))->pluck('id')->all();
 
     expect($ids)->toBe([$mine]);
 });

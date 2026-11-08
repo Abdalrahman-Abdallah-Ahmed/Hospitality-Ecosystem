@@ -26,7 +26,7 @@ function manualUri($room): string
 it('sets the status with a reason, audits it, and lists the open task without touching it', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
 
-    hkPut($this, $hotel->owner, manualUri($room), ['housekeeping_status' => 'clean', 'reason' => 'Cleaned without a task'])
+    hkPut($this, adminOfHotel($hotel), manualUri($room), ['housekeeping_status' => 'clean', 'reason' => 'Cleaned without a task'])
         ->assertOk()
         ->assertJsonPath('body.changed', true)
         ->assertJsonPath('body.room.housekeeping_status', 'clean')
@@ -38,13 +38,13 @@ it('sets the status with a reason, audits it, and lists the open task without to
         ->and($task->fresh()->status)->toBe(TaskStatus::PENDING)
         ->and($event->changes['cause']['to'])->toBe('manual')
         ->and($event->changes['reason']['to'])->toBe('Cleaned without a task')
-        ->and($event->actor_id)->toBe($hotel->owner->id);
+        ->and($event->actor_id)->toBe(adminOfHotel($hotel)->id);
 });
 
 it('requires a reason and a known status', function (array $payload) {
     [$hotel, $type, [$room]] = fdHotel(1);
 
-    hkPut($this, $hotel->owner, manualUri($room), $payload)->assertUnprocessable();
+    hkPut($this, adminOfHotel($hotel), manualUri($room), $payload)->assertUnprocessable();
 })->with([
     'no reason' => [['housekeeping_status' => 'dirty']],
     'old blocked value' => [['housekeeping_status' => 'blocked', 'reason' => 'x']],
@@ -53,7 +53,7 @@ it('requires a reason and a known status', function (array $payload) {
 it('writes no audit entry when the status is unchanged', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
 
-    hkPut($this, $hotel->owner, manualUri($room), ['housekeeping_status' => 'clean', 'reason' => 'Check'])
+    hkPut($this, adminOfHotel($hotel), manualUri($room), ['housekeeping_status' => 'clean', 'reason' => 'Check'])
         ->assertOk()->assertJsonPath('body.changed', false);
 
     expect(EventLog::where('subject_id', $room->id)->where('event_type', 'room.housekeeping_changed')->count())->toBe(0);

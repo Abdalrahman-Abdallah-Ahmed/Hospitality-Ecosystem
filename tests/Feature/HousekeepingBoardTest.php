@@ -25,13 +25,13 @@ beforeEach(function () {
 it('lists every room once under its status, with counts, readiness, departures and open tasks', function () {
     [$hotel, $type, [$occupied, $dirty, $broken]] = fdHotel(3);
     [$stay] = fdStays(fdBook($hotel, $type, [$occupied->id]));
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     Room::withoutGlobalScope('hotel')->whereKey($dirty->id)->update(['housekeeping_status' => 'dirty']);
-    fdPost($this, $hotel->owner, "/api/room/{$broken->id}/out-of-order", ['reason' => 'Leak'])->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/room/{$broken->id}/out-of-order", ['reason' => 'Leak'])->assertOk();
     $task = Task::create(['hotel_id' => $hotel->id, 'room_id' => $dirty->id, 'title' => 'Clean', 'task_category_id' => $hotel->cleaning_task_category_id, 'assigned_to_team_id' => $hotel->housekeeping_team_id, 'status' => 'pending']);
     app(HousekeepingService::class)->taskCreated($task);
 
-    $response = fdGet($this, $hotel->owner, '/api/housekeeping/board')->assertOk()
+    $response = fdGet($this, adminOfHotel($hotel), '/api/housekeeping/board')->assertOk()
         ->assertJsonPath('body.counts.clean', 2)
         ->assertJsonPath('body.counts.dirty', 1)
         ->assertJsonPath('body.counts.out_of_order', 1)
@@ -51,11 +51,11 @@ it('filters the board by housekeeping status, room status, floor, building and t
     app(HousekeepingService::class)->taskCreated($task);
 
     foreach (['housekeeping_status=dirty', 'floor=7', 'building=Annex', "team_id={$hotel->housekeeping_team_id}"] as $filter) {
-        fdGet($this, $hotel->owner, "/api/housekeeping/board?{$filter}")->assertOk()
+        fdGet($this, adminOfHotel($hotel), "/api/housekeeping/board?{$filter}")->assertOk()
             ->assertJsonCount(1, 'body.rooms')->assertJsonPath('body.rooms.0.room.id', $a->id);
     }
 
-    fdGet($this, $hotel->owner, '/api/housekeeping/board?status=out_of_order')->assertOk()->assertJsonCount(0, 'body.rooms');
+    fdGet($this, adminOfHotel($hotel), '/api/housekeeping/board?status=out_of_order')->assertOk()->assertJsonCount(0, 'body.rooms');
 });
 
 it('needs rooms.view, and a super admin must name the hotel', function () {
@@ -78,11 +78,12 @@ it('shows the board of a 500-room hotel in under 2 seconds with a fixed number o
     ]);
     DB::table('rooms')->insert($rows->all());
 
-    fdGet($this, $hotel->owner, '/api/housekeeping/board')->assertOk();
+    $admin = adminOfHotel($hotel);
+    fdGet($this, $admin, '/api/housekeeping/board')->assertOk();
 
     DB::enableQueryLog();
     $start = microtime(true);
-    fdGet($this, $hotel->owner, '/api/housekeeping/board')->assertOk()->assertJsonCount(500, 'body.rooms');
+    fdGet($this, $admin, '/api/housekeeping/board')->assertOk()->assertJsonCount(500, 'body.rooms');
     $elapsed = microtime(true) - $start;
     $queries = count(DB::getQueryLog());
 
@@ -92,32 +93,32 @@ it('shows the board of a 500-room hotel in under 2 seconds with a fixed number o
 
 it('lists maintenance tasks open first, most urgent first, oldest first, with room and reporter', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
-    $old = fdPost($this, $hotel->owner, "/api/task/{$cleaning->id}/issues", ['description' => 'Leak', 'room_unsellable' => true])->json('body.maintenance_task.id');
+    $old = fdPost($this, adminOfHotel($hotel), "/api/task/{$cleaning->id}/issues", ['description' => 'Leak', 'room_unsellable' => true])->json('body.maintenance_task.id');
     $this->travel(1)->hours();
-    $urgent = fdPost($this, $hotel->owner, "/api/task/{$cleaning->id}/issues", ['description' => 'Fire alarm', 'priority' => 'high'])->json('body.maintenance_task.id');
-    $done = fdPost($this, $hotel->owner, "/api/task/{$cleaning->id}/issues", ['description' => 'Bulb'])->json('body.maintenance_task.id');
-    hkSetTaskStatus($this, $hotel->owner, Task::find($done), 'completed')->assertOk();
+    $urgent = fdPost($this, adminOfHotel($hotel), "/api/task/{$cleaning->id}/issues", ['description' => 'Fire alarm', 'priority' => 'high'])->json('body.maintenance_task.id');
+    $done = fdPost($this, adminOfHotel($hotel), "/api/task/{$cleaning->id}/issues", ['description' => 'Bulb'])->json('body.maintenance_task.id');
+    hkSetTaskStatus($this, adminOfHotel($hotel), Task::find($done), 'completed')->assertOk();
     Task::create(['hotel_id' => $hotel->id, 'title' => 'Not maintenance', 'status' => 'pending']);
 
-    $response = fdGet($this, $hotel->owner, '/api/maintenance/tasks')->assertOk();
+    $response = fdGet($this, adminOfHotel($hotel), '/api/maintenance/tasks')->assertOk();
 
     expect(collect($response->json('body.data'))->pluck('id')->all())->toBe([$urgent, $old, $done])
-        ->and($response->json('body.data.1.reporter.id'))->toBe($hotel->owner->id)
+        ->and($response->json('body.data.1.reporter.id'))->toBe(adminOfHotel($hotel)->id)
         ->and($response->json('body.data.1.source_task_id'))->toBe($cleaning->id)
         ->and($response->json('body.data.1.room.out_of_order.reason'))->toBe('Leak');
 
-    fdGet($this, $hotel->owner, '/api/maintenance/tasks?filter[room_out_of_order]=true')->assertOk()->assertJsonCount(3, 'body.data');
-    fdGet($this, $hotel->owner, '/api/maintenance/tasks?filter[status]=completed')->assertOk()->assertJsonCount(1, 'body.data');
+    fdGet($this, adminOfHotel($hotel), '/api/maintenance/tasks?filter[room_out_of_order]=true')->assertOk()->assertJsonCount(3, 'body.data');
+    fdGet($this, adminOfHotel($hotel), '/api/maintenance/tasks?filter[status]=completed')->assertOk()->assertJsonCount(1, 'body.data');
 });
 
 it('flags an out-of-order room past its expected end date as overdue', function () {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
-    $id = fdPost($this, $hotel->owner, "/api/task/{$cleaning->id}/issues", ['description' => 'Leak', 'room_unsellable' => true])->json('body.maintenance_task.id');
-    hkPatch($this, $hotel->owner, "/api/room/{$room->id}/out-of-order", ['expected_end_date' => now()->addDay()->toDateString()])->assertOk();
+    $id = fdPost($this, adminOfHotel($hotel), "/api/task/{$cleaning->id}/issues", ['description' => 'Leak', 'room_unsellable' => true])->json('body.maintenance_task.id');
+    hkPatch($this, adminOfHotel($hotel), "/api/room/{$room->id}/out-of-order", ['expected_end_date' => now()->addDay()->toDateString()])->assertOk();
 
     $this->travel(2)->days();
 
-    fdGet($this, $hotel->owner, '/api/maintenance/tasks')->assertOk()
+    fdGet($this, adminOfHotel($hotel), '/api/maintenance/tasks')->assertOk()
         ->assertJsonPath('body.data.0.id', $id)
         ->assertJsonPath('body.data.0.room.out_of_order.overdue', true);
 });
@@ -127,7 +128,7 @@ it('filters the board by the ground floor', function () {
     Room::withoutGlobalScope('hotel')->whereKey($ground->id)->update(['floor' => '0']);
     Room::withoutGlobalScope('hotel')->whereKey($upstairs->id)->update(['floor' => '1']);
 
-    fdGet($this, $hotel->owner, '/api/housekeeping/board?floor=0')->assertOk()
+    fdGet($this, adminOfHotel($hotel), '/api/housekeeping/board?floor=0')->assertOk()
         ->assertJsonCount(1, 'body.rooms')
         ->assertJsonPath('body.rooms.0.room.id', $ground->id);
 });
@@ -137,5 +138,5 @@ it('lists no maintenance tasks when the hotel has no Maintenance team', function
     Task::create(['hotel_id' => $hotel->id, 'title' => 'Teamless task', 'status' => 'pending']);
     $hotel->update(['maintenance_team_id' => null, 'maintenance_task_category_id' => null]);
 
-    fdGet($this, $hotel->owner, '/api/maintenance/tasks')->assertOk()->assertJsonCount(0, 'body.data');
+    fdGet($this, adminOfHotel($hotel), '/api/maintenance/tasks')->assertOk()->assertJsonCount(0, 'body.data');
 });

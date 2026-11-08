@@ -4,7 +4,6 @@ namespace Database\Factories;
 
 use App\Models\Hotel;
 use App\Models\HotelGroup;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class HotelFactory extends Factory
@@ -14,7 +13,6 @@ class HotelFactory extends Factory
     public function definition(): array
     {
         return [
-            'owner_id' => User::factory(),
             'hotel_group_id' => HotelGroup::factory(),
             'name' => $this->faker->company().' Hotel',
             'slug' => $this->faker->unique()->slug(),

@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureNotSuspended;
 use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\ResolveTenant;
+use App\Http\Middleware\UseChosenHotel;
 use App\Http\Middleware\VerifyWhatsAppWebhookSignature;
 use App\Support\Reservations\RoomHoldConflict;
 use Illuminate\Auth\Middleware\Authenticate;
@@ -45,6 +46,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.key' => ApiKeyMiddleware::class,
             'tenant' => ResolveTenant::class,
             'not_suspended' => EnsureNotSuspended::class,
+            'hotel_choice' => UseChosenHotel::class,
             'super_admin' => EnsureSuperAdmin::class,
             'feature' => EnsureFeatureEnabled::class,
             'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
@@ -63,6 +65,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // A suspended hotel leaves the tenant scope before any record is looked
         // up, so its record ids are not found (spec 024).
         $middleware->prependToPriorityList(SubstituteBindings::class, EnsureNotSuspended::class);
+
+        // An admin's request narrows to one hotel before any record is looked
+        // up, so a record in another of their hotels is not found (spec 025).
+        $middleware->prependToPriorityList(SubstituteBindings::class, UseChosenHotel::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

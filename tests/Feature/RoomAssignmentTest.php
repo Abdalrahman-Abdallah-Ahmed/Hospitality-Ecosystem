@@ -20,7 +20,7 @@ beforeEach(function () {
     config(['app.api_key' => 'test-api-key']);
 
     [$this->hotel, $this->type, $this->rooms] = fdHotel(4);
-    $this->admin = $this->hotel->owner;
+    $this->admin = adminOfHotel($this->hotel);
 });
 
 function raPut($test, $user, Reservation $reservation, array $assignments, array $extra = []): TestResponse

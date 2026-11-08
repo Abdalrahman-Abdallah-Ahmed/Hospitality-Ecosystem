@@ -66,7 +66,7 @@ it('adds the demo hotel in production only when asked for', function () {
     seedAs('production');
 
     expect(Hotel::where('slug', 'grand-harbor-hotel')->exists())->toBeTrue()
-        ->and(Hotel::sole()->owner_id)->toBe(User::where('role', UserRole::SUPER_ADMIN)->sole()->id);
+        ->and(User::where('role', UserRole::SUPER_ADMIN)->sole()->hotel_id)->toBe(Hotel::sole()->id);
 });
 
 it('refuses to create the demo-email super admin in production', function () {

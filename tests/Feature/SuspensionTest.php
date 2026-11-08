@@ -301,7 +301,6 @@ it('tags a blocked request, and names the hotel a moved request ran in', functio
 it('cannot be undone through the tenant API', function () {
     [, $a] = spAccount();
     $owner = spUser($a);
-    $a->update(['owner_id' => $owner->id]);
 
     spRequest($this, $owner, 'PUT', "/api/hotel/{$a->id}", [
         'city' => 'Cairo',
@@ -333,15 +332,14 @@ it('tells a stranger nothing about a suspended hotel', function () {
         expect($response->json('body.reason'))->toBeNull();
     }
 
-    spRequest($this, $stranger, 'GET', '/api/user', headers: ['X-Hotel-Id' => $suspended->id])
-        ->assertOk()
-        ->assertJsonPath('body.hotel.id', $own->id);
+    $response = spRequest($this, $stranger, 'GET', '/api/user', headers: ['X-Hotel-Id' => $suspended->id])->assertForbidden();
+
+    expect($response->json('body.reason'))->toBeNull();
 });
 
 it('refuses a suspended hotel to its owner on its own routes, after authorization', function () {
-    [, $a, $b] = spAccount();
-    $owner = spUser($b);
-    $a->update(['owner_id' => $owner->id]);
+    [$account, $a, $b] = spAccount();
+    $owner = spUser($b, attributes: ['hotel_group_id' => $account->id, 'group_role' => 'owner']);
     spSuspend($a);
 
     foreach (['GET', 'PUT', 'PATCH'] as $method) {
@@ -355,9 +353,8 @@ it('refuses a suspended hotel to its owner on its own routes, after authorizatio
 });
 
 it('still opens an active hotel to an owner with no membership', function () {
-    [, $a, $b] = spAccount();
-    $owner = spUser($b);
-    $a->update(['owner_id' => $owner->id]);
+    [$account, $a, $b] = spAccount();
+    $owner = spUser($b, attributes: ['hotel_group_id' => $account->id, 'group_role' => 'owner']);
 
     spRequest($this, $owner, 'GET', "/api/hotel/{$a->id}")->assertOk();
 });
@@ -365,7 +362,6 @@ it('still opens an active hotel to an owner with no membership', function () {
 it('shows suspension details on no tenant response', function () {
     [$account, $a, $b] = spAccount();
     $owner = spUser($a, [$b]);
-    $a->update(['owner_id' => $owner->id]);
     spSuspend($b);
 
     foreach (['/api/user', "/api/hotel/{$a->id}", '/api/hotel'] as $uri) {

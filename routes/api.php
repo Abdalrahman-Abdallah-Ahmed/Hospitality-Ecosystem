@@ -67,16 +67,18 @@ Route::middleware('api.key')->group(function () {
     Route::post('/reset-password', [PasswordResetController::class, 'store'])->middleware('throttle:login');
     Route::post('/pair', [WhatsAppController::class, 'pair'])->middleware('throttle:pair');
 
-    // not_suspended is on the whole group, so a new route can't be left out.
-    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant', 'not_suspended'])->group(function () {
-        // A suspended user can still end their session.
-        Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout'])->withoutMiddleware('not_suspended');
+    // not_suspended and hotel_choice are on the whole group, so a new route
+    // can't be left out.
+    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant', 'not_suspended', 'hotel_choice'])->group(function () {
+        // A suspended user, or one with a stale X-Hotel-Id, can still end their session.
+        Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout'])->withoutMiddleware(['not_suspended', 'hotel_choice']);
         // loadMissing keeps the current hotel EnsureNotSuspended may have set.
         Route::get('/user', function (Request $request) {
             return apiResponse('Authenticated user fetched successfully.', 200, UserResource::make($request->user()->loadMissing(['hotel', 'team', 'staffRole'])));
         });
-        Route::post('/connect', [WhatsAppController::class, 'connect']);
-        Route::get('/check-paired', [WhatsAppController::class, 'checkPaired']);
+        // A device belongs to the user's home hotel, whichever hotel they're working in.
+        Route::post('/connect', [WhatsAppController::class, 'connect'])->withoutMiddleware('hotel_choice');
+        Route::get('/check-paired', [WhatsAppController::class, 'checkPaired'])->withoutMiddleware('hotel_choice');
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         // List exports (spec 021). Each sits above its resource routes so
@@ -149,7 +151,9 @@ Route::middleware('api.key')->group(function () {
             Route::get('/transaction/{transaction}', [TransactionController::class, 'show']);
         });
         // Creating and deleting a hotel is a platform action: routes/superadmin.php.
-        Route::resource('/hotel', HotelController::class)->except(['store', 'destroy', 'edit', 'create']);
+        // The list keeps every hotel, because it is how a client chooses one.
+        Route::resource('/hotel', HotelController::class)->except(['store', 'destroy', 'edit', 'create'])
+            ->withoutMiddlewareFor('index', 'hotel_choice');
         Route::put('/room/{room}/housekeeping-status', [RoomHousekeepingController::class, 'update']);
         Route::post('/room/{room}/out-of-order', [RoomOutOfOrderController::class, 'store']);
         Route::patch('/room/{room}/out-of-order', [RoomOutOfOrderController::class, 'update']);

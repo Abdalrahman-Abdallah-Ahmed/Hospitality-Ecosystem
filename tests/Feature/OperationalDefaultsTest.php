@@ -98,7 +98,7 @@ it('still routes work to a renamed default team', function () {
 it('checks the default settings an admin chooses', function () {
     $hotel = avHotel();
     $other = avHotel();
-    $put = fn (array $payload) => hkPut($this, $hotel->owner, "/api/hotel/{$hotel->id}", $payload);
+    $put = fn (array $payload) => hkPut($this, adminOfHotel($hotel), "/api/hotel/{$hotel->id}", $payload);
 
     $put(['maintenance_task_category_id' => $hotel->cleaning_task_category_id])->assertUnprocessable();
     $put(['maintenance_team_id' => $other->maintenance_team_id])->assertForbidden();
@@ -116,8 +116,8 @@ function hkVacatedRoomFor($test, Hotel $hotel): array
     [$room] = avRooms($hotel, $type, 1);
     $reservation = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($reservation);
-    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
-    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-out")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")->assertOk();
 
     return [$hotel->fresh(), $room->fresh(), Task::withoutGlobalScope('hotel')->where('room_id', $room->id)->sole()];
 }

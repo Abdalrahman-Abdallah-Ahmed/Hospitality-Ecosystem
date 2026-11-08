@@ -14,7 +14,7 @@ beforeEach(function () {
     config(['app.api_key' => 'test-api-key']);
 
     [$this->hotel, $this->type, $this->rooms] = fdHotel(6);
-    $this->admin = $this->hotel->owner;
+    $this->admin = adminOfHotel($this->hotel);
     $this->at = fn (int $fromToday, int $nights = 2) => [
         'arrival_date' => now()->addDays($fromToday)->toDateString(),
         'departure_date' => now()->addDays($fromToday + $nights)->toDateString(),

@@ -49,10 +49,10 @@ it('moves the room to cleaning when the task starts and to clean when it is comp
     [$hotel, $room, $task] = hkVacatedRoom($this);
     $before = housekeepingEvents($room);
 
-    hkSetTaskStatus($this, $hotel->owner, $task, 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'in_progress')->assertOk();
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEANING);
 
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEAN)
         ->and(housekeepingEvents($room) - $before)->toBe(2);
 
@@ -61,16 +61,16 @@ it('moves the room to cleaning when the task starts and to clean when it is comp
 
     expect($event->changes['cause']['to'])->toBe('task')
         ->and($event->changes['task_id']['to'])->toBe($task->id)
-        ->and($event->actor_id)->toBe($hotel->owner->id);
+        ->and($event->actor_id)->toBe(adminOfHotel($hotel)->id);
 });
 
 it('sends the room back to dirty when an in-progress clean is cancelled or deleted', function (string $how) {
     [$hotel, $room, $task] = hkVacatedRoom($this);
-    hkSetTaskStatus($this, $hotel->owner, $task, 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'in_progress')->assertOk();
 
     $how === 'cancel'
-        ? hkSetTaskStatus($this, $hotel->owner, $task, 'cancelled')->assertOk()
-        : $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($hotel->owner, 'sanctum')->deleteJson("/api/task/{$task->id}")->assertOk();
+        ? hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'cancelled')->assertOk()
+        : $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs(adminOfHotel($hotel), 'sanctum')->deleteJson("/api/task/{$task->id}")->assertOk();
 
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::DIRTY);
 })->with(['cancel', 'delete']);
@@ -79,8 +79,8 @@ it('changes the room once when the same completion is sent twice', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
     $before = housekeepingEvents($room);
 
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
 
     expect(housekeepingEvents($room) - $before)->toBe(1);
 });
@@ -89,7 +89,7 @@ it('cleans an occupied room without changing its room status', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
     $reservation = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
 
     $task = Task::create([
         'hotel_id' => $hotel->id, 'room_id' => $room->id, 'title' => 'Clean', 'status' => 'pending',
@@ -98,7 +98,7 @@ it('cleans an occupied room without changing its room status', function () {
     app(HousekeepingService::class)->taskCreated($task);
     Room::withoutGlobalScope('hotel')->whereKey($room->id)->update(['housekeeping_status' => 'dirty']);
 
-    hkSetTaskStatus($this, $hotel->owner, $task->fresh(), 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task->fresh(), 'completed')->assertOk();
 
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEAN)
         ->and($room->fresh()->status)->toBe(RoomStatusesEnum::OCCUPIED);
@@ -107,7 +107,7 @@ it('cleans an occupied room without changing its room status', function () {
 it('refuses a second open cleaning task for the same room, naming the open one', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
 
-    hkPost($this, $hotel->owner, '/api/task', ['hotel_id' => $hotel->id,
+    hkPost($this, adminOfHotel($hotel), '/api/task', ['hotel_id' => $hotel->id,
         'title' => 'Another clean',
         'room_id' => $room->id,
         'task_category_id' => $hotel->cleaning_task_category_id,
@@ -118,25 +118,25 @@ it('refuses a second open cleaning task for the same room, naming the open one',
 
 it('moves a reopened completed clean back to cleaning or dirty', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
 
-    hkSetTaskStatus($this, $hotel->owner, $task, 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'in_progress')->assertOk();
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEANING);
 
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
-    hkSetTaskStatus($this, $hotel->owner, $task, 'pending')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'pending')->assertOk();
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::DIRTY);
 });
 
 it('does not move the room when a stale completed task is cancelled', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
 
     app(HousekeepingService::class)->roomNeedsCleaning($room, CleaningReason::STAY_OVER, HousekeepingCause::START_OF_DAY);
     $newTask = Task::where('room_id', $room->id)->open()->sole();
-    hkSetTaskStatus($this, $hotel->owner, $newTask, 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $newTask, 'in_progress')->assertOk();
 
-    hkSetTaskStatus($this, $hotel->owner, $task, 'cancelled')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'cancelled')->assertOk();
 
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEANING);
 });
@@ -145,11 +145,11 @@ it('never moves a room for a task in another housekeeping category', function ()
     [$hotel, $room] = hkVacatedRoom($this);
     $turndown = TaskCategory::create(['hotel_id' => $hotel->id, 'team_id' => $hotel->housekeeping_team_id, 'name' => 'Turndown']);
 
-    $response = hkPost($this, $hotel->owner, '/api/task', ['hotel_id' => $hotel->id,
+    $response = hkPost($this, adminOfHotel($hotel), '/api/task', ['hotel_id' => $hotel->id,
         'title' => 'Turndown', 'room_id' => $room->id, 'task_category_id' => $turndown->id,
     ])->assertCreated();
 
-    hkSetTaskStatus($this, $hotel->owner, Task::find($response->json('body.id')), 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), Task::find($response->json('body.id')), 'in_progress')->assertOk();
 
     expect($response->json('body.housekeeping_kind'))->toBeNull()
         ->and($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::DIRTY);
@@ -159,23 +159,23 @@ it('classifies a task moved into the cleaning category and only acts on later ch
     [$hotel, $type, [$room]] = fdHotel(1);
     $other = TaskCategory::create(['hotel_id' => $hotel->id, 'team_id' => $hotel->housekeeping_team_id, 'name' => 'Linen']);
 
-    $id = hkPost($this, $hotel->owner, '/api/task', ['hotel_id' => $hotel->id, 'title' => 'Linen', 'room_id' => $room->id, 'task_category_id' => $other->id])
+    $id = hkPost($this, adminOfHotel($hotel), '/api/task', ['hotel_id' => $hotel->id, 'title' => 'Linen', 'room_id' => $room->id, 'task_category_id' => $other->id])
         ->assertCreated()->json('body.id');
-    hkSetTaskStatus($this, $hotel->owner, Task::find($id), 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), Task::find($id), 'in_progress')->assertOk();
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEAN);
 
-    hkPut($this, $hotel->owner, "/api/task/{$id}", ['task_category_id' => $hotel->cleaning_task_category_id])
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$id}", ['task_category_id' => $hotel->cleaning_task_category_id])
         ->assertOk()->assertJsonPath('body.housekeeping_kind', 'cleaning');
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEAN);
 
-    hkSetTaskStatus($this, $hotel->owner, Task::find($id), 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), Task::find($id), 'completed')->assertOk();
     expect($room->fresh()->housekeeping_status)->toBe(HousekeepingStatusesEnum::CLEAN);
 });
 
 it('assigns a task to its category team when no team is chosen', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
 
-    hkPost($this, $hotel->owner, '/api/task', ['hotel_id' => $hotel->id,
+    hkPost($this, adminOfHotel($hotel), '/api/task', ['hotel_id' => $hotel->id,
         'title' => 'Fix the lamp', 'room_id' => $room->id, 'task_category_id' => $hotel->maintenance_task_category_id,
     ])->assertCreated()->assertJsonPath('body.assigned_to_team_id', $hotel->maintenance_team_id);
 });
@@ -185,7 +185,7 @@ it('reuses an open stay-over task as the check-out clean', function () {
     $this->travelTo(now()->subDay()->startOfDay()->addHours(14));
     $reservation = fdBook($hotel, $type, [$room->id], ['arrival_date' => now()->toDateString(), 'departure_date' => now()->addDays(2)->toDateString()]);
     [$stay] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     $this->travelBack();
     $this->travelTo(now()->startOfDay()->addHours(1));
 
@@ -193,7 +193,7 @@ it('reuses an open stay-over task as the check-out clean', function () {
     $stayOver = Task::where('room_id', $room->id)->sole();
     expect($stayOver->cleaning_reason)->toBe(CleaningReason::STAY_OVER);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-out")
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-out")
         ->assertOk()
         ->assertJsonPath('body.cleaning_tasks.0.id', $stayOver->id)
         ->assertJsonPath('body.cleaning_tasks.0.cleaning_reason', 'check_out');
@@ -209,9 +209,9 @@ function hkPost($test, User $user, string $uri, array $payload = []): TestRespon
 
 it('releases the room when an in-progress clean is moved to another category', function () {
     [$hotel, $room, $task] = hkVacatedRoom($this);
-    hkSetTaskStatus($this, $hotel->owner, $task, 'in_progress')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'in_progress')->assertOk();
 
-    hkPut($this, $hotel->owner, "/api/task/{$task->id}", ['task_category_id' => $hotel->maintenance_task_category_id, 'assigned_to_team_id' => $hotel->maintenance_team_id])
+    hkPut($this, adminOfHotel($hotel), "/api/task/{$task->id}", ['task_category_id' => $hotel->maintenance_task_category_id, 'assigned_to_team_id' => $hotel->maintenance_team_id])
         ->assertOk()
         ->assertJsonPath('body.housekeeping_kind', null);
 
@@ -222,7 +222,7 @@ it('tells a guest a clean is already scheduled instead of creating a second one'
     [$hotel, $type, [$room]] = fdHotel(1);
     $reservation = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     app(HousekeepingService::class)->roomNeedsCleaning($room, CleaningReason::STAY_OVER, HousekeepingCause::START_OF_DAY);
     $open = Task::where('room_id', $room->id)->sole();
 

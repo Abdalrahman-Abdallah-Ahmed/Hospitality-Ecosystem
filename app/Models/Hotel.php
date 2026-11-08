@@ -24,7 +24,6 @@ class Hotel extends Model
     public $incrementing = false;
 
     protected $fillable = [
-        'owner_id',
         'hotel_group_id',
         'name',
         'slug',
@@ -144,11 +143,6 @@ class Hotel extends Model
     public function proactiveSettings(): ProactiveSettings
     {
         return ProactiveSettings::fromArray($this->proactive_settings);
-    }
-
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'owner_id');
     }
 
     public function users(): HasMany

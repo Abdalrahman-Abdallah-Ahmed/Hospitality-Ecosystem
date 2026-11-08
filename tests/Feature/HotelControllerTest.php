@@ -22,12 +22,15 @@ function hotelApiHeaders(): array
 
 function hotelFor(User $owner, array $overrides = []): Hotel
 {
-    return Hotel::create(array_merge([
-        'owner_id' => $owner->id,
+    $hotel = Hotel::create(array_merge([
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$owner->id,
         'currency' => 'USD',
     ], $overrides));
+
+    $owner->update(['hotel_id' => $owner->hotel_id ?? $hotel->id]);
+
+    return $hotel;
 }
 
 // index
@@ -106,7 +109,6 @@ it('opens only the list with hotels.view', function () {
     [, $a] = spAccount();
     $role = StaffRole::create(['hotel_id' => $a->id, 'name' => 'Desk', 'permissions' => [Permission::HOTELS_VIEW->value]]);
     $employee = spUser($a, role: UserRole::EMPLOYEE, attributes: ['staff_role_id' => $role->id]);
-    $a->update(['owner_id' => $employee->id]);
 
     spRequest($this, $employee, 'GET', "/api/hotel/{$a->id}")->assertForbidden();
     spRequest($this, $employee, 'PUT', "/api/hotel/{$a->id}", ['city' => 'Cairo'])->assertForbidden();
@@ -236,15 +238,13 @@ it('ignores owner and account on a tenant hotel update, for every caller', funct
         ->putJson("/api/hotel/{$hotel->id}", [
             'name' => 'Renamed',
             'hotel_group_id' => $elsewhere->id,
-            'owner_id' => $superAdmin->id,
         ])
         ->assertOk()
         ->assertJsonPath('body.name', 'Renamed');
 
     $fresh = $hotel->fresh();
 
-    expect($fresh->hotel_group_id)->toBe($account)
-        ->and($fresh->owner_id)->toBe($owner->id);
+    expect($fresh->hotel_group_id)->toBe($account);
 })->with([
     'the owning admin' => UserRole::ADMIN,
     'a super admin' => UserRole::SUPER_ADMIN,

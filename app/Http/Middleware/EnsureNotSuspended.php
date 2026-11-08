@@ -35,7 +35,7 @@ class EnsureNotSuspended
         $access = HotelAccess::for($hotelIds, $request->user());
 
         // A header naming a hotel the user can't reach isn't in $access, so
-        // they learn nothing about it.
+        // they learn nothing about it here. UseChosenHotel refuses it next.
         if ($scope = $access->refusalFor($request->header('X-Hotel-Id')) ?? $access->refusal()) {
             return SuspendedResponse::make($scope);
         }

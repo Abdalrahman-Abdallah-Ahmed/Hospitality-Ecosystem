@@ -48,7 +48,7 @@ function inHouseStay($test, int $daysAgo = 1, int $nightsLeft = 1): array
         'departure_date' => now()->addDays($daysAgo + $nightsLeft)->toDateString(),
     ]);
     [$stay] = fdStays($reservation);
-    fdPost($test, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($test, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     $test->travelBack();
     $test->travelTo(now()->startOfDay()->addHours(11));
 
@@ -70,7 +70,7 @@ function housekeepingDefaults(Hotel $hotel, string $teamName = 'Rooms Division')
 it('checks a guest out: stay departed with actual nights, room free and dirty, reservation checked out', function () {
     [$hotel, $stay, $room] = inHouseStay($this, daysAgo: 2);
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))
         ->assertOk()
         ->assertJsonPath('body.reservation.status', 'checked_out')
         ->assertJsonPath('body.stays.0.status', 'departed');
@@ -80,7 +80,7 @@ it('checks a guest out: stay departed with actual nights, room free and dirty, r
         ->and($stay->nights)->toBe(2)
         ->and($room->fresh()->status)->toBe(RoomStatusesEnum::AVAILABLE)
         ->and($room->fresh()->housekeeping_status->value)->toBe('dirty')
-        ->and(EventLog::where('event_type', 'stay.checked_out')->where('subject_id', $stay->id)->sole()->actor_id)->toBe($hotel->owner->id)
+        ->and(EventLog::where('event_type', 'stay.checked_out')->where('subject_id', $stay->id)->sole()->actor_id)->toBe(adminOfHotel($hotel)->id)
         ->and(Transaction::withoutGlobalScope('hotel')->count())->toBe(0);
 });
 
@@ -88,7 +88,7 @@ it('creates one cleaning task for the room, sent to the hotel\'s chosen team and
     [$hotel, $stay, $room] = inHouseStay($this);
     [$team, $category] = housekeepingDefaults($hotel, 'التدبير المنزلي');
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk()->assertJsonCount(1, 'body.cleaning_tasks');
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk()->assertJsonCount(1, 'body.cleaning_tasks');
 
     $task = Task::withoutGlobalScope('hotel')->sole();
     expect($task->created_by)->toBe(CreatedBy::SYSTEM)
@@ -111,7 +111,7 @@ it('still checks out and leaves the cleaning task unassigned when no team is set
         $hotel->update(['housekeeping_team_id' => null, 'cleaning_task_category_id' => null]);
     }
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk();
 
     $task = Task::withoutGlobalScope('hotel')->sole();
     expect($task->assigned_to_team_id)->toBeNull()
@@ -122,7 +122,7 @@ it('counts the nights actually stayed when a guest leaves early, and frees the r
     [$hotel, $stay] = inHouseStay($this, daysAgo: 1, nightsLeft: 3);
     $type = $stay->reservationRoom->roomType;
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk();
 
     expect($stay->fresh()->nights)->toBe(1);
 
@@ -135,7 +135,7 @@ it('checks out a guest who stayed past their departure date', function () {
     [$hotel, $stay] = inHouseStay($this, daysAgo: 3, nightsLeft: 0);
     $this->travel(1)->days();
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk();
 
     expect($stay->fresh()->nights)->toBe(4);
 });
@@ -145,7 +145,7 @@ it('refuses a stay that never checked in', function () {
     $reservation = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($reservation);
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))
         ->assertUnprocessable()
         ->assertJsonValidationErrors(["stays.{$stay->id}.stay_status" => 'This room is expected.']);
 });
@@ -153,8 +153,8 @@ it('refuses a stay that never checked in', function () {
 it('does nothing the second time: no second task, no second audit row', function () {
     [$hotel, $stay] = inHouseStay($this);
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk()->assertJsonCount(0, 'body.cleaning_tasks');
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk();
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk()->assertJsonCount(0, 'body.cleaning_tasks');
 
     expect(Task::withoutGlobalScope('hotel')->count())->toBe(1)
         ->and(EventLog::where('event_type', 'stay.checked_out')->count())->toBe(1);
@@ -164,7 +164,7 @@ it('keeps an out-of-order room out of order, marks it dirty and still creates th
     [$hotel, $stay, $room] = inHouseStay($this);
     Room::withoutGlobalScope('hotel')->whereKey($room->id)->update(['status' => 'out_of_order', 'out_of_order_reason' => 'Leak']);
 
-    fdPost($this, $hotel->owner, checkOutUri($stay))->assertOk();
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay))->assertOk();
 
     expect($room->fresh()->status)->toBe(RoomStatusesEnum::OUT_OF_ORDER)
         ->and($room->fresh()->housekeeping_status->value)->toBe('dirty')
@@ -175,7 +175,7 @@ it('records an earlier actual time from today, with the entry time on the same a
     [$hotel, $stay] = inHouseStay($this);
     $earlier = now()->startOfDay()->addHours(7)->toIso8601String();
 
-    fdPost($this, $hotel->owner, checkOutUri($stay), ['checked_out_at' => $earlier])->assertOk();
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay), ['checked_out_at' => $earlier])->assertOk();
 
     expect($stay->fresh()->checked_out_at->toIso8601String())->toBe($earlier);
     $audit = EventLog::where('event_type', 'stay.checked_out')->sole();
@@ -190,7 +190,7 @@ it('refuses a check-out time from yesterday, the future, or before the check-in'
         'before check-in' => $stay->checked_in_at->copy()->subMinute()->toIso8601String(),
     };
 
-    fdPost($this, $hotel->owner, checkOutUri($stay), ['checked_out_at' => $time])
+    fdPost($this, adminOfHotel($hotel), checkOutUri($stay), ['checked_out_at' => $time])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['checked_out_at']);
 
@@ -207,14 +207,14 @@ it('lets an admin choose the housekeeping team and cleaning category, and checks
     $foreignTeam = Team::create(['hotel_id' => $otherHotel->id, 'name' => 'Theirs', 'is_active' => true]);
     $put = fn ($user, array $payload) => $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($user, 'sanctum')->putJson("/api/hotel/{$hotel->id}", $payload);
 
-    $put($hotel->owner, ['housekeeping_team_id' => $team->id, 'cleaning_task_category_id' => $category->id])
+    $put(adminOfHotel($hotel), ['housekeeping_team_id' => $team->id, 'cleaning_task_category_id' => $category->id])
         ->assertOk()
         ->assertJsonPath('body.housekeeping_team_id', $team->id)
         ->assertJsonPath('body.cleaning_task_category_id', $category->id);
 
-    $put($hotel->owner, ['housekeeping_team_id' => $foreignTeam->id])->assertForbidden();
-    $put($hotel->owner, ['housekeeping_team_id' => $inactive->id, 'cleaning_task_category_id' => null])->assertUnprocessable();
-    $put($hotel->owner, ['housekeeping_team_id' => $otherTeam->id])->assertUnprocessable();
+    $put(adminOfHotel($hotel), ['housekeeping_team_id' => $foreignTeam->id])->assertForbidden();
+    $put(adminOfHotel($hotel), ['housekeeping_team_id' => $inactive->id, 'cleaning_task_category_id' => null])->assertUnprocessable();
+    $put(adminOfHotel($hotel), ['housekeeping_team_id' => $otherTeam->id])->assertUnprocessable();
     $put(fdEmployee($hotel, Permission::cases()), ['housekeeping_team_id' => null])->assertForbidden();
 
     expect($hotel->fresh()->housekeeping_team_id)->toBe($team->id);

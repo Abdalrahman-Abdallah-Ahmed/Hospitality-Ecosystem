@@ -18,7 +18,7 @@ beforeEach(function () {
     [$this->hotel, $this->deluxe, $this->deluxeRooms] = fdHotel(2);
     $this->suite = avType($this->hotel, 'Suite');
     $this->suiteRooms = avRooms($this->hotel, $this->suite, 1);
-    $this->admin = $this->hotel->owner;
+    $this->admin = adminOfHotel($this->hotel);
     $this->nights = ['arrival_date' => now()->addDays(2)->toDateString(), 'departure_date' => now()->addDays(4)->toDateString()];
     $this->reservation = fdBook($this->hotel, $this->deluxe, [null], $this->nights);
     $this->line = $this->reservation->reservationRooms()->sole();

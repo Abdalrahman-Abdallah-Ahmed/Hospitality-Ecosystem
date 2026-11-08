@@ -30,7 +30,6 @@ class HospitalitySeeder extends Seeder
         ]);
 
         $hotel = Hotel::create([
-            'owner_id' => $user->id,
             'hotel_group_id' => $group->id,
             'name' => 'Grand Harbor Hotel',
             'slug' => 'grand-harbor-hotel',

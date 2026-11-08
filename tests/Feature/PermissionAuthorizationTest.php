@@ -32,7 +32,6 @@ function hotelForPermissions(): Hotel
 {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-'.$admin->id,
         'currency' => 'USD',
@@ -204,7 +203,7 @@ it('does not let viewing a list export it, and gives no export by default (spec 
             ->getJson($endpoint)->assertForbidden();
     }
 
-    $listed = collect($this->withHeaders(permissionApiHeaders())->actingAs(User::find($hotel->owner_id), 'sanctum')
+    $listed = collect($this->withHeaders(permissionApiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->getJson('/api/permissions')->assertOk()->json('body'))->flatten()->all();
 
     expect($listed)->toContain('reservations.export', 'activities.export', 'bookings.export', 'guests.export');
@@ -218,8 +217,8 @@ it('never gives employees without a role the housekeeping or out-of-order permis
 
 it('lets an employee run housekeeping and maintenance actions only when their role grants it', function (string $action, Permission $permission) {
     [$hotel, $room, $cleaning] = hkVacatedRoom($this);
-    hkPut($this, $hotel->owner, "/api/hotel/{$hotel->id}", ['inspection_required' => true])->assertOk();
-    hkSetTaskStatus($this, $hotel->owner, $cleaning, 'completed')->assertOk();
+    hkPut($this, adminOfHotel($hotel), "/api/hotel/{$hotel->id}", ['inspection_required' => true])->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $cleaning, 'completed')->assertOk();
     $inspection = Task::where('housekeeping_kind', 'inspection')->sole();
 
     $call = fn ($user) => match ($action) {
@@ -232,7 +231,7 @@ it('lets an employee run housekeeping and maintenance actions only when their ro
     };
 
     if (in_array($action, ['edit out of order', 'return to service'], true)) {
-        fdPost($this, $hotel->owner, "/api/room/{$room->id}/out-of-order", ['reason' => 'Leak'])->assertOk();
+        fdPost($this, adminOfHotel($hotel), "/api/room/{$room->id}/out-of-order", ['reason' => 'Leak'])->assertOk();
     }
 
     $call(fdEmployee($hotel, Permission::employeeDefaults()))->assertForbidden();
@@ -259,7 +258,7 @@ it('lets an employee check guests in and out only when their role grants it', fu
     [$stay] = fdStays($reservation);
 
     if ($action === 'check-out') {
-        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+        fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     }
 
     $permission = $action === 'check-in' ? Permission::STAYS_CHECK_IN : Permission::STAYS_CHECK_OUT;
@@ -287,7 +286,7 @@ it('lets an employee assign rooms and move guests only when their role grants it
     $line = $reservation->reservationRooms()->sole();
 
     if ($action === 'move') {
-        fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+        fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
     }
 
     $call = fn ($user) => match ($action) {
@@ -312,7 +311,7 @@ it('lets an employee mark and undo no-shows only when their role grants it', fun
     $base = $scope === 'room' ? "/api/stays/{$stay->id}" : "/api/reservation/{$reservation->id}";
 
     if ($action === 'undo-no-show') {
-        fdPost($this, $hotel->owner, "{$base}/no-show")->assertOk();
+        fdPost($this, adminOfHotel($hotel), "{$base}/no-show")->assertOk();
     }
 
     fdPost($this, fdEmployee($hotel, [Permission::RESERVATIONS_UPDATE, Permission::STAYS_CHECK_IN]), "{$base}/{$action}")->assertForbidden();
@@ -335,7 +334,7 @@ it('never gives employees without a role the voucher permissions', function () {
         expect(Permission::employeeDefaults())->not->toContain($permission);
     }
 
-    $listed = $this->withHeaders(permissionApiHeaders())->actingAs(hotelForPermissions()->owner, 'sanctum')
+    $listed = $this->withHeaders(permissionApiHeaders())->actingAs(adminOfHotel(hotelForPermissions()), 'sanctum')
         ->getJson('/api/permissions')->assertOk()->json();
 
     foreach ($voucher as $permission) {
@@ -475,7 +474,7 @@ it('never gives employees without a role any knowledge document permission, and 
     }
 
     $hotel = hotelForPermissions();
-    $listed = collect($this->withHeaders(permissionApiHeaders())->actingAs(User::find($hotel->owner_id), 'sanctum')
+    $listed = collect($this->withHeaders(permissionApiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->getJson('/api/permissions')->assertOk()->json('body'))->flatten()->all();
 
     foreach ($documentPermissions as $permission) {

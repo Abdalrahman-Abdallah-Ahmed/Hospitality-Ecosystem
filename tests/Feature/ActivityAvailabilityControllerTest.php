@@ -39,7 +39,7 @@ it('reports each date of a range with its state and places', function () {
     abBook($hotel, $activity, '2026-10-09 17:00', 5);
     abBook($hotel, $activity, '2026-10-23 17:00', 12);
 
-    $days = collect(abAvailability($this, User::find($hotel->owner_id), $activity, 'from=2026-10-08&to=2026-11-06')
+    $days = collect(abAvailability($this, adminOfHotel($hotel), $activity, 'from=2026-10-08&to=2026-11-06')
         ->assertOk()
         ->assertJsonPath('body.daily_capacity', 12)
         ->json('body.days'))->keyBy('date');
@@ -59,7 +59,7 @@ it('answers a single date when no end is given', function () {
     $hotel = avHotel();
     $activity = abCalendarActivity($hotel);
 
-    abAvailability($this, User::find($hotel->owner_id), $activity, 'from=2026-10-09')
+    abAvailability($this, adminOfHotel($hotel), $activity, 'from=2026-10-09')
         ->assertOk()
         ->assertJsonCount(1, 'body.days')
         ->assertJsonPath('body.days.0.date', '2026-10-09');
@@ -67,7 +67,7 @@ it('answers a single date when no end is given', function () {
 
 it('refuses a range longer than 31 days or one that ends first', function () {
     $hotel = avHotel();
-    $admin = User::find($hotel->owner_id);
+    $admin = adminOfHotel($hotel);
     $activity = abCalendarActivity($hotel);
 
     abAvailability($this, $admin, $activity, 'from=2026-10-01&to=2026-10-31')->assertOk();
@@ -82,7 +82,7 @@ it('flags past days and closed days that still hold bookings', function () {
     abBook($hotel, $activity, '2026-10-09 17:00', 3);
     $activity->update(['unavailable_periods' => [['start_date' => '2026-10-09', 'end_date' => '2026-10-09', 'reason' => 'Storm']]]);
 
-    $days = collect(abAvailability($this, User::find($hotel->owner_id), $activity, 'from=2026-10-02&to=2026-10-09')
+    $days = collect(abAvailability($this, adminOfHotel($hotel), $activity, 'from=2026-10-02&to=2026-10-09')
         ->assertOk()->json('body.days'))->keyBy('date');
 
     expect($days['2026-10-02']['past'])->toBeTrue()
@@ -93,7 +93,7 @@ it('hides another hotel activity', function () {
     $hotel = avHotel();
     $theirs = abCalendarActivity(avHotel());
 
-    abAvailability($this, User::find($hotel->owner_id), $theirs, 'from=2026-10-09')->assertNotFound();
+    abAvailability($this, adminOfHotel($hotel), $theirs, 'from=2026-10-09')->assertNotFound();
 });
 
 it('needs the activities view permission', function () {
@@ -110,7 +110,7 @@ it('gives the concierge the same availability as the calendar', function () {
     abBook($hotel, $activity, '2026-10-09 17:00', 5);
 
     $tool = json_decode((string) (new GetActivitiesTool($hotel))->handle(new Request(['from' => '2026-10-08', 'to' => '2026-10-16'])), true);
-    $calendar = abAvailability($this, User::find($hotel->owner_id), $activity, 'from=2026-10-08&to=2026-10-16')->json('body.days');
+    $calendar = abAvailability($this, adminOfHotel($hotel), $activity, 'from=2026-10-08&to=2026-10-16')->json('body.days');
 
     $toolDays = collect($tool['items'][0]['availability'])->keyBy('date');
 

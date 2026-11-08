@@ -19,6 +19,15 @@ class TenantContext
 
     protected static ?string $currentHotelId = null;
 
+    /**
+     * Every hotel the signed-in user may reach, as ResolveTenant read it, kept
+     * after UseChosenHotel narrows the scope. Keyed by user so a check made
+     * for anyone else reads their own list.
+     *
+     * @var array<string, array<int, string>|null>
+     */
+    protected static array $reachableHotelIds = [];
+
     public static function setHotelIds(?array $ids): void
     {
         static::$hotelIds = $ids;
@@ -39,10 +48,36 @@ class TenantContext
         return static::$currentHotelId;
     }
 
+    /**
+     * @param  array<int, string>|null  $ids
+     */
+    public static function setReachableHotelIds(string $userId, ?array $ids): void
+    {
+        static::$reachableHotelIds = [$userId => $ids];
+    }
+
+    /**
+     * Whether ResolveTenant recorded this user's reachable hotels, and they
+     * can be read with reachableHotelIds().
+     */
+    public static function knowsReachableHotelIds(string $userId): bool
+    {
+        return array_key_exists($userId, static::$reachableHotelIds);
+    }
+
+    /**
+     * @return array<int, string>|null
+     */
+    public static function reachableHotelIds(string $userId): ?array
+    {
+        return static::$reachableHotelIds[$userId] ?? null;
+    }
+
     public static function reset(): void
     {
         static::$hotelIds = null;
         static::$currentHotelId = null;
+        static::$reachableHotelIds = [];
     }
 
     /**

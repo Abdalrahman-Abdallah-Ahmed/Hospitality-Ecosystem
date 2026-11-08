@@ -32,14 +32,14 @@ function abBoat($hotel, array $attributes = [])
 
 function abEdit($test, $hotel, Booking $booking, array $payload, ?User $user = null)
 {
-    return abPatch($test, $user ?? User::find($hotel->owner_id), "/api/booking/{$booking->id}", $payload);
+    return abPatch($test, $user ?? adminOfHotel($hotel), "/api/booking/{$booking->id}", $payload);
 }
 
 it('confirms a pending booking and records when', function () {
     $hotel = avHotel();
     $booking = abBook($hotel, abBoat($hotel), '2026-10-09 17:30', 2);
 
-    fdPost($this, User::find($hotel->owner_id), "/api/booking/{$booking->id}/status", ['status' => 'confirmed'])->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/booking/{$booking->id}/status", ['status' => 'confirmed'])->assertOk();
 
     expect($booking->fresh()->status)->toBe(BookingStatus::CONFIRMED)
         ->and($booking->fresh()->confirmed_at)->not->toBeNull();
@@ -94,7 +94,7 @@ it('frees the places when the booking is cancelled', function () {
     $booking = abBook($hotel, $boat, '2026-10-09 17:30', 4);
     app(BookingService::class)->confirm($booking);
 
-    fdPost($this, User::find($hotel->owner_id), "/api/booking/{$booking->id}/status", ['status' => 'cancelled', 'reason' => 'Guest left early'])->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/booking/{$booking->id}/status", ['status' => 'cancelled', 'reason' => 'Guest left early'])->assertOk();
 
     expect(app(ActivityAvailabilityService::class)->day($boat, '2026-10-09')->remaining)->toBe(10);
 });
@@ -163,7 +163,7 @@ it('audits what changed and who changed it', function () {
 
     $event = EventLog::where('subject_id', $booking->id)->where('event_type', 'booking.updated')->latest('occurred_at')->first();
 
-    expect($event->actor_id)->toBe($hotel->owner_id)
+    expect($event->actor_id)->toBe(adminOfHotel($hotel)->id)
         ->and($event->changes)->toHaveKey('pax')
         ->and($event->changes)->toHaveKey('notes')
         ->and(Transaction::withoutGlobalScope('hotel')->count())->toBe(0);

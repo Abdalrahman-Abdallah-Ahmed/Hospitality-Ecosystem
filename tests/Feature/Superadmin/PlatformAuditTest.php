@@ -57,7 +57,7 @@ it('hides a platform event about a hotel\'s own record from that hotel', functio
     EventLogger::recordPlatform('platform.test.happened', $guest);
     app('auth')->forgetGuards();
 
-    $types = collect($this->withHeaders(apiHeaders())->actingAs($hotel->owner, 'sanctum')
+    $types = collect($this->withHeaders(apiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->getJson("/api/history/guest/{$guest->id}")->assertOk()->json('body.data'))->pluck('event_type');
 
     expect($types)->not->toContain('platform.test.happened');
@@ -133,7 +133,7 @@ it('writes no platform event for a tenant edit or a completed public reset', fun
     $hotel = makeHotel();
     $staff = User::factory()->create(['hotel_id' => $hotel->id]);
 
-    $this->withHeaders(apiHeaders())->actingAs($hotel->owner, 'sanctum')
+    $this->withHeaders(apiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->putJson("/api/users/{$staff->id}", ['name' => 'Renamed'])->assertOk();
 
     $token = Password::broker('users')->createToken($staff);

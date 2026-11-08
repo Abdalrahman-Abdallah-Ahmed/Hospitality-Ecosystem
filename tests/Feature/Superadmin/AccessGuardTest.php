@@ -66,7 +66,7 @@ function assertNothingChanged(Hotel $hotel, User $target): void
 it('refuses a hotel admin', function (string $method, string $path) {
     [$url, $hotel, $target] = guardedTarget($path);
 
-    $this->withHeaders(apiHeaders())->actingAs($hotel->owner, 'sanctum')
+    $this->withHeaders(apiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->json($method, $url, ['name' => 'Changed', 'slug' => 'changed'])
         ->assertForbidden();
 

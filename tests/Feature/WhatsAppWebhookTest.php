@@ -105,7 +105,6 @@ it('rejects an inbound webhook with an invalid signature', function () {
 it('replies to a recognized guest and persists the conversation', function () {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Seaside Hotel',
         'slug' => 'seaside-hotel',
         'currency' => 'USD',
@@ -133,7 +132,6 @@ it('replies to a recognized guest and persists the conversation', function () {
 it('replies via the admin advisor when the admin has an active paired device', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create(['phone_number' => '201151793758']);
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -160,7 +158,6 @@ it('replies via the admin advisor when the admin has an active paired device', f
 it('extracts reservation details from an admin screenshot', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create(['phone_number' => '201151793758']);
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -197,7 +194,6 @@ it('extracts reservation details from an admin screenshot', function () {
 it('sends a pairing-guidance reply and never invokes the advisor for an unpaired admin', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create(['phone_number' => '201151793758']);
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -253,7 +249,6 @@ it('never sends the rate-limit notice to an unrecognized number', function () {
 it('pairs a device when an admin sends their connect() token as a message', function () {
     $admin = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $admin->id,
         'name' => 'Grand Harbor Hotel',
         'slug' => 'grand-harbor-hotel',
         'currency' => 'USD',
@@ -285,7 +280,6 @@ it('replies with guidance when the pairing token is invalid', function () {
 it('does not treat an ordinary chat message as a pairing attempt', function () {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Seaside Hotel',
         'slug' => 'seaside-hotel',
         'currency' => 'USD',
@@ -307,7 +301,6 @@ it('does not treat an ordinary chat message as a pairing attempt', function () {
 function webhookGuestAt(string $hotelName, string $phone): Guest
 {
     $hotel = Hotel::create([
-        'owner_id' => User::factory()->create()->id,
         'name' => $hotelName,
         'slug' => Str::slug($hotelName).'-'.Str::lower(Str::random(6)),
         'currency' => 'USD',

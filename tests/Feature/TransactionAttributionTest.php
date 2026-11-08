@@ -16,7 +16,6 @@ function attributionHotel(): Hotel
 {
     $owner = User::factory()->create();
     $hotel = Hotel::create([
-        'owner_id' => $owner->id,
         'name' => 'Attribution Hotel',
         'slug' => 'attribution-hotel-'.uniqid(),
         'currency' => 'USD',

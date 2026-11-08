@@ -127,7 +127,7 @@ it('still sends an opted-out guest the notice about their own request', function
 
     gsRunTool(new CreateGuestServiceRequestTool($guest, $hotel, $reservation), ['title' => 'Towels', 'description' => 'Two more towels', 'kind' => 'service_request']);
     $task = Task::sole();
-    hkSetTaskStatus($this, $hotel->owner, $task, 'completed')->assertOk();
+    hkSetTaskStatus($this, adminOfHotel($hotel), $task, 'completed')->assertOk();
 
     expect($whatsApp->sent)->toHaveCount(1)
         ->and($task->fresh()->guest_notice_status->value)->toBe('sent');

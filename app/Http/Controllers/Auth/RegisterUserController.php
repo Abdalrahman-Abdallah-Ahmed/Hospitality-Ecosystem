@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Enums\GroupRole;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RegisterUserRequest;
@@ -52,7 +53,6 @@ class RegisterUserController extends Controller
             ]);
 
             $hotel = Hotel::create([
-                'owner_id' => $user->id,
                 'name' => $validated['hotel']['name'],
                 'slug' => Str::slug($validated['hotel']['name']),
                 'city' => $validated['hotel']['city'],
@@ -65,8 +65,12 @@ class RegisterUserController extends Controller
                 'whatsapp_number' => $validated['hotel']['whatsapp_number'] ?? null,
             ]);
 
+            // The hotel's creating hook made its account, so this customer is
+            // the owner of an account nobody else can already own.
             $user->update([
                 'hotel_id' => $hotel->id,
+                'hotel_group_id' => $hotel->hotel_group_id,
+                'group_role' => GroupRole::OWNER,
             ]);
 
             return [$user, $hotel];

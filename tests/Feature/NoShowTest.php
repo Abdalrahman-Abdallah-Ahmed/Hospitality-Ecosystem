@@ -41,7 +41,7 @@ it('marks a reservation that never arrived as a no-show and releases its rooms',
 
     expect(fn () => nsSecondBooking($hotel, $type))->toThrow(ValidationException::class);
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show", ['reason' => 'No contact'])
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show", ['reason' => 'No contact'])
         ->assertOk()
         ->assertJsonPath('message', 'Marked as a no-show.')
         ->assertJsonPath('body.reservation.status', 'no_show')
@@ -68,7 +68,7 @@ it('can be marked from the arrival day only', function () {
         'departure_date' => now()->addDays(3)->toDateString(),
     ]);
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")
         ->assertUnprocessable()
         ->assertJsonValidationErrors('stays');
 
@@ -79,22 +79,22 @@ it('refuses a whole no-show once any room has checked in, or for a cancelled res
     [$hotel, $type, $rooms] = fdHotel(2);
     $reservation = fdBook($hotel, $type, [$rooms[0]->id, $rooms[1]->id]);
     [$first] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$first->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$first->id}/check-in")->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")
         ->assertUnprocessable()
         ->assertJsonValidationErrors('stays');
 
     $cancelled = fdBook($hotel, $type, [null], ['status' => 'cancelled']);
-    fdPost($this, $hotel->owner, "/api/reservation/{$cancelled->id}/no-show")->assertUnprocessable();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$cancelled->id}/no-show")->assertUnprocessable();
 });
 
 it('changes nothing when a no-show is marked twice', function () {
     [$hotel, $type, [$room]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$room->id]);
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk()
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk()
         ->assertJsonPath('body.reservation.status', 'no_show');
 
     expect(EventLog::where('subject_id', $reservation->id)->where('event_type', 'reservation.no_show_marked')->count())->toBe(1);
@@ -103,10 +103,10 @@ it('changes nothing when a no-show is marked twice', function () {
 it('keeps a no-show out of the arrivals list, pitching and proactive messages', function () {
     [$hotel, $type, [$room]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$room->id]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
     [$stay] = fdStays($reservation);
 
-    $arrivals = collect(fdGet($this, $hotel->owner, '/api/stays/arrivals')->assertOk()->json('body.stays'))->pluck('id');
+    $arrivals = collect(fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals')->assertOk()->json('body.stays'))->pluck('id');
     config(['pitching.allow_pre_arrival' => true]);
     $gates = app(PitchEligibilityService::class)->evaluateCheapGates($reservation->guest, $hotel, $stay->fresh(), now());
 
@@ -121,19 +121,19 @@ it('marks one room a no-show and lets the rest of the group check out', function
     $reservation = fdBook($hotel, $type, array_map(fn (Room $room) => $room->id, $rooms));
     [$a, $b, $c] = fdStays($reservation);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$a->id}/check-in")->assertOk();
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/check-in")->assertOk();
-    fdPost($this, $hotel->owner, "/api/stays/{$c->id}/no-show")->assertOk()
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$a->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$c->id}/no-show")->assertOk()
         ->assertJsonPath('body.reservation.status', 'checked_in');
 
-    $arrivals = collect(fdGet($this, $hotel->owner, '/api/stays/arrivals')->json('body.stays'))->pluck('id');
-    $lines = collect(fdGet($this, $hotel->owner, "/api/reservation/{$reservation->id}")->assertOk()->json('body.rooms'))->keyBy('stay_id');
+    $arrivals = collect(fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals')->json('body.stays'))->pluck('id');
+    $lines = collect(fdGet($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}")->assertOk()->json('body.rooms'))->keyBy('stay_id');
 
     expect($arrivals)->not->toContain($c->id)
         ->and($lines[$c->id]['stay_status'])->toBe('no_show')
         ->and($lines[$a->id]['stay_status'])->toBe('in_house');
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/check-out")->assertOk();
 
     expect($reservation->fresh()->status)->toBe(ReservationStatus::CHECKED_OUT)
         ->and($c->fresh()->status)->toBe(StayStatus::NO_SHOW);
@@ -144,8 +144,8 @@ it('makes the reservation a no-show when its last waiting room is marked', funct
     $reservation = fdBook($hotel, $type, [$rooms[0]->id, $rooms[1]->id], ['status' => 'pending']);
     [$a, $b] = fdStays($reservation);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$a->id}/no-show")->assertOk()->assertJsonPath('body.reservation.status', 'pending');
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/no-show")->assertOk()->assertJsonPath('body.reservation.status', 'no_show');
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$a->id}/no-show")->assertOk()->assertJsonPath('body.reservation.status', 'pending');
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/no-show")->assertOk()->assertJsonPath('body.reservation.status', 'no_show');
 
     expect($reservation->fresh()->status_before_no_show)->toBe(ReservationStatus::PENDING);
 });
@@ -154,16 +154,16 @@ it('refuses a room no-show for a room in the house', function () {
     [$hotel, $type, [$room]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/check-in")->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/no-show")->assertUnprocessable()->assertJsonValidationErrors('stays');
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/no-show")->assertUnprocessable()->assertJsonValidationErrors('stays');
 });
 
 it('frees a no-show line\'s room for another booking on the same nights', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
     $reservation = fdBook($hotel, $type, [$room->id]);
     [$stay] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$stay->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$stay->id}/no-show")->assertOk();
 
     $other = nsSecondBooking($hotel, $type);
     $line = ReservationRoom::withoutGlobalScope('hotel')->where('reservation_id', $other->id)->sole();
@@ -176,9 +176,9 @@ it('frees a no-show line\'s room for another booking on the same nights', functi
 it('undoes a no-show back to the status it had', function (string $status) {
     [$hotel, $type, [$room]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$room->id], ['status' => $status]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/undo-no-show", ['reason' => 'Arrived late'])
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/undo-no-show", ['reason' => 'Arrived late'])
         ->assertOk()
         ->assertJsonPath('message', 'No-show undone.')
         ->assertJsonPath('body.reservation.status', $status);
@@ -193,27 +193,27 @@ it('undoes a no-show back to the status it had', function (string $status) {
 it('undoes a no-show even after its dates have passed', function () {
     [$hotel, $type, [$room]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$room->id]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
 
     $this->travel(10)->days();
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/undo-no-show")->assertOk()
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/undo-no-show")->assertOk()
         ->assertJsonPath('body.reservation.status', 'confirmed');
 });
 
 it('refuses to undo into rooms sold since, unless an allowed overbook', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
     $reservation = fdBook($hotel, $type, [$room->id]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
     nsSecondBooking($hotel, $type);
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/undo-no-show")->assertUnprocessable();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/undo-no-show")->assertUnprocessable();
     expect($reservation->fresh()->status)->toBe(ReservationStatus::NO_SHOW);
 
     $noOverbook = fdEmployee($hotel, [Permission::RESERVATIONS_NO_SHOW]);
     fdPost($this, $noOverbook, "/api/reservation/{$reservation->id}/undo-no-show", ['overbook_override' => true])->assertForbidden();
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/undo-no-show", ['overbook_override' => true])->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/undo-no-show", ['overbook_override' => true])->assertOk();
     expect($reservation->fresh()->status)->toBe(ReservationStatus::CONFIRMED);
 });
 
@@ -222,15 +222,15 @@ it('undoes one room while the reservation is open, but not once it is checked ou
     $reservation = fdBook($hotel, $type, [$rooms[0]->id, $rooms[1]->id]);
     [$a, $b] = fdStays($reservation);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$a->id}/check-in")->assertOk();
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/no-show")->assertOk();
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/undo-no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$a->id}/check-in")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/undo-no-show")->assertOk();
     expect($b->fresh()->status)->toBe(StayStatus::EXPECTED);
 
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/no-show")->assertOk();
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/check-out")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/check-out")->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/undo-no-show")
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/undo-no-show")
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['stays' => 'This reservation is checked out; its no-show rooms are final.']);
 });
@@ -239,7 +239,7 @@ it('refuses to undo a reservation that is not a no-show', function () {
     [$hotel, $type, [$room]] = fdHotel();
     $reservation = fdBook($hotel, $type, [$room->id]);
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/undo-no-show")
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/undo-no-show")
         ->assertUnprocessable()
         ->assertJsonValidationErrors('status');
 });
@@ -249,11 +249,11 @@ it('refuses to undo a reservation that is not a no-show', function () {
 it('takes a room given away meanwhile off the restored line, with a warning', function () {
     [$hotel, $type, [$room]] = fdHotel(1);
     $reservation = fdBook($hotel, $type, [$room->id]);
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
 
     $other = fdBook($hotel, $type, [$room->id]);
 
-    $response = fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/undo-no-show", ['overbook_override' => true])->assertOk();
+    $response = fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/undo-no-show", ['overbook_override' => true])->assertOk();
 
     $line = ReservationRoom::withoutGlobalScope('hotel')->where('reservation_id', $reservation->id)->sole();
     $otherLine = ReservationRoom::withoutGlobalScope('hotel')->where('reservation_id', $other->id)->sole();
@@ -267,11 +267,11 @@ it('refuses to restore a room of a cancelled reservation', function () {
     [$hotel, $type, $rooms] = fdHotel(2);
     $reservation = fdBook($hotel, $type, [$rooms[0]->id, $rooms[1]->id]);
     [, $b] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/no-show")->assertOk();
-    $this->withHeaders(apiHeaders())->actingAs($hotel->owner, 'sanctum')
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/no-show")->assertOk();
+    $this->withHeaders(apiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')
         ->putJson("/api/reservation/{$reservation->id}", ['status' => 'cancelled'])->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/undo-no-show")
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/undo-no-show")
         ->assertUnprocessable()
         ->assertJsonValidationErrors('stays');
 
@@ -282,15 +282,15 @@ it('brings a restored room in step with dates changed while it was a no-show', f
     [$hotel, $type, $rooms] = fdHotel(2);
     $reservation = fdBook($hotel, $type, [$rooms[0]->id, $rooms[1]->id]);
     [, $b] = fdStays($reservation);
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/no-show")->assertOk();
 
     $newArrival = now()->addDays(10)->toDateString();
-    $this->withHeaders(apiHeaders())->actingAs($hotel->owner, 'sanctum')->putJson("/api/reservation/{$reservation->id}", [
+    $this->withHeaders(apiHeaders())->actingAs(adminOfHotel($hotel), 'sanctum')->putJson("/api/reservation/{$reservation->id}", [
         'arrival_date' => $newArrival,
         'departure_date' => now()->addDays(12)->toDateString(),
     ])->assertOk();
 
-    fdPost($this, $hotel->owner, "/api/stays/{$b->id}/undo-no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/stays/{$b->id}/undo-no-show")->assertOk();
 
     expect($b->fresh()->status)->toBe(StayStatus::EXPECTED)
         ->and($b->fresh()->planned_arrival_date->toDateString())->toBe($newArrival);
@@ -301,7 +301,7 @@ it('stops an edit that read the reservation before a no-show was committed', fun
     $reservation = fdBook($hotel, $type, [$room->id]);
     $stale = $reservation->fresh();
 
-    fdPost($this, $hotel->owner, "/api/reservation/{$reservation->id}/no-show")->assertOk();
+    fdPost($this, adminOfHotel($hotel), "/api/reservation/{$reservation->id}/no-show")->assertOk();
 
     expect(fn () => ReservationCreator::update($stale, ['arrival_date' => now()->addDays(5)->toDateString()], null))
         ->toThrow(ValidationException::class);

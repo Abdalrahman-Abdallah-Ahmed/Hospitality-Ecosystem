@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\GroupRole;
 use App\Enums\ReservationRoomStatus;
 use App\Enums\ReservationStatus;
 use App\Enums\StayStatus;
@@ -77,12 +78,12 @@ class SeedBenchmarkVolumeCommand extends Command
     {
         $owner = User::factory()->role(UserRole::ADMIN)->create(['email' => "bench-owner-{$number}-".Str::random(6).'@example.test']);
         $hotel = Hotel::create([
-            'owner_id' => $owner->id,
             'name' => "Bench Hotel {$number}",
             'slug' => "bench-hotel-{$number}-".Str::random(6),
             'currency' => 'USD',
         ]);
-        $owner->update(['hotel_id' => $hotel->id]);
+        // The account owner, as registration makes one.
+        $owner->update(['hotel_id' => $hotel->id, 'hotel_group_id' => $hotel->hotel_group_id, 'group_role' => GroupRole::OWNER]);
         $now = now();
 
         $types = [];
