@@ -87,6 +87,8 @@ Route::middleware('api.key')->group(function () {
         // A device belongs to the user's home hotel, whichever hotel they're working in.
         Route::post('/connect', [WhatsAppController::class, 'connect'])->withoutMiddleware('hotel_choice')->middleware('not_impersonating');
         Route::get('/check-paired', [WhatsAppController::class, 'checkPaired'])->withoutMiddleware('hotel_choice');
+        Route::get('/whatsapp-device', [WhatsAppController::class, 'device'])->withoutMiddleware('hotel_choice');
+        Route::delete('/whatsapp-device', [WhatsAppController::class, 'unpair'])->withoutMiddleware('hotel_choice')->middleware('not_impersonating');
         Route::get('/dashboard', [DashboardController::class, 'generalData']);
 
         // List exports (spec 021). Each sits above its resource routes so

@@ -79,6 +79,7 @@ return [
         'POST api/transaction/import' => ['covered_by' => 'rejects a non-admin user from importing transactions'],
         'POST api/whatsapp' => ['covered_by' => 'does not find a matching guest from a different hotel'],
         'POST api/connect' => ['covered_by' => 'creates an expiring whatsapp pairing code for an authenticated user'],
+        'DELETE api/whatsapp-device' => ['covered_by' => 'only ever unpairs the caller\'s own device'],
 
         // No tenant data read or written.
         'GET api/whatsapp' => ['reason' => 'Meta webhook verification handshake: compares a token, touches no records'],
@@ -142,6 +143,7 @@ return [
             'GET api/available-channels' => 'The booking channel enum, a fixed list',
             'GET api/voucher-templates/fields' => 'The voucher field enum, a fixed list',
             'GET api/user' => 'The caller\'s own user record',
+            'GET api/whatsapp-device' => 'The caller\'s own device: one record at most',
             'GET api/housekeeping/board' => 'One row per room of the hotel: bounded by its room count',
             'GET api/stays/arrivals' => 'One day\'s front-desk list: bounded by the hotel\'s rooms; overdue arrivals are cleared by no-show',
             'GET api/stays/departures' => 'One day\'s front-desk list: bounded by the hotel\'s rooms',
