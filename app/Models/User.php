@@ -242,6 +242,8 @@ class User extends Authenticatable
      * BelongsToHotel's global scope — never returns null for a merely
      * hotel-less regular user, since that would mean "see everything"
      * instead of the correct "see nothing".
+     *
+     * reachableHotelsQuery() is this rule in SQL: a change here belongs there too.
      */
     public function accessibleHotelIds(): ?array
     {
@@ -308,6 +310,61 @@ class User extends Authenticatable
             ->orWhere(fn (Builder $group) => $group
                 ->whereNotNull('group_role')
                 ->whereIn('hotel_group_id', Hotel::query()->select('hotel_group_id')->whereIn('id', $hotelIds))));
+    }
+
+    /**
+     * Users whom suspension refuses at login: no active hotel left and at least
+     * one suspended, or no hotels and a suspended account. HotelAccess answers
+     * this for one user. This answers it for many without a query per user, and
+     * DashboardTest compares the two against a real login for each kind of user.
+     */
+    public function scopeRefusedBySuspension(Builder $query): Builder
+    {
+        return $query
+            ->whereNotExists(self::reachableHotelsQuery()->notSuspended()->select(DB::raw(1)))
+            ->where(fn (Builder $refused) => $refused
+                ->whereExists(self::reachableHotelsQuery()->select(DB::raw(1)))
+                ->orWhere(fn (Builder $noHotels) => self::inSuspendedAccount($noHotels)));
+    }
+
+    /**
+     * accessibleHotelIds() as a subquery on `users`: an owner reaches their
+     * account's live hotels and nothing else. Anyone else reaches their live home
+     * hotel and memberships, and a direct account link with no group role adds
+     * nothing.
+     */
+    private static function reachableHotelsQuery(): Builder
+    {
+        return Hotel::query()->where(fn (Builder $hotels) => $hotels
+            ->where(fn (Builder $owner) => $owner
+                ->whereNotNull('users.group_role')
+                ->whereNotNull('users.hotel_group_id')
+                ->whereColumn('hotels.hotel_group_id', 'users.hotel_group_id'))
+            ->orWhere(fn (Builder $other) => $other
+                ->where(fn (Builder $notOwner) => $notOwner
+                    ->whereNull('users.group_role')
+                    ->orWhereNull('users.hotel_group_id'))
+                ->where(fn (Builder $own) => $own
+                    ->whereColumn('hotels.id', 'users.hotel_id')
+                    ->orWhereExists(DB::table('hotel_user')
+                        ->select(DB::raw(1))
+                        ->whereColumn('hotel_user.hotel_id', 'hotels.id')
+                        ->whereColumn('hotel_user.user_id', 'users.id')))));
+    }
+
+    /**
+     * account(withTrashed: true) in SQL: the direct link when there is one,
+     * otherwise the account of the home hotel, soft-deleted or not.
+     */
+    private static function inSuspendedAccount(Builder $query): void
+    {
+        $suspended = HotelGroup::withTrashed()->whereNotNull('suspended_at')->select('id');
+
+        $query
+            ->whereIn('users.hotel_group_id', $suspended)
+            ->orWhere(fn (Builder $viaHome) => $viaHome
+                ->whereNull('users.hotel_group_id')
+                ->whereIn('users.hotel_id', Hotel::withTrashed()->whereIn('hotel_group_id', $suspended)->select('id')));
     }
 
     public function whatsappDevice()

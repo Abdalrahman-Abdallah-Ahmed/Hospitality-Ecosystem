@@ -36,6 +36,9 @@ dataset('administration routes', [
     'change access' => ['PUT', '/users/{user}/access'],
     'send reset' => ['POST', '/users/{user}/password-reset'],
     'revoke tokens' => ['POST', '/users/{user}/revoke-tokens'],
+    'dashboard counts' => ['GET', '/dashboard/counts'],
+    'dashboard usage' => ['GET', '/dashboard/usage'],
+    'dashboard activity' => ['GET', '/dashboard/activity'],
 ]);
 
 /**
