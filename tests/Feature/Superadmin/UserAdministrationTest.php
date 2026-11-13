@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\MeterFeature;
 use App\Enums\UserRole;
 use App\Models\EventLog;
 use App\Models\Hotel;
 use App\Models\HotelGroup;
 use App\Models\StaffRole;
 use App\Models\Team;
+use App\Models\UsageCounter;
 use App\Models\User;
 use App\Models\WhatsAppDevice;
 use App\Notifications\UserInvitationNotification;
@@ -19,6 +21,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 /*
 | Spec 023: user administration and reset access under /api/superadmin.
@@ -703,4 +706,131 @@ it('records one event per access change, and none when nothing changes', functio
     $event = EventLog::withoutGlobalScopes()->where('event_type', 'platform.user.access_changed')->sole();
     expect($event->changes['role'])->toBe(['from' => 'employee', 'to' => 'admin'])
         ->and($event->hotel_id)->toBeNull();
+});
+
+// Deleting a user (spec 028): the hotel route is closed to a super admin's own
+// token, and an impersonation session can't delete users.
+
+it('deletes a user for good, revoking every token and recording who was removed', function () {
+    $account = userAccount();
+    $hotel = userHotel($account);
+    $user = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id, 'name' => 'Leaving', 'email' => 'leaving@example.com']);
+    $user->createToken('api-token');
+    $user->createToken('api-token');
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    $this->withHeaders(apiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->deleteJson("/api/superadmin/users/{$user->id}")
+        ->assertOk()
+        ->assertJsonPath('message', 'User deleted successfully.');
+
+    $event = EventLog::withoutGlobalScopes()->where('event_type', 'platform.user.deleted')->sole();
+
+    expect(User::find($user->id))->toBeNull()
+        ->and(PersonalAccessToken::where('tokenable_id', $user->id)->count())->toBe(0)
+        ->and($event->subject_id)->toBe($user->id)
+        ->and($event->actor_id)->toBe($superAdmin->id)
+        ->and($event->hotel_id)->toBeNull()
+        ->and($event->changes['name'])->toBe(['from' => 'Leaving', 'to' => null])
+        ->and($event->changes['email'])->toBe(['from' => 'leaving@example.com', 'to' => null])
+        ->and($event->changes['role'])->toBe(['from' => 'employee', 'to' => null])
+        ->and($event->changes['hotel_id'])->toBe(['from' => $hotel->id, 'to' => null])
+        ->and($event->context['tokens_revoked'])->toBe(2);
+});
+
+it('frees the user\'s seat when they are deleted', function () {
+    $account = userAccount();
+    $hotel = userHotel($account);
+    $user = User::factory()->create(['hotel_id' => $hotel->id]);
+    $seats = fn () => (int) UsageCounter::where('hotel_group_id', $account->id)->where('feature_code', MeterFeature::USERS->value)->value('used');
+    $before = $seats();
+
+    userAdmin($this)->deleteJson("/api/superadmin/users/{$user->id}")->assertOk();
+
+    expect($seats())->toBe($before - 1);
+});
+
+it('treats a super admin as not found, and changes nothing', function () {
+    $target = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    userAdmin($this)->deleteJson("/api/superadmin/users/{$target->id}")->assertNotFound();
+    userAdmin($this)->deleteJson('/api/superadmin/users/'.Str::uuid())->assertNotFound();
+
+    expect(User::find($target->id))->not->toBeNull();
+});
+
+it('refuses to delete an account owner until their owner role is cleared', function () {
+    $account = userAccount();
+    $hotel = userHotel($account);
+    $owner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id, 'hotel_group_id' => $account->id, 'group_role' => 'owner']);
+
+    userAdmin($this)->deleteJson("/api/superadmin/users/{$owner->id}")
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Transfer ownership first: clear this user\'s owner role, then delete them.');
+
+    expect($owner->fresh()->isOwner())->toBeTrue()
+        ->and(EventLog::withoutGlobalScopes()->where('event_type', 'platform.user.deleted')->count())->toBe(0);
+
+    userAdmin($this)->putJson("/api/superadmin/users/{$owner->id}/access", ['group_role' => null])->assertOk();
+    userAdmin($this)->deleteJson("/api/superadmin/users/{$owner->id}")->assertOk();
+
+    expect(User::find($owner->id))->toBeNull();
+});
+
+it('refuses a hotel admin, and ends an impersonation session for the deleted user', function () {
+    $hotel = userHotel(userAccount());
+    $admin = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $hotel->id]);
+    $user = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
+
+    app('auth')->forgetGuards();
+    $this->withHeaders(apiHeaders())->actingAs($admin, 'sanctum')
+        ->deleteJson("/api/superadmin/users/{$user->id}")
+        ->assertForbidden();
+
+    $token = impersonationTokenFor($this, User::factory()->role(UserRole::SUPER_ADMIN)->create(), $user);
+    app('auth')->forgetGuards();
+    userAdmin($this)->deleteJson("/api/superadmin/users/{$user->id}")->assertOk();
+
+    app('auth')->forgetGuards();
+    $this->getJson('/api/user', [...apiHeaders(), 'Authorization' => 'Bearer '.$token])->assertUnauthorized();
+});
+
+// SC-003: a super admin's whole support flow, without one hotel route.
+
+it('takes a super admin from login to a hotel user\'s view and back, through /api/superadmin only', function () {
+    $hotel = userHotel(userAccount());
+    $role = StaffRole::create(['hotel_id' => $hotel->id, 'name' => 'Desk', 'permissions' => []]);
+    $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Front office']);
+    $user = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create(['password' => Hash::make('secret-password')]);
+
+    $called = [];
+    $bearer = apiHeaders();
+    $own = function (string $method, string $uri, array $body = []) use (&$called, &$bearer) {
+        $called[] = $uri;
+        app('auth')->forgetGuards();
+
+        return $this->json($method, $uri, $body, $bearer);
+    };
+
+    $token = $own('POST', '/api/login', ['email' => $superAdmin->email, 'password' => 'secret-password'])->assertOk()->json('body.token');
+    app('auth')->guard('web')->logout();
+    $bearer = [...apiHeaders(), 'Authorization' => 'Bearer '.$token];
+
+    $own('GET', '/api/user')->assertOk()->assertJsonPath('body.role', 'super_admin');
+    expect($own('GET', "/api/superadmin/hotels/{$hotel->id}/staff-roles")->assertOk()->json('body.data.*.id'))->toBe([$role->id]);
+    expect($own('GET', "/api/superadmin/hotels/{$hotel->id}/teams")->assertOk()->json('body.data.*.id'))->toContain($team->id);
+    $own('PUT', "/api/superadmin/users/{$user->id}/access", ['staff_role_id' => $role->id, 'team_id' => $team->id])->assertOk();
+    $session = $own('POST', "/api/superadmin/users/{$user->id}/impersonate")->assertOk()->json('body.token');
+
+    app('auth')->forgetGuards();
+    $this->getJson('/api/user', [...apiHeaders(), 'Authorization' => 'Bearer '.$session])
+        ->assertOk()
+        ->assertJsonPath('body.id', $user->id)
+        ->assertJsonPath('body.staff_role_id', $role->id);
+
+    $own('POST', '/api/logout')->assertOk();
+
+    expect(collect($called)->reject(fn (string $uri) => str_starts_with($uri, '/api/superadmin/') || in_array($uri, ['/api/login', '/api/user', '/api/logout'], true))->all())
+        ->toBe([]);
 });

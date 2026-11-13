@@ -96,6 +96,17 @@ class UserController extends Controller
     }
 
     /**
+     * The only way to delete a user since the hotel route was closed to a super
+     * admin's own token (spec 028).
+     */
+    public function destroy(User $user): JsonResponse
+    {
+        $this->users->delete($this->administrable($user));
+
+        return apiResponse('User deleted successfully.');
+    }
+
+    /**
      * Super admins are outside this administration: to these endpoints they
      * don't exist.
      */
