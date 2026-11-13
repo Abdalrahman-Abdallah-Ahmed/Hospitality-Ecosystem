@@ -1,6 +1,26 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 2.2.1 → 3.0.0
+Bump rationale: MAJOR — redefinition of a NON-NEGOTIABLE principle. IV no longer requires
+"administrative bypass behavior" to be preserved for Super Admin: a Super Admin's own
+credentials MUST NOT reach hotel endpoints, no code MAY grant them a bypass on hotel data,
+and they reach a hotel only through time-limited, audited impersonation. The Hotel Admin's
+full access within its scope is kept and named explicitly. Decided in the super admin
+platform design (Goal 8, Alternative G) and found by /speckit-analyze C1 on
+specs/028-superadmin-hotel-lockout.
+
+Modified principles: IV. Permission-Based Authorization (title unchanged; bypass rule and
+Super Admin access redefined).
+Modified sections: Domain Model and Product Constraints → Conversations and Guest Memories
+(full conversation visibility: Hotel Admin, or a Super Admin impersonating one).
+Added sections: none. Removed sections: none.
+Templates: not modified (they read the constitution at runtime).
+Follow-up (outside this command): specs/028-superadmin-hotel-lockout/plan.md Constitution
+Check row IV cites v3.0.0; CLAUDE.md "Access control" is updated by that feature (task T040).
+Deferred TODOs: none.
+
+Previous (2.2.1) report follows.
 Version change: 2.2.0 → 2.2.1
 Bump rationale: PATCH — clarification in "API Design": an endpoint whose purpose is to
 deliver a file may return the binary on success; errors still use apiResponse(). This
@@ -154,10 +174,18 @@ Implementation MUST:
 ### IV. Permission-Based Authorization (NON-NEGOTIABLE)
 
 - Authorization MUST be permission-based (`App\Enums\Permission`), not role-name based.
-  The existing permission architecture, hotel-specific staff roles, policies, and
-  administrative bypass behavior MUST be preserved.
+  The existing permission architecture, hotel-specific staff roles, and policies MUST be
+  preserved, including the Hotel Admin's full access within its administrative scope.
 - Hotel Admin has full access within its administrative scope; staff access is determined by
-  assigned permissions; Super Admin has platform-level access.
+  assigned permissions.
+- Super Admin has platform-level access through the super admin area (`/api/superadmin`)
+  only. A Super Admin's own credentials MUST NOT reach hotel endpoints, and no policy,
+  controller, tool or resource MAY grant a Super Admin a bypass on hotel data. A Super Admin
+  reaches a hotel's data and screens only through time-limited, audited impersonation of a
+  hotel user, which acts with that user's permissions and hotels.
+  Rationale: one audited way into a hotel, with the user's real view, instead of an
+  unrestricted cross-hotel identity whose writes name nobody it acted for (Principle III,
+  Principle VI; docs/designs/super-admin-platform.md, Stage 6).
 - Every new protected operation MUST have an explicit authorization path (policy via
   `ChecksPermissions::allows()` or an equivalent permission check).
 - AI MUST use the same authorization model as human actors and MUST NOT bypass permissions
@@ -358,7 +386,8 @@ Implementation MUST:
 - Conversation search is post-MVP. When built, it MUST support, where applicable, guest,
   phone number, date, reservation, and keyword, within hotel and authorization boundaries.
   For MVP, conversations remain in the `laravel/ai` conversation tables.
-- Full guest WhatsApp conversation visibility is restricted to Hotel Admin and Super Admin.
+- Full guest WhatsApp conversation visibility is restricted to Hotel Admin (and a Super Admin
+  impersonating one, Principle IV).
   Regular staff MUST NOT automatically receive it; the permission model SHOULD make this
   access explicit and extensible.
 - Guest memories hold durable information (preferences, communication preferences,
@@ -535,4 +564,4 @@ These rules MUST NOT be violated without an explicit, recorded architectural dec
   verify adherence to the Core Principles and Non-Negotiable Rules. Complexity or deviation
   MUST be justified in the plan's Complexity Tracking section.
 
-**Version**: 2.2.1 | **Ratified**: 2026-09-22 | **Last Amended**: 2026-10-27
+**Version**: 3.0.0 | **Ratified**: 2026-09-22 | **Last Amended**: 2026-11-09
