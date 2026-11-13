@@ -36,7 +36,6 @@ class UnassignedArrivalsRequest extends FormRequest
             // default the window checks below never see.
             'from' => ['required_with:to', 'nullable', 'date_format:Y-m-d'],
             'to' => ['required_with:from', 'nullable', 'date_format:Y-m-d'],
-            'hotel_id' => ['sometimes', 'uuid'],
             'sort' => ['sometimes', 'nullable', Rule::in($sorts)],
             'per_page' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'nullable', 'integer', 'min:1'],

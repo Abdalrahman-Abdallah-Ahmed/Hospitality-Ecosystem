@@ -93,7 +93,7 @@ class GetReportTool implements ReadsData, Tool
             'dashboard', 'occupancy' => $user?->hasPermission(Permission::DASHBOARD_VIEW),
             'conversion' => $user?->hasPermission(Permission::RECOMMENDATIONS_VIEW),
             'insights' => $user?->hasPermission(Permission::AI_INSIGHTS_VIEW),
-            'usage' => $user && ($user->isAdmin() || $user->isSuperAdmin()),
+            'usage' => $user?->isAdmin(),
         };
 
         return $allowed ? null : "You do not have permission to see the {$report} report. Nothing was read.";

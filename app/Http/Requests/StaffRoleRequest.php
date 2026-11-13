@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use App\Enums\Permission;
 use App\Models\StaffRole;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -29,7 +28,6 @@ class StaffRoleRequest extends FormRequest
         $updating = $staffRole instanceof StaffRole;
 
         return [
-            'hotel_id' => ['nullable', 'uuid'],
             'name' => [
                 $updating ? 'sometimes' : 'required',
                 'string',
@@ -48,17 +46,10 @@ class StaffRoleRequest extends FormRequest
     }
 
     /**
-     * The hotel a new role will belong to, as the controller resolves it. A
-     * malformed hotel_id is left to its own rule rather than sent to a uuid
-     * column, which Postgres would reject with a query error.
+     * The hotel a new role will belong to, as the controller resolves it.
      */
     private function targetHotelId(): ?string
     {
-        $requested = $this->input('hotel_id');
-
-        return resolveHotel(
-            $this->user(),
-            is_string($requested) && Str::isUuid($requested) ? $requested : null,
-        )?->id;
+        return resolveHotel($this->user())?->id;
     }
 }

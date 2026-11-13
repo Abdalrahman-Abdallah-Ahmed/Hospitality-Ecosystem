@@ -9,9 +9,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * A hotel's own knowledge documents. Always one hotel: a scoped user's own,
- * or the one a super admin names. Global documents never appear here — they
- * are managed from routes/superadmin.php.
+ * A hotel's own knowledge documents: always the hotel the request works in.
+ * Global documents never appear here — they are managed from
+ * routes/superadmin.php.
  */
 class KnowledgeDocumentController extends Controller
 {
@@ -19,21 +19,7 @@ class KnowledgeDocumentController extends Controller
 
     protected function knowledgeScope(Request $request): Hotel|JsonResponse|null
     {
-        $user = $request->user();
-
-        if ($user->isSuperAdmin() && ! $request->filled('hotel_id')) {
-            return apiResponse('A hotel_id is required.', 422);
-        }
-
-        $hotel = resolveHotel($user, $request->input('hotel_id'));
-
-        if ($hotel === null) {
-            return $user->isSuperAdmin()
-                ? apiResponse('Hotel not found.', 404)
-                : apiResponse('You do not belong to any hotel.', 403);
-        }
-
-        return $hotel;
+        return resolveHotel($request->user()) ?? apiResponse('You do not belong to any hotel.', 403);
     }
 
     protected function authorizeKnowledge(string $ability, KnowledgeDocument|string $subject): void

@@ -16,14 +16,6 @@ class ReservationImportPreviewPolicy
 {
     use ChecksPermissions;
 
-    /**
-     * Super admins bypass every ability below.
-     */
-    public function before(User $user, string $ability): ?bool
-    {
-        return $user->isSuperAdmin() ? true : null;
-    }
-
     public function viewAny(User $user): bool
     {
         return $this->allows($user, Permission::RESERVATIONS_IMPORT);

@@ -26,7 +26,6 @@ class ConversationIndexRequest extends FormRequest
             'last_active_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:last_active_from'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 }

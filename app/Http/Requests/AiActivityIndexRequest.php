@@ -47,7 +47,6 @@ class AiActivityIndexRequest extends FormRequest
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 }

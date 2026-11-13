@@ -12,14 +12,6 @@ use App\Models\User;
  */
 class ProactiveMessagePolicy
 {
-    /**
-     * Super admins bypass every ability below.
-     */
-    public function before(User $user, string $ability): ?bool
-    {
-        return $user->isSuperAdmin() ? true : null;
-    }
-
     public function viewAny(User $user): bool
     {
         return $user->isAdmin();

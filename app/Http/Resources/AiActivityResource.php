@@ -9,9 +9,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * One entry in the AI activity list (SPEC-083). Provider cost appears only
- * for super admins, only on ai_run entries, and only when the controller
- * preloaded it (`run_cost_usd`): hotel users never see what the AI cost.
+ * One entry in the AI activity list (SPEC-083). Provider cost never appears:
+ * hotel users don't see what the AI cost, and super admins read cost through
+ * /api/superadmin/ai-cost (spec 028).
  */
 class AiActivityResource extends JsonResource
 {
@@ -43,9 +43,6 @@ class AiActivityResource extends JsonResource
             $this->mergeWhen($isRun, fn () => [
                 'trigger_kind' => $this->trigger_kind?->value,
                 'usage' => $this->usage,
-            ]),
-            $this->mergeWhen($isRun && $request->user()?->isSuperAdmin(), fn () => [
-                'cost_usd' => $this->run_cost_usd !== null ? round((float) $this->run_cost_usd, 6) : null,
             ]),
             'occurred_at' => $this->occurred_at?->toIso8601String(),
         ];

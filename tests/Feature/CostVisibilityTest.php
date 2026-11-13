@@ -312,8 +312,6 @@ it('lets only the cost-owning classes touch cost data', function () {
         'app/Listeners/RecordAiUsage.php',
         'app/Services/Metering/AiUsageSummary.php', // counts and tokens only
         'app/Http/Controllers/Superadmin/',         // super-admin stack
-        'app/Http/Controllers/AiActivityController.php', // run cost, super admins only
-        'app/Http/Resources/AiActivityResource.php',
         'app/Models/',
         'app/Exceptions/AiSpendCeilingExceededException.php',
     ];
@@ -496,12 +494,10 @@ it('still shows super admins the cost and the model', function () {
 
     expect($cost)->toContain('sentinel-model-x9')->toContain('987.65');
 
-    $activity = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->getJson('/api/ai-activity?hotel_id='.$seed['hotel']->id)
-        ->assertOk()
-        ->getContent();
-
-    expect($activity)->toContain('cost_usd');
+    // Run cost is no longer shown on the hotel route, where a super admin's own
+    // token is refused (spec 028); /api/superadmin/ai-cost is where it lives.
+    assertSuperAdminRefused($this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
+        ->getJson('/api/ai-activity?hotel_id='.$seed['hotel']->id));
 });
 
 it('redacts ceiling amounts already stored on failed knowledge documents', function () {

@@ -43,7 +43,7 @@ class AccountUsageController extends Controller
         // represent the customer, so this is not theirs to read. Group-role
         // holders are included because that role exists precisely to grant
         // account-wide standing.
-        if (! $user->isAdmin() && ! $user->isSuperAdmin() && ! $user->group_role) {
+        if (! $user->isAdmin() && ! $user->group_role) {
             return apiResponse('This action is unauthorized.', 403);
         }
 

@@ -52,16 +52,11 @@ function invalidRelation(Hotel $hotel, array $relations): ?string
 }
 
 /**
- * The hotel a create endpoint should attach a new record to: a scoped
- * admin always gets their own hotel (whatever hotel_id they submitted is
- * ignored), while a super admin has no hotel of their own and must
- * explicitly choose one via the submitted hotel_id.
+ * The hotel the request works in, which a new record is attached to. A
+ * submitted hotel_id is never used. A super admin never gets here: their own
+ * token is refused on the hotel routes (spec 028).
  */
-function resolveHotel(User $user, ?string $requestedHotelId = null): ?Hotel
+function resolveHotel(User $user): ?Hotel
 {
-    if ($user->isSuperAdmin()) {
-        return $requestedHotelId ? Hotel::find($requestedHotelId) : null;
-    }
-
     return $user->hotel;
 }

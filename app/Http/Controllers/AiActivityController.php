@@ -2,11 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\AiActivityCategory;
 use App\Http\Requests\AiActivityIndexRequest;
 use App\Http\Resources\AiActivityResource;
 use App\Models\AiActivity;
-use App\Models\AiUsageLog;
 use App\Models\EventLog;
 use App\Models\Guest;
 use App\Models\User;
@@ -14,7 +12,6 @@ use App\Support\Audit\HistorySubjects;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Collection;
 
 /**
  * Everything the AI did for the hotel, in one list (SPEC-083 FR-025): runs,
@@ -27,8 +24,8 @@ class AiActivityController extends Controller
     {
         $this->authorize('viewAny', EventLog::class);
 
-        $hotel = resolveHotel($request->user(), $request->input('hotel_id'))
-            ?? abort(422, 'Choose a hotel (hotel_id) to read its AI activity.');
+        $hotel = resolveHotel($request->user())
+            ?? abort(403, 'You must belong to a hotel.');
         $timezone = $hotel->timezone ?: 'UTC';
 
         $page = AiActivity::query()
@@ -50,28 +47,6 @@ class AiActivityController extends Controller
             ->orderByDesc('id')
             ->paginate($request->integer('per_page', 25));
 
-        if ($request->user()->isSuperAdmin()) {
-            $this->attachRunCosts($page->getCollection());
-        }
-
         return apiResponse('AI activity fetched successfully.', 200, AiActivityResource::collection($page));
-    }
-
-    /**
-     * What each run on the page cost, in one query, for super admins only.
-     *
-     * @param  Collection<int, AiActivity>  $activities
-     */
-    private function attachRunCosts($activities): void
-    {
-        $runIds = $activities->filter(fn (AiActivity $activity) => $activity->category === AiActivityCategory::AI_RUN)->pluck('id');
-
-        $costs = AiUsageLog::query()
-            ->whereIn('ai_run_id', $runIds)
-            ->groupBy('ai_run_id')
-            ->selectRaw('ai_run_id, SUM(cost_usd) AS cost')
-            ->pluck('cost', 'ai_run_id');
-
-        $activities->each(fn (AiActivity $activity) => $activity->setAttribute('run_cost_usd', $costs[$activity->id] ?? null));
     }
 }

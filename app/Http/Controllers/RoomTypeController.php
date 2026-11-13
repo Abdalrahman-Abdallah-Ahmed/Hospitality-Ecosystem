@@ -43,9 +43,9 @@ class RoomTypeController extends Controller
             unset($validated['is_active']);
         }
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $roomType = new RoomType([...$validated, 'hotel_id' => $hotel->id]);

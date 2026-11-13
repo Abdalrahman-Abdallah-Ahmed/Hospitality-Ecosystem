@@ -160,7 +160,7 @@ class GuardedTool implements Approvable, Tool
         $user = User::with('staffRole')->find($this->user->id);
 
         $allowed = $user !== null && ($this->adminOnly
-            ? $user->isAdmin() || $user->isSuperAdmin()
+            ? $user->isAdmin()
             : collect($this->permissions)->every(fn (Permission $permission) => $user->hasPermission($permission)));
 
         if ($allowed) {

@@ -25,7 +25,6 @@ class HousekeepingBoardRequest extends FormRequest
             'floor' => ['nullable', 'string', 'max:50'],
             'building' => ['nullable', 'string', 'max:100'],
             'team_id' => ['nullable', 'uuid'],
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 }

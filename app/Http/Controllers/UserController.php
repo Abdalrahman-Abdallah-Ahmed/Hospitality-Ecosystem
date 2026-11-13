@@ -36,19 +36,15 @@ class UserController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $query = User::with(self::RELATIONS);
+        $hotelId = $request->user()->hotel?->id;
 
-        if (! $request->user()->isSuperAdmin()) {
-            $hotelId = $request->user()->hotel?->id;
+        $query = User::with(self::RELATIONS)->where(function ($inner) use ($hotelId, $request) {
+            $inner->where('id', $request->user()->id);
 
-            $query->where(function ($inner) use ($hotelId, $request) {
-                $inner->where('id', $request->user()->id);
-
-                if ($hotelId) {
-                    $inner->orWhere('hotel_id', $hotelId);
-                }
-            });
-        }
+            if ($hotelId) {
+                $inner->orWhere('hotel_id', $hotelId);
+            }
+        });
 
         $users = GenericQuery::apply($query, $request);
 
@@ -72,19 +68,15 @@ class UserController extends Controller
 
         $validated = $this->assignableAttributes($request);
 
-        if ($request->user()->isSuperAdmin()) {
-            $hotel = ($id = $request->validated()['hotel_id'] ?? null) ? Hotel::find($id) : null;
-        } else {
-            $hotel = $request->user()->hotel;
+        $hotel = $request->user()->hotel;
 
-            if (! $hotel) {
-                return apiResponse('User does not have an associated hotel.', 403);
-            }
+        if (! $hotel) {
+            return apiResponse('User does not have an associated hotel.', 403);
         }
 
         $teamId = $validated['team_id'] ?? null;
 
-        if ($teamId && (! $hotel || invalidRelation($hotel, ['teams' => $teamId]))) {
+        if ($teamId && invalidRelation($hotel, ['teams' => $teamId])) {
             return apiResponse('The selected team does not belong to you.', 403);
         }
 
@@ -94,7 +86,7 @@ class UserController extends Controller
             return apiResponse($error['message'], $error['status']);
         }
 
-        $user = User::create([...$validated, 'hotel_id' => $hotel?->id]);
+        $user = User::create([...$validated, 'hotel_id' => $hotel->id]);
 
         $this->recordStaffRoleAssignment($user, from: null);
 
@@ -126,28 +118,12 @@ class UserController extends Controller
             return apiResponse(self::ADMIN_GRANT_REFUSAL, 403);
         }
 
+        // An owner's role changes only through /api/superadmin, where the
+        // account-wide access that goes with it is handled and audited.
         $changesRole = $request->safe()->has('role') && $request->validated('role') !== $user->role->value;
 
-        if ($changesRole && $user->isOwner() && ! $request->user()->isSuperAdmin()) {
+        if ($changesRole && $user->isOwner()) {
             return apiResponse('An account owner\'s role can only be changed by a super admin.', 403);
-        }
-
-        // A super admin must never know another user's password. Their own is fine.
-        if ($request->user()->isSuperAdmin() && $user->isNot($request->user()) && $request->safe()->has('password')) {
-            return apiResponse('A super admin cannot set another user\'s password. Send a password email instead.', 403);
-        }
-
-        if ($user->isSuperAdmin()) {
-            // Super admins have no hotel or account links.
-            if (array_filter($request->safe()->only(self::ACCOUNT_ATTRIBUTES)) !== []) {
-                return apiResponse('A super admin cannot be linked to a hotel or account.', 403);
-            }
-
-            // Nothing in the API can grant the role back, so a demotion could
-            // not be undone, and the last one would lock out the platform.
-            if ($request->safe()->has('role')) {
-                return apiResponse('A super admin\'s role cannot be changed through the API.', 403);
-            }
         }
 
         $validated = $this->assignableAttributes($request);
@@ -171,28 +147,11 @@ class UserController extends Controller
             $validated['staff_role_id'] = null;
         }
 
-        // accessibleHotelIds() ignores role, so a role left in place would keep
-        // account-wide reach. Only a super admin gets here for an owner.
-        $demotesOwner = $changesRole && $user->group_role !== null;
-
-        if ($demotesOwner) {
-            $validated = [...$validated, 'group_role' => null, 'hotel_group_id' => null];
-        }
-
         $previousStaffRoleId = $user->staff_role_id;
-        $previousAccess = $user->only(['role', 'group_role', 'hotel_group_id']);
 
         $user->update($validated);
 
         $this->recordStaffRoleAssignment($user, from: $previousStaffRoleId);
-
-        // Account-wide access was removed, which /api/superadmin/users/{id}/access
-        // audits as a platform event. The same change made here is too.
-        if ($demotesOwner) {
-            EventLogger::recordPlatform('platform.user.access_changed', $user, collect($previousAccess)
-                ->map(fn ($from, string $key) => ['from' => EventLogger::normalize($from), 'to' => EventLogger::normalize($user->getAttribute($key))])
-                ->all());
-        }
 
         return apiResponse('User updated successfully.', 200, UserResource::make($user->load(self::RELATIONS)));
     }
@@ -226,7 +185,7 @@ class UserController extends Controller
 
     /**
      * Whether this request would make someone an admin who isn't one, sent by
-     * someone other than the account owner or a super admin. Otherwise an admin
+     * someone other than the account owner. Otherwise an admin
      * could promote an employee, sign in as them, and gain any hotel they are a
      * member of.
      */
@@ -236,8 +195,7 @@ class UserController extends Controller
 
         return $request->validated('role') === UserRole::ADMIN->value
             && ! $target?->isAdmin()
-            && ! $caller->isOwner()
-            && ! $caller->isSuperAdmin();
+            && ! $caller->isOwner();
     }
 
     /**

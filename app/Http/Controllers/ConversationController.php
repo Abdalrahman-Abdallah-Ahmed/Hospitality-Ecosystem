@@ -61,11 +61,11 @@ class ConversationController extends Controller
     }
 
     /**
-     * A hotel user reads their own hotel; a super admin must name one.
+     * The hotel the request works in.
      */
     private function hotel(ConversationIndexRequest $request): Hotel
     {
-        return resolveHotel($request->user(), $request->input('hotel_id'))
-            ?? abort(422, 'Choose a hotel (hotel_id) to read its conversations.');
+        return resolveHotel($request->user())
+            ?? abort(403, 'You must belong to a hotel.');
     }
 }

@@ -20,9 +20,9 @@ class HousekeepingBoardController extends Controller
     {
         $this->authorize('viewAny', Room::class);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $result = $board->for($hotel, [

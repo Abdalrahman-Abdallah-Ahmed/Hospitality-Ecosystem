@@ -30,9 +30,9 @@ class StaffRoleController extends Controller
     {
         $this->authorize('create', StaffRole::class);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $staffRole = StaffRole::create([

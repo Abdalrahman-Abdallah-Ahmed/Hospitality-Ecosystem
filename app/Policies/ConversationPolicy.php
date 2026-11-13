@@ -16,11 +16,6 @@ class ConversationPolicy
 {
     use ChecksPermissions;
 
-    public function before(User $user, string $ability): ?bool
-    {
-        return $user->isSuperAdmin() ? true : null;
-    }
-
     public function viewAny(User $user): bool
     {
         return $this->allows($user, Permission::CONVERSATIONS_VIEW);

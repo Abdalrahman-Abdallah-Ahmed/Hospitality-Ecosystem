@@ -51,7 +51,7 @@ class GetStaffTool implements ReadsData, Tool
             'role' => $user->role?->value,
             'staff_role' => $user->staffRole?->name,
             'team' => $user->team?->name,
-            'permissions' => $user->isAdmin() || $user->isSuperAdmin()
+            'permissions' => $user->isAdmin()
                 ? 'all'
                 : array_map(fn (Permission $permission) => $permission->value, $user->permissions()),
         ]);

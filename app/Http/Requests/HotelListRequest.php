@@ -12,7 +12,7 @@ use App\Http\Requests\Generic\GenericIndexRequest;
 class HotelListRequest extends GenericIndexRequest
 {
     /**
-     * Fails closed: anyone but an admin or super admin gets the short record.
+     * Fails closed: anyone but an admin gets the short record.
      * By role, because hotel settings are deliberately outside the permission
      * enum, so that no staff role can grant them.
      */
@@ -20,7 +20,7 @@ class HotelListRequest extends GenericIndexRequest
     {
         $user = $this->user();
 
-        return $user !== null && ($user->isAdmin() || $user->isSuperAdmin());
+        return $user !== null && $user->isAdmin();
     }
 
     /**

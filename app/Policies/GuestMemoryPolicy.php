@@ -19,12 +19,12 @@ class GuestMemoryPolicy
 
     public function before(User $user, string $ability): ?bool
     {
-        // Not even a super admin writes a memory by hand.
+        // Nobody writes a memory by hand, an admin included.
         if ($ability === 'create' || $ability === 'update') {
             return false;
         }
 
-        return $user->isSuperAdmin() ? true : null;
+        return null;
     }
 
     public function viewAny(User $user, Guest $guest): bool

@@ -7,14 +7,6 @@ use App\Models\User;
 class UserPolicy
 {
     /**
-     * Super admins bypass every ability below.
-     */
-    public function before(User $user, string $ability): ?bool
-    {
-        return $user->isSuperAdmin() ? true : null;
-    }
-
-    /**
      * Determine whether the user can view any models.
      */
     public function viewAny(User $user): bool
@@ -48,7 +40,8 @@ class UserPolicy
 
     /**
      * Determine whether the user can delete the model. An owner is never
-     * deleted from here, by themselves or anyone else, except a super admin.
+     * deleted from here: a super admin deletes users through /api/superadmin,
+     * once the owner role is cleared.
      */
     public function delete(User $user, User $model): bool
     {

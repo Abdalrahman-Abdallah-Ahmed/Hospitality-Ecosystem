@@ -41,7 +41,7 @@ class ReservationImportPreviewController extends Controller
     {
         $this->authorize('create', ReservationImportPreview::class);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
             throw ValidationException::withMessages(['hotel_id' => 'Name a valid hotel to import into.']);
         }

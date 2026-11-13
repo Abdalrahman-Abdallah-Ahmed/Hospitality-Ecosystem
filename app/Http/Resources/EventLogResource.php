@@ -16,7 +16,7 @@ class EventLogResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $trimmed = $this->hidesActorDetails($request);
+        $trimmed = $this->hidesActorDetails();
 
         return [
             'id' => $this->id,
@@ -50,11 +50,12 @@ class EventLogResource extends JsonResource
      * A hotel's staff see who at the platform acted, but not their contact
      * details or IP (spec 027 FR-019c). An actor who no longer exists counts: a
      * deleted super admin can't be told apart from a deleted hotel user. Stored
-     * rows don't change.
+     * rows don't change. Only hotel users read this resource: a super admin's
+     * own token never reaches the history route (spec 028).
      */
-    private function hidesActorDetails(Request $request): bool
+    private function hidesActorDetails(): bool
     {
-        if ($request->user()?->isSuperAdmin() || $this->actor_type !== (new User)->getMorphClass()) {
+        if ($this->actor_type !== (new User)->getMorphClass()) {
             return false;
         }
 

@@ -29,10 +29,9 @@ class StoreVoucherTemplateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:120', static::uniqueName(fn () => resolveHotel($this->user(), $this->input('hotel_id'))?->id)],
+            'name' => ['required', 'string', 'max:120', static::uniqueName(fn () => resolveHotel($this->user())?->id)],
             'language' => ['required', Rule::enum(VoucherLanguage::class)],
             'is_default' => ['sometimes', 'boolean'],
-            'hotel_id' => ['sometimes', 'nullable', 'uuid'],
             ...$this->imageRules(),
         ];
     }
