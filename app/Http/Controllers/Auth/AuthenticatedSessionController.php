@@ -84,16 +84,6 @@ class AuthenticatedSessionController extends Controller
         return apiResponse('Logged out successfully.');
     }
 
-    public function destroy(Request $request)
-    {
-        Auth::guard('web')->logout();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return redirect('/login');
-    }
-
     public function whatsappVerify(Request $request)
     {
         // PHP converts dots in query-string keys to underscores (hub.mode -> hub_mode)
