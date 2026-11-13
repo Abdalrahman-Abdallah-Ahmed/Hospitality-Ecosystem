@@ -4,6 +4,8 @@ This document describes the room management APIs the frontend team should use to
 
 It covers the **admin-facing CRUD endpoints** only (`index`, `store`, `show`, `update`, `destroy`), defined by `App\Http\Controllers\RoomController`.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, so they are served under:
@@ -182,7 +184,7 @@ Notes:
 
 - The room array is at **`body.data`** (flat — this is Laravel's standard paginated resource collection shape, not a raw paginator).
 - Pagination controls (`current_page`, `last_page`, `total`, etc.) are on **`body.meta`**; first/last/prev/next page URLs are on **`body.links`**.
-- `body.room_types` lists the hotel's room types (full room type objects, sorted by name). Send the chosen one's `id` as `room_type_id` on create/update. For a super admin it lists every hotel's types; filter them by `hotel_id` to match the room's hotel.
+- `body.room_types` lists the hotel's room types (full room type objects, sorted by name). Send the chosen one's `id` as `room_type_id` on create/update.
 
 Only `index` changed shape — `store`, `show`, `update`, `destroy` still return a bare [room object](#the-room-object) in `body`, unchanged.
 
@@ -432,7 +434,7 @@ Completing the maintenance task linked to an out-of-order room **never** returns
 
 ## 10. Housekeeping Board
 
-`GET /api/housekeeping/board` — permission `rooms.view`. A super admin passes `hotel_id`.
+`GET /api/housekeeping/board` — permission `rooms.view`.
 
 Query: `housekeeping_status`, `status`, `floor`, `building`, `team_id` (rooms whose open housekeeping task is assigned to that team).
 

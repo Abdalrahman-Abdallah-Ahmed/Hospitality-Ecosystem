@@ -4,6 +4,8 @@ This document describes the guest management APIs the frontend team should use t
 
 It covers the **admin-facing CRUD endpoints** only (`index`, `store`, `show`, `update`, `destroy`), defined by `App\Http\Controllers\GuestController`.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, so they are served under:
@@ -211,14 +213,13 @@ HTTP `422`:
 GET /api/guest/export
 ```
 
-Requires `guests.export` (admins and super admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
+Requires `guests.export` (admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
 
 ### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `format` | string | `csv` (default), `xlsx` or `sql` |
-| `hotel_id` | uuid | Super admin only, and required for them: the hotel to export. Ignored for everyone else |
 | `search`, `sort`, `filter[...]` | | Same as the list |
 | `page`, `per_page` | | Accepted and ignored: the export covers every page |
 
@@ -244,7 +245,7 @@ The SQL format leaves out the internal identity-matching columns `identity_hash`
 
 | Code | When |
 |------|------|
-| `403` | No `guests.export`; or a super admin without a valid `hotel_id` |
+| `403` | No `guests.export` |
 | `422` | Unknown `format`, filter column or sort column (standard validation error shape). Checked after the permission, so a user without it only ever sees `403` |
 | `422` | More records match than the export limit (10,000 by default, `EXPORT_MAX_ROWS`). Nothing is cut short: narrow the filters. Body: `{ "matching": 12345, "max_rows": 10000 }` |
 | `429` | More than 10 exports by this user in the last minute |

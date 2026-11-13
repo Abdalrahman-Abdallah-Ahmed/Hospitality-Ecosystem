@@ -3,6 +3,8 @@
 The question Phase 1 was built to answer: *of the recommendations sent last
 month, how many produced a booking — and what happened to those bookings?*
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Endpoint
 
 `GET /api/analytics/conversion?from=2026-08-01&to=2026-08-31`
@@ -12,7 +14,7 @@ Both parameters optional — `from` defaults to the start of the current month,
 so a booking made in September still counts against an August offer.
 
 Headers: `X-API-KEY`, `Authorization: Bearer …`, `Accept: application/json`.
-Caller's `role` must be `admin` (super admin bypasses), or an employee whose
+Caller's `role` must be `admin`, or an employee whose
 [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md)
 grants `recommendations.view`. Every figure is scoped
 to the caller's own hotel(s).

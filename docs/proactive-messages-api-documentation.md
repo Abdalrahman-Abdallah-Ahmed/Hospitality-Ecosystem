@@ -4,6 +4,8 @@
 a few moments of the stay. This page covers how that works and the log of what it sent, or
 decided not to send.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL and Headers
 
 Same as every tenant endpoint: `X-API-KEY`, `Authorization: Bearer <token>`, `Accept: application/json`.
@@ -62,7 +64,7 @@ still reach them. `START` opts back in. Staff can record it with
 
 ## Who Can Call These Endpoints
 
-Hotel admins and super admins only, like the hotel settings that switch this on. No staff
+Hotel admins only, like the hotel settings that switch this on. No staff
 role grants it. Read-only: rows are written by the system.
 
 ## 1. List Proactive Messages

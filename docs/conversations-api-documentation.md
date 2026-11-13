@@ -7,6 +7,8 @@ through this API. There is no search (post-MVP).
 This dashboard viewer is the **only** place guest message text is shown. The Admin AI can no
 longer read guest messages (see [AI Advisor Chat](ai-advisor-chat-api-documentation.md)).
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL and Headers
 
 Same as every tenant endpoint: `X-API-KEY`, `Authorization: Bearer <token>`, `Accept: application/json`.
@@ -17,7 +19,6 @@ Responses use `{ message, code, body }`.
 - **Hotel admins**, for their own hotel.
 - **Employees** only if their [staff role](staff-roles-api-documentation.md) grants
   `conversations.view`. Employees without a role never get it.
-- **Super admins**, naming the hotel with `hotel_id` (required for them; `422` without it).
 
 Only conversations with **guests of the hotel** are visible. Staff conversations with the
 Admin AI, and conversations of a deleted guest, are never shown.
@@ -32,7 +33,6 @@ Admin AI, and conversations of a deleted guest, are never shown.
 | `last_active_from`, `last_active_to` | Optional, `Y-m-d`, hotel-local, inclusive, on the last message's time |
 | `per_page` | Default 25, max 200 |
 | `page` | 1-indexed |
-| `hotel_id` | Super admin only |
 
 Sorted by last activity, newest first. Opening the list is not recorded in the audit trail.
 
@@ -65,7 +65,6 @@ Sorted by last activity, newest first. Opening the list is not recorded in the a
 | Param | Notes |
 | --- | --- |
 | `page`, `per_page` | The messages, oldest first. Default 50 per page, max 200. |
-| `hotel_id` | Super admin only |
 
 ```json
 {
@@ -106,6 +105,6 @@ conversation id. Turning pages is the same opening and is not recorded again.
 | Case | Code |
 | --- | --- |
 | No `conversations.view` | 403 |
-| Super admin without `hotel_id` | 422 |
+| A caller with no hotel | 403 `You must belong to a hotel.` |
 | Another hotel's conversation, a staff conversation, a deleted guest's, or an unknown id | 404 |
 | `POST`, `PUT` or `DELETE` | 405 |

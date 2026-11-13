@@ -4,6 +4,8 @@ This document describes the reservation management APIs the frontend team should
 
 It covers the **admin-facing CRUD endpoints** only (`index`, `store`, `show`, `update`, `destroy`). It does **not** cover `POST /api/whatsapp-reservation`, which is a separate machine-to-machine ingestion endpoint used by the WhatsApp/AI extraction pipeline, not by the frontend.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, so they are served under:
@@ -48,7 +50,7 @@ Every action is gated by `App\Policies\ReservationPolicy`, on top of the bearer-
 | `index` (list) | The logged-in user's `role` must be `admin`. |
 | `store` (create) | The logged-in user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user must be `admin`, **and** the reservation's `hotel_id` must equal the hotel the user owns. |
-| `import` (bulk upload), import history and reports | `role` must be `admin` (or an employee with `reservations.import`). A super admin passes `hotel_id` — see [§6](#6-import-reservations-bulk-upload). |
+| `import` (bulk upload), import history and reports | `role` must be `admin` (or an employee with `reservations.import`). See [§6](#6-import-reservations-bulk-upload). |
 
 Practical implications for the UI:
 
@@ -347,14 +349,13 @@ HTTP `422`:
 GET /api/reservation/export
 ```
 
-Requires `reservations.export` (admins and super admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
+Requires `reservations.export` (admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
 
 ### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `format` | string | `csv` (default), `xlsx` or `sql` |
-| `hotel_id` | uuid | Super admin only, and required for them: the hotel to export. Ignored for everyone else |
 | `search`, `sort`, `filter[...]` | | Same as the list, including `filter[room_type_id]` and `filter[room_id]` |
 | `page`, `per_page` | | Accepted and ignored: the export covers every page |
 
@@ -378,7 +379,7 @@ One row per reservation: Room Types and Rooms list the live room lines (cancelle
 
 | Code | When |
 |------|------|
-| `403` | No `reservations.export`; or a super admin without a valid `hotel_id` |
+| `403` | No `reservations.export` |
 | `422` | Unknown `format`, filter column or sort column (standard validation error shape). Checked after the permission, so a user without it only ever sees `403` |
 | `422` | More records match than the export limit (10,000 by default, `EXPORT_MAX_ROWS`). Nothing is cut short: narrow the filters. Body: `{ "matching": 12345, "max_rows": 10000 }` |
 | `429` | More than 10 exports by this user in the last minute |
@@ -792,7 +793,6 @@ Two ways to start an import:
 | `date_order` | `day_first` (default) or `month_first`: how `12/09/2025` is read for the whole file |
 | `decimal_mark` | `auto` (default), `dot` or `comma`: how amounts like `25,200` are read (see "Columns") |
 | `dry_run` | boolean, default `false`. Runs every stage except writing |
-| `hotel_id` | **required for a super admin**; ignored for everyone else |
 
 ```bash
 curl -X POST http://your-domain.com/api/reservation/import \
@@ -1035,7 +1035,7 @@ For files whose headers the system doesn't know, or whose header isn't on row 1,
 maps the columns before importing. The file is uploaded once and read only by the server.
 
 **1. Upload**: `POST /api/reservation/import-previews`, `multipart/form-data` with `file`
-(same rules as the direct upload) and, for a super admin, `hotel_id`. **`201`** with the
+(same rules as the direct upload). **`201`** with the
 preview below. An unreadable file is a `422` on `file`, and nothing is stored.
 
 ```json
@@ -1327,7 +1327,7 @@ curl -X DELETE http://your-domain.com/api/reservation/019f9b37-c26b-703f-bd9b-2e
 - Don't use this document for the WhatsApp reservation-creation flow — that's `POST /api/whatsapp-reservation`, unauthenticated (API-key only), and out of scope here.
 - Room status follows who is actually in the room: occupied while any checked-in reservation has it on a live line (every room of a multi-room reservation), freed back to `available` once none does, and `maintenance` left alone. A future booking never frees an occupied room. See [Status Values](#status-values).
 - `reservation_id` is unique per hotel, not across the platform. A row in an import whose code the hotel already uses is skipped with `Reservation id … already exists.`
-- `POST /api/reservation/import` queues an import of an `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB) and returns `202` with an import record. Poll `GET /api/reservation/imports/{id}` until it completes, then read `/rows` or download `/report`. Every row gets an outcome and a reason, re-imports are safe, and `dry_run=1` previews without writing. A super admin passes `hotel_id`. See [§6](#6-import-reservations-bulk-upload).
+- `POST /api/reservation/import` queues an import of an `.xlsx`/`.xls`/`.csv`/`.txt` file (max 5 MB) and returns `202` with an import record. Poll `GET /api/reservation/imports/{id}` until it completes, then read `/rows` or download `/report`. Every row gets an outcome and a reason, re-imports are safe, and `dry_run=1` previews without writing. See [§6](#6-import-reservations-bulk-upload).
 
 ## 8. Room assignment (2026-10-30)
 
@@ -1412,7 +1412,6 @@ Permission: `reservations.assign_room`.
 | `from`, `to` | `Y-m-d`, both or neither; default the hotel's today through 7 days later; at most 31 days |
 | `sort` | `arrival_date` (default), `reservation_code`, `room_type`; prefix `-` for descending |
 | `per_page`, `page` | standard paging (max 100 per page) |
-| `hotel_id` | super admin only |
 
 Lists every live line with no room whose guest has not arrived yet, on `pending`,
 `confirmed` or `checked_in` reservations (a multi-room reservation is checked in once its

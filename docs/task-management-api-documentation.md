@@ -5,6 +5,8 @@ This document describes the **team, task-category, and task** APIs — the three
 Controllers: `App\Http\Controllers\TeamController`, `App\Http\Controllers\TaskCategoryController`, `App\Http\Controllers\TaskController`.
 Policies: `App\Policies\TeamPolicy`, `App\Policies\TaskCategoryPolicy`, `App\Policies\TaskPolicy`.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## The Domain Model, In Order
 
 These three resources are hierarchical. Build the UI to create them in this order:
@@ -45,9 +47,7 @@ Content-Type: application/json
 
 > **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `teams.view`, `teams.create`, `teams.update` (also covers adding a member), `teams.delete`; `task_categories.view`, `.create`, `.update`, `.delete`; `tasks.view`, `.create`, `.update`, `.delete`. Employees without a role have none of these.
 
-All three policies follow the same shape: a `before()` hook lets **`super_admin` bypass every check below, unconditionally**.
-
-| Resource | Action | Rule (non-super-admin) |
+| Resource | Action | Rule |
 | --- | --- | --- |
 | Team | `index`, `create` | `role` must be `admin`. |
 | Team | `show`, `update`, `delete`, add member | `role` must be `admin`, **and** the team's `hotel_id` must equal the caller's own hotel. |
@@ -328,7 +328,7 @@ Same generic params. Filterable/sortable columns: `id`, `hotel_id`, `room_id`, `
 ```
 
 - The task list moved from `body.data` to **`body.data.data`**; pagination fields (`current_page`, `last_page`, `total`, …) moved from `body.*` to **`body.data.*`**.
-- `body.task_categories` is new — the full [task category](#the-task-category-object) list for the caller's hotel (same hotel-scoping rule as `body.data`: a regular admin gets only their own hotel's categories, a super admin gets every category system-wide since they have no hotel of their own). Meant to save a second `GET /api/task-category` call when rendering a task list/board that needs to show or filter by category name — safe to use for a category picker.
+- `body.task_categories` is new — the full [task category](#the-task-category-object) list for the caller's hotel (same hotel-scoping rule as `body.data`: only the caller's own hotel's categories). Meant to save a second `GET /api/task-category` call when rendering a task list/board that needs to show or filter by category name — safe to use for a category picker.
 
 ### 3.2 Create a Task — `POST /api/task`
 
@@ -410,7 +410,7 @@ All fields optional (partial update). `hotel_id` is still forced server-side to 
 - Send only `task_category_id` → it's checked against the task's *existing* `assigned_to_team_id`.
 - Send only `assigned_to_team_id` → the task's *existing* `task_category_id` (if any) is checked against the *new* team, and rejected if it doesn't belong there. You cannot reassign a task to a different team while leaving behind a category that belonged only to the old team — clear or update `task_category_id` in the same request.
 
-Same hotel-ownership and enum-value validation as create applies to whichever fields you include. (`hotel_id` on update is likewise always overwritten with the caller's own hotel, not read from the payload — for a regular admin this can't differ from the task's real hotel anyway, since the policy already required a match to get this far. See [Super Admin Caveats](#super-admin-caveats) for the one case where it matters.)
+Same hotel-ownership and enum-value validation as create applies to whichever fields you include. (`hotel_id` on update is likewise always overwritten with the caller's own hotel, not read from the payload — for a regular admin this can't differ from the task's real hotel anyway, since the policy already required a match to get this far.)
 
 **`created_by_user_id` behaves differently here than on create:** unlike `store` (which now always forces it to the caller's own id — see [create](#32-create-a-task)), `update` still accepts whatever `created_by_user_id` you send, subject to the normal hotel-ownership check. This asymmetry is current backend behavior, not a documentation typo — don't let a client-side form component share validation assumptions between the create and edit forms for this one field.
 
@@ -492,7 +492,7 @@ When an automatic housekeeping or maintenance task has no team, or its team has 
 
 ### 4.6 Maintenance list — `GET /api/maintenance/tasks`
 
-Permission `tasks.view`; a super admin passes `hotel_id`. Tasks assigned to the Maintenance team or in its categories. Generic index parameters (`filter[status]`, `filter[priority]`, `filter[room_id]`, `search`, `sort`, `page`, `per_page`) plus `filter[room_out_of_order]=true|false`. Default order: open first, then `high` → `normal` → `low`, then oldest first.
+Permission `tasks.view`. Tasks assigned to the Maintenance team or in its categories. Generic index parameters (`filter[status]`, `filter[priority]`, `filter[room_id]`, `search`, `sort`, `page`, `per_page`) plus `filter[room_out_of_order]=true|false`. Default order: open first, then `high` → `normal` → `low`, then oldest first.
 
 `body`: `{ "data": [task + { "room": { id, room_number, status, out_of_order: { reason, expected_end_date, overdue } | null }, "reporter": { id, name } | null, "age_hours" }], "meta": { current_page, per_page, total, last_page } }`.
 
@@ -500,20 +500,7 @@ Permission `tasks.view`; a super admin passes `hotel_id`. Tasks assigned to the 
 
 ## Super Admin Caveats
 
-The `before()` bypass on all three policies means a `super_admin` passes every *authorization* check unconditionally. But several of these controllers separately gate on `$request->user()->hotel` for their own business logic, **before** that authorization result is even used for scoping — and a super admin typically has no owned hotel (their `hotel` relation resolves to nothing). The two checks don't agree with each other, so behavior is inconsistent per endpoint. If you're building a super-admin console against these APIs, don't assume "policy allows it" implies "the endpoint will actually let them do it":
-
-| Endpoint | Super admin can actually use it? |
-| --- | --- |
-| `GET /api/team`, `/api/task-category`, `/api/task` (list) | **No** — the query is hardcoded to `where('hotel_id', <caller's hotel>)`, which is `null` for a super admin, so these return an **empty list**, not "everything." |
-| `POST /api/team` | **No** — blocked by the "You do not belong to any hotel." check before the insert. |
-| `PUT /api/team/{id}` | **Yes** — this endpoint never checks `$request->user()->hotel` at all; only the (bypassed) policy gates it. A super admin can rename/edit any hotel's team. |
-| `POST /api/team/{id}/members` | **Yes** — the ownership check uses the *team's* hotel (`$team->hotel`), not the caller's, so it works regardless of the super admin's own hotel. |
-| `DELETE /api/team/{id}` | **Yes** — no hotel check in the controller, only the (bypassed) policy. Still subject to the empty-team FK restriction above. |
-| `POST /api/task-category`, `POST /api/task` | **No** — same "You do not belong to any hotel." block as Team's create. |
-| `PUT /api/task-category/{id}`, `PUT /api/task/{id}` | **No** — these two, unlike Team's update, *do* check `$request->user()->hotel` and block with the same 403 if it's empty. A super admin cannot edit any task or task category through these endpoints as of this writing. |
-| `DELETE /api/task-category/{id}`, `DELETE /api/task/{id}` | **Yes** — no hotel check, only the (bypassed) policy. |
-
-If a super-admin "manage everything across all hotels" screen is in scope, confirm with the backend team which of these gaps are being fixed first — as of this writing, a super admin can delete a task category, edit a team, and add a team member on any hotel, but cannot list, create, or edit tasks/task-categories, or create/list teams.
+None since spec 028 (2026-11-10): a super admin's own token gets `403` on every endpoint here, and the policy bypass this section described is gone. A super admin works on a hotel's teams, task categories and tasks through an [impersonation session](superadmin-impersonation-api-documentation.md).
 
 ---
 

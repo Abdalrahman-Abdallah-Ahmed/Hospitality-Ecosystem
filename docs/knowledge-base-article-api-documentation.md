@@ -8,11 +8,13 @@ It covers `index`, `store`, `show`, `update`, and `destroy` — all five standar
 
 > **Breaking change (2026-10-07, SPEC-008):** these routes now always act on **one hotel's** articles. Global articles (`hotel_id = null`, read by every hotel's assistant) moved to the super-admin area: [`/api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles). On these routes:
 >
-> - a super admin **must** send `hotel_id` on `index` (query string) and `store` (body); without it the answer is `422 A hotel_id is required.` The article is created for that hotel.
+> - a super admin no longer sends `hotel_id` here: since spec 028 their own token gets `403` on these routes.
 > - a global article is a `404` on `show`, `update` and `destroy`, for every caller.
 > - hotel admins and employees see no change.
 >
 > Search results built from articles now carry citations (`scope`, `title`, `last_updated`) — see the [knowledge document API](/D:/Hospitality%20Ecosystem/docs/knowledge-document-api-documentation.md#how-the-ai-uses-documents).
+
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
 
 ## Base URL
 
@@ -49,19 +51,19 @@ Notes:
 
 > **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `knowledge_base_articles.view` (index, show), `.create`, `.update`, `.delete`. Employees without a role have none of these.
 
-Every action is gated by `App\Policies\KnowledgeBaseArticlePolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
+Every action is gated by `App\Policies\KnowledgeBaseArticlePolicy`.
 
-| Action | Rule (non-super-admin) | Super admin |
-| --- | --- | --- |
-| `index` (list) | The user's `role` must be `admin`. | Allowed. |
-| `show` (view one) | The user must be `admin`, **and** the article's `hotel_id` must equal the hotel the user owns. | Allowed for any hotel's article. |
-| `store` (create) | The user's `role` must be `admin`, **and** they must have an associated hotel (see below). | Allowed, but see the same associated-hotel caveat under [Create](#2-create-a-knowledge-base-article). |
-| `update` / `destroy` | The user must be `admin`, **and** the article's `hotel_id` must equal the hotel the user owns. | Allowed for any hotel's article. |
+| Action | Rule |
+| --- | --- |
+| `index` (list) | The user's `role` must be `admin`. |
+| `show` (view one) | The user must be `admin`, **and** the article's `hotel_id` must equal the hotel the user owns. |
+| `store` (create) | The user's `role` must be `admin`, **and** they must have an associated hotel (see below). |
+| `update` / `destroy` | The user must be `admin`, **and** the article's `hotel_id` must equal the hotel the user owns. |
 
 Practical implications for the UI:
 
 - A non-admin user should never reach this screen; treat a `403` here as "shouldn't be on this page."
-- `index` is additionally query-scoped to the caller's own hotel for regular admins (see below) — a super admin's scoping is different, see the caveat there.
+- `index` is additionally query-scoped to the caller's own hotel (see below).
 - A `403` on `show`/`update`/`destroy` for a specific article id most likely means it belongs to a different hotel — treat it like a 404.
 
 ## Response Format
@@ -146,7 +148,7 @@ All optional:
 
 `filter`/`sort` are validated against the `knowledge_base_articles` table's real columns; an unknown key returns a `422`.
 
-**Scoping behavior:** a regular admin or employee sees only their own hotel's articles. A super admin must name the hotel with `?hotel_id=…` (`422` without it) and sees that hotel's articles. Global articles are never listed here — use [`GET /api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
+**Scoping behavior:** an admin or employee sees only their own hotel's articles. Global articles are never listed here — use [`GET /api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
 
 ### Success Response
 
@@ -198,7 +200,7 @@ HTTP `422`:
 
 **Important — `hotel_id` is always server-resolved, never client-supplied:** the backend ignores whatever you send and overwrites it with `<the caller's own hotel>`. Simplest correct behavior: don't include `hotel_id` in the request body at all.
 
-**Important — hotel association depends on role:** a regular admin without a hotel gets the same `403` as always. **A super admin must send `hotel_id`** and the article is created for that hotel (`422` without it, `404` for an unknown hotel). Global articles are created only through [`POST /api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
+**Important — the caller must have a hotel:** an admin without a hotel gets `403`. Global articles are created only through [`POST /api/superadmin/knowledge-base-articles`](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md#global-articles).
 
 **Backend note on `status` (not a frontend contract concern, but worth knowing):** only `status: "published"` articles are embedded and made searchable for the AI assistant; a `draft` article is not. This is enforced correctly — creating a draft does not trigger embedding generation.
 
@@ -269,7 +271,7 @@ HTTP `200 OK`. `body` is the [article object](#the-knowledge-base-article-object
 
 ### Error: Not Found / Wrong Hotel
 
-`404` if the id doesn't exist. `403` (Laravel's default authorization-failure shape) if the article belongs to a different hotel than the caller's — treat this the same as a 404 in the UI. Super admins bypass this entirely.
+`404` if the id doesn't exist. `403` (Laravel's default authorization-failure shape) if the article belongs to a different hotel than the caller's — treat this the same as a 404 in the UI.
 
 ## 4. Update a Knowledge Base Article
 
@@ -314,7 +316,7 @@ HTTP `403` for a regular admin whose own hotel doesn't match the article's hotel
 { "message": "This action is unauthorized." }
 ```
 
-Treat this the same as a 404 in the UI. Super admins bypass this entirely.
+Treat this the same as a 404 in the UI.
 
 ## 5. Delete a Knowledge Base Article
 
@@ -338,7 +340,7 @@ HTTP `200 OK`:
 
 ### Error: Not Found / Wrong Hotel
 
-Same as [update](#4-update-a-knowledge-base-article): `404` if the id doesn't exist, `403` if it belongs to a different hotel (bypassed for super admins).
+Same as [update](#4-update-a-knowledge-base-article): `404` if the id doesn't exist, `403` if it belongs to a different hotel.
 
 ## Validation Errors
 
@@ -414,8 +416,8 @@ curl -X DELETE http://your-domain.com/api/knowledge-base-articles/019facde-2222-
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - Unlike hotel policies, a single-resource `GET /api/knowledge-base-articles/{id}` exists — use it for the detail/edit view instead of relying on the list row.
 - Never send `hotel_id` on create or update — it's always forced server-side and any value you send is silently ignored (not rejected, not applied).
-- `create` requires a regular admin to have an associated hotel; a super admin must send `hotel_id` and creates the article for that hotel.
-- A super admin's `index` needs `?hotel_id=` and returns that hotel's articles. Build the super-admin "manage the global KB" screen against `/api/superadmin/knowledge-base-articles`, not this endpoint.
+- `create` requires an admin to have an associated hotel.
+- Build the super admin "manage the global KB" screen against `/api/superadmin/knowledge-base-articles`; a super admin's own token gets `403` here.
 - `category` **is** enforced server-side to the fixed enum list — safe to build a plain `<select>` around it without extra client-side guarding.
 - `status` is free-text server-side — enforce `draft` / `published` client-side.
 - `DELETE` is soft-delete, not hard-delete.

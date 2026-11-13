@@ -4,7 +4,9 @@ This document describes the user-management APIs, defined by `App\Http\Controlle
 
 It covers `index`, `store`, `show`, `update`, and `destroy` — full CRUD, unlike some other resources in this app (e.g. Hotel Policy has no `show`).
 
-**Do not confuse this with `GET /api/user` (singular).** That's a completely different, unrelated endpoint — "give me the currently authenticated user" — available to any logged-in user regardless of role. Everything in this document is under `/api/users` (plural) and is admin/super-admin only.
+**Do not confuse this with `GET /api/user` (singular).** That's a completely different, unrelated endpoint — "give me the currently authenticated user" — available to any logged-in user regardless of role. Everything in this document is under `/api/users` (plural) and is admin only.
+
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin manages users through [`/api/superadmin/users`](superadmin-accounts-api-documentation.md#users), including `DELETE /api/superadmin/users/{user}`, and reaches a hotel's screens only through an [impersonation session](superadmin-impersonation-api-documentation.md).
 
 ## Base URL
 
@@ -39,20 +41,20 @@ Notes:
 
 ## Who Can Call These Endpoints
 
-Every action is gated by `App\Policies\UserPolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
+Every action is gated by `App\Policies\UserPolicy`.
 
-| Action | Rule (non-super-admin) | Super admin |
-| --- | --- | --- |
-| `index` (list) | The user's `role` must be `admin`. Results are scoped to the hotel the request works in (see below). | Allowed. Sees **every** user in the system, unscoped by hotel. |
-| `show` (view one) | The user must be `admin`, the target's `hotel_id` must equal the hotel the request works in, **and** the target must not be a `super_admin`. | Allowed for any user. |
-| `store` (create) | The user's `role` must be `admin`, **and** they must have a hotel to work in (see [Create](#2-create-a-user)). Cannot create a `super_admin`. Only the account owner can create an `admin`. | Allowed, but must explicitly supply `hotel_id` — see [Create](#2-create-a-user). |
-| `update` / `destroy` | As `show`. Cannot grant the `super_admin` role. Only the account owner can update or delete another `admin`, or promote someone to `admin`, or update or delete an employee who reaches a hotel the acting admin can't. An admin can always view and edit themselves, whichever hotel they work in. Nobody but a super admin can change an owner's role or delete them. | Allowed for any user. A role change on an owner ends their ownership. |
+| Action | Rule |
+| --- | --- |
+| `index` (list) | The user's `role` must be `admin`. Results are scoped to the hotel the request works in (see below). |
+| `show` (view one) | The user must be `admin`, the target's `hotel_id` must equal the hotel the request works in, **and** the target must not be a `super_admin`. |
+| `store` (create) | The user's `role` must be `admin`, **and** they must have a hotel to work in (see [Create](#2-create-a-user)). Cannot create a `super_admin`. Only the account owner can create an `admin`. |
+| `update` / `destroy` | As `show`. Cannot grant the `super_admin` role. Only the account owner can update or delete another `admin`, or promote someone to `admin`, or update or delete an employee who reaches a hotel the acting admin can't. An admin can always view and edit themselves, whichever hotel they work in. Nobody can change an owner's role or delete them here: a super admin does it through [`/api/superadmin/users`](superadmin-accounts-api-documentation.md#users). |
 
-Anyone who is not `admin` or `super_admin` (i.e. `employee`) gets HTTP `403` on **every** route in this document, including `index`. A [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) cannot change this: user management is never grantable to employees.
+Anyone who is not `admin` (an `employee`, or a super admin's own token) gets HTTP `403` on **every** route in this document, including `index`. A [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) cannot change this: user management is never grantable to employees.
 
 Practical implications for the UI:
 
-- A non-admin, non-super-admin user should never reach this screen; treat a `403` here as "shouldn't be on this page."
+- A non-admin user should never reach this screen; treat a `403` here as "shouldn't be on this page."
 - A `403` on `show`/`update`/`destroy` for a specific user id most likely means that user belongs to a different hotel — treat it like a `404`. An owner manages another hotel's staff by choosing that hotel with `X-Hotel-Id`.
 - A `403` on `update`/`destroy` of an **employee** you can see means they are a member of a hotel you can't reach; only the owner, or an admin who reaches all their hotels, can change them.
 - A `403` on `update`/`destroy` of an **admin** you can see means you aren't the account owner. Hide edit and delete on other admins' rows, and the admin choice in the role field, unless the signed-in user has `group_role: "owner"`.
@@ -146,7 +148,7 @@ Field notes for the UI:
 - `hotel_group_id` and `group_role` describe account (hotel group) membership. `group_role` is `owner` or `null`, and an account has at most one owner, who reaches all its hotels. Neither is written through this endpoint — see [Create](#2-create-a-user). A super admin sets them through the [super admin user endpoints](superadmin-accounts-api-documentation.md#users).
 - `hotel`, `team` and `staff_role` are eager-loaded on every response from this controller (`show`, `store`, `update`, and each row in `index`), and on `GET /api/user`. Any of them can be `null` if the matching id is unset.
 - `staff_role_id` / `staff_role` are the employee's [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md), `null` when none is assigned. Always `null` for admins.
-- `permissions` is the user's **effective** permission list: every permission for an admin or super admin, the role's list for an employee with a role, and the defaults for an employee without one. Use it to show or hide UI.
+- `permissions` is the user's **effective** permission list: every permission for an admin (and for a super admin, whose list is reported but used nowhere), the role's list for an employee with a role, and the defaults for an employee without one. Use it to show or hide UI.
 - `hotel` is the full hotel object (`HotelResource`), not a trimmed summary. Its nested `hotel_group` isn't loaded, so that key is absent. With `X-Hotel-Id`, `hotel` is the chosen hotel while `hotel_id` stays the user's home hotel. `team` is `TeamResource` without its `hotel`, `members`, or `task_categories`.
 - Users are **not** soft-deleted — `DELETE` permanently removes the row (see [Delete a User](#5-delete-a-user)).
 
@@ -170,7 +172,7 @@ All optional:
 
 `filter`/`sort` are validated against the `users` table's real columns; an unknown key returns a `422`.
 
-**Scoping:** for a regular admin, the query returns only users whose `hotel_id` matches the admin's own hotel, **plus the admin's own record** (belt-and-suspenders — see [Who Can Call These Endpoints](#who-can-call-these-endpoints)). For a super admin, the query is entirely unscoped and returns every user in the system.
+**Scoping:** for a regular admin, the query returns only users whose `hotel_id` matches the admin's own hotel, **plus the admin's own record** (belt-and-suspenders — see [Who Can Call These Endpoints](#who-can-call-these-endpoints)).
 
 ### Success Response
 
@@ -246,30 +248,29 @@ HTTP `422`:
 
 | Field | Rules |
 | --- | --- |
-| `hotel_id` | **Do not send this as a regular admin** — see below. A super admin must send it explicitly. |
+| `hotel_id` | **Do not send it** — see below. |
 | `name` | required, string, max 255. |
 | `email` | required, string, max 255, must be unique across all users. |
 | `password` | required, string, max 255. Hashed automatically — **do not** pre-hash it client-side. Unlike `POST /api/register`, there is **no `password_confirmation` field** on this endpoint. |
 | `phone_number` | optional, string, must be unique across all users if sent. |
-| `role` | optional, `admin` or `employee`. Defaults to `employee` if omitted. `admin` is only for the account owner or a super admin, and `super_admin` is refused for every caller — see below. |
+| `role` | optional, `admin` or `employee`. Defaults to `employee` if omitted. `admin` is only for the account owner, and `super_admin` is refused for every caller — see below. |
 | `hotel_group_id`, `group_role` | Ignored for every caller — see below. |
 | `team_id` | optional, must reference an existing team, and that team must belong to the resolved hotel (see below) — otherwise `403`. |
 | `staff_role_id` | optional, nullable. Must reference a staff role of the resolved hotel — otherwise `403`. Only for employees — see [Staff Roles](#staff-roles). |
 
-**Important — `hotel_id` behaves differently depending on who's calling:**
+**Important — `hotel_id` is never taken from the request:** whatever you send is discarded and overwritten with the hotel the request works in: the one chosen with `X-Hotel-Id`, or the admin's default hotel. Sending a *real* hotel id that isn't yours is silently ignored (the user is still created under your own hotel) — but sending a hotel id that **doesn't exist at all** fails validation first with a `422` (`hotel_id` is checked against `hotels.id` before the controller ever runs). Simplest correct behavior: don't include `hotel_id` in the request body at all.
 
-- **Regular admin:** whatever you send is discarded and overwritten with the hotel the request works in: the one chosen with `X-Hotel-Id`, or the admin's default hotel. Sending a *real* hotel id that isn't yours is silently ignored (the user is still created under your own hotel) — but sending a hotel id that **doesn't exist at all** fails validation first with a `422` (`hotel_id` is checked against `hotels.id` before the controller ever runs). Simplest correct behavior: don't include `hotel_id` in the request body at all.
-- **Super admin:** `hotel_id` is taken directly from what you send. If you omit it, the new user is created with **no hotel at all** (`hotel_id: null`), which is almost certainly wrong for a regular staff member. Always send `hotel_id` explicitly. To onboard a customer, use [the super admin API](superadmin-accounts-api-documentation.md) instead, where the new user sets their own password.
+A super admin creates users through [the super admin API](superadmin-accounts-api-documentation.md), where the new user sets their own password.
 
-**Important — the calling admin must have an associated hotel:** if the logged-in admin has no hotel, the request is rejected before any user is created (see [Error: No Associated Hotel](#error-no-associated-hotel)). This restriction does not apply to super admins.
+**Important — the calling admin must have an associated hotel:** if the logged-in admin has no hotel, the request is rejected before any user is created (see [Error: No Associated Hotel](#error-no-associated-hotel)).
 
-**Important — `team_id` must belong to the same hotel:** if you send `team_id`, the backend checks it against the hotel the user is being created under (the admin's own hotel, or the `hotel_id` a super admin supplied). A team from a different hotel — or any `team_id` at all when there's no hotel context (e.g. a super admin who omitted `hotel_id`) — returns `403`.
+**Important — `team_id` must belong to the same hotel:** if you send `team_id`, the backend checks it against the hotel the user is being created under (the admin's own hotel). A team from a different hotel returns `403`.
 
-**Important — nobody can assign the `super_admin` role:** sending `role: "super_admin"` (on create or update) returns `403` with the message `The super admin role cannot be assigned through the API.` for every caller, super admins included, and nothing is written. Don't offer "Super admin" in any role picker. Super admins come only from the seeder.
+**Important — nobody can assign the `super_admin` role:** sending `role: "super_admin"` (on create or update) returns `403` with the message `The super admin role cannot be assigned through the API.` for every caller, and nothing is written. Don't offer "Super admin" in any role picker. Super admins come only from the seeder.
 
-**Important — account membership isn't written here** (*changed 2026-11-07*): `hotel_group_id` and `group_role` decide which hotels a user can reach. Sent by anyone, super admins included, they are silently dropped, the same way `hotel_id` is; the rest of the request still succeeds. A malformed `group_role` still gets `422`. Account membership goes through the [super admin user endpoints](superadmin-accounts-api-documentation.md#users). Super admins have no hotel or account links, so sending either for a super admin target returns `403` with the message `A super admin cannot be linked to a hotel or account.`
+**Important — account membership isn't written here** (*changed 2026-11-07*): `hotel_group_id` and `group_role` decide which hotels a user can reach. Sent by anyone, they are silently dropped, the same way `hotel_id` is; the rest of the request still succeeds. A malformed `group_role` still gets `422`. Account membership goes through the [super admin user endpoints](superadmin-accounts-api-documentation.md#users). Super admins have no hotel or account links, so sending either for a super admin target returns `403` with the message `A super admin cannot be linked to a hotel or account.`
 
-**Important — only the account owner manages admins** (*2026-11-07*): an admin who isn't the owner gets `403` with `Only the account owner can create or promote an admin.` for `role: "admin"` on create, or as a change on update, and `403` for any update or delete of another admin. Re-sending a user's existing role isn't a change. The owner can edit their own details, but changing their own role returns `403` with `An account owner's role can only be changed by a super admin.`, and deleting themselves returns `403`. An admin who isn't the owner also gets `403` for an update or delete of an employee who is a member of a hotel the admin can't reach, since resetting their password would let the admin sign in there. A super admin changing an owner's role also clears their `group_role` and `hotel_group_id`, recorded as a `platform.user.access_changed` event. A super admin can't set another user's password: `password` on update returns `403` with the message `A super admin cannot set another user's password. Send a password email instead.` Changing their own still works, and so does a hotel admin setting their staff's. A super admin's own role can't be changed either: `role` for a super admin target returns `403` with the message `A super admin's role cannot be changed through the API.`
+**Important — only the account owner manages admins** (*2026-11-07*): an admin who isn't the owner gets `403` with `Only the account owner can create or promote an admin.` for `role: "admin"` on create, or as a change on update, and `403` for any update or delete of another admin. Re-sending a user's existing role isn't a change. The owner can edit their own details, but changing their own role returns `403` with `An account owner's role can only be changed by a super admin.`, and deleting themselves returns `403`. An admin who isn't the owner also gets `403` for an update or delete of an employee who is a member of a hotel the admin can't reach, since resetting their password would let the admin sign in there. An owner's role is changed through `PUT /api/superadmin/users/{user}/access`, and an owner is deleted through `DELETE /api/superadmin/users/{user}` once that role is cleared.
 
 ### Staff Roles
 
@@ -359,7 +360,7 @@ HTTP `403` for a regular admin whose own hotel doesn't match the target user's h
 { "message": "This action is unauthorized." }
 ```
 
-Treat this the same as a `404` in the UI. Super admins bypass this entirely.
+Treat this the same as a `404` in the UI.
 
 **Admins without a hotel:** an admin whose own `hotel_id` is unset manages nobody through `show`/`update`/`destroy` — not even their own record — and gets `403`. (Before 2026-09-13 two hotel-less users "matched" each other, which let such an admin edit super admins.) Use `GET /api/user` for the caller's own profile. A super admin target always returns `403` to a regular admin, even one attached to the same hotel.
 
@@ -384,7 +385,7 @@ Send only the fields you want to change:
 
 Same field-level rules as [create](#validation-rules), except every field is optional, and uniqueness checks (`email`, `phone_number`) ignore the record being updated.
 
-**`hotel_id` can never be changed through this endpoint — for anyone, including super admins.** It is always forced server-side back to the user's existing `hotel_id` before saving. Sending a different `hotel_id` has no effect and produces no error — the request just succeeds as if you hadn't sent it. Simplest correct behavior: don't include `hotel_id` in the request body.
+**`hotel_id` can never be changed through this endpoint, for anyone.** It is always forced server-side back to the user's existing `hotel_id` before saving. Sending a different `hotel_id` has no effect and produces no error — the request just succeeds as if you hadn't sent it. Simplest correct behavior: don't include `hotel_id` in the request body.
 
 **`team_id` is re-validated against the target user's own hotel on every update**, the same way as on create — a team from a different hotel returns `403`. This check runs even if you don't touch `team_id` in this request, using the user's *current* `team_id`; in practice this only matters if the user's hotel and team have somehow drifted out of sync already.
 
@@ -418,7 +419,7 @@ HTTP `200 OK`:
 
 ### Error: Not Found / Wrong Hotel
 
-Same as [update](#4-update-a-user): `404` if the id doesn't exist, `403` if it belongs to a different hotel (bypassed for super admins).
+Same as [update](#4-update-a-user): `404` if the id doesn't exist, `403` if it belongs to a different hotel.
 
 ## Validation Errors
 
@@ -493,15 +494,15 @@ curl -X DELETE http://your-domain.com/api/users/019facde-1111-7000-9000-abcdef12
 
 ## Summary for the Frontend
 
-- `/api/users` (plural, this document) is the admin/super-admin user-management CRUD. `/api/user` (singular) is an unrelated "who am I" endpoint open to any authenticated user — don't conflate the two in routing/permissions logic.
-- Employees (any non-admin, non-super-admin) get `403` on every route here — treat as "not your page," don't render this UI for them at all.
-- `index` scoping differs by role: an admin sees only the users of the hotel the request works in (plus themselves, always); a super admin sees every user in the system.
+- `/api/users` (plural, this document) is the admin user-management CRUD. `/api/user` (singular) is an unrelated "who am I" endpoint open to any authenticated user — don't conflate the two in routing/permissions logic.
+- Employees (any non-admin) and a super admin's own token get `403` on every route here — treat as "not your page," don't render this UI for them at all.
+- `index` scoping differs by role: an admin sees only the users of the hotel the request works in (plus themselves, always).
 - `index`'s pagination metadata is nested under `body.meta` (`current_page`, `last_page`, `total`, `per_page`), not flat on `body`.
 - Every user object carries both the `hotel_id`/`team_id` scalars and the nested `hotel`/`team` objects (either can be `null`).
 - Never send `hotel_id` on **update** — it's always forced server-side and any value you send is silently ignored.
-- On **create**, only a super admin's `hotel_id` is actually used; a regular admin's is always overwritten with their own hotel. A super admin who omits `hotel_id` creates a hotel-less user — make sure your super-admin create form always sends one for regular staff.
+- On **create**, `hotel_id` is never used: the user goes to the hotel the request works in.
 - `team_id` (create and update) must belong to the same hotel the user is/will be in, or you get a `403` with a dedicated message — surface it as a form-level error near the team picker.
-- Nobody can grant `super_admin` through the API; every caller gets `403`. Only the account owner can create or promote an `admin`, or edit or delete another admin. `hotel_group_id` / `group_role` are always ignored, and refused for a super admin target.
+- Nobody can grant `super_admin` through the API; every caller gets `403`. Only the account owner can create or promote an `admin`, or edit or delete another admin. `hotel_group_id` / `group_role` are always ignored.
 - There is no `password_confirmation` field on this endpoint (unlike `/api/register`) — if your form has a "confirm password" field, only send `password` to the API.
 - `DELETE` is a **hard delete** here — no `deleted_at`, no undo. Confirm destructively in the UI.
 - Show a staff role picker only for employees (`staff_role_id`, same hotel, `null` = defaults). Drive the rest of the app's UI from each user's `permissions` array rather than from `role`.

@@ -4,6 +4,8 @@
 agent ran, each change it made or tried to make, and everything the Concierge offered or sent
 a guest. Read-only.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL and Headers
 
 Same as every tenant endpoint: `X-API-KEY`, `Authorization: Bearer <token>`, `Accept: application/json`.
@@ -49,7 +51,6 @@ No entry contains message text, prompts, AI output or memory content — only id
 | `target_type` | `booking`, `stay`, `reservation`, `task`, `room`, `room-type`, `recommendation`, `guest`, `guest-memory`, `ai-insights`, `activity`, `knowledge-base-article`, `transaction`, `proactive-message` |
 | `from`, `to` | `Y-m-d`, hotel-local, inclusive |
 | `per_page`, `page` | Default 25, max 100 |
-| `hotel_id` | Super admin only |
 
 Newest first.
 
@@ -78,8 +79,8 @@ An `ai_run` entry also carries `trigger_kind` (`guest_message`, `staff_request`,
 { "usage": { "requests": 3, "input_tokens": 5120, "output_tokens": 410, "cached_tokens": 2048 } }
 ```
 
-- **Provider cost** (`cost_usd`) is added to `ai_run` entries **for super admins only**. Hotel
-  users never see what the AI cost.
+- **No provider cost.** Entries carry no `cost_usd`: hotel users never see what the AI cost, and
+  a super admin reads it in the [AI cost report](ai-cost-attribution-api-documentation.md) (spec 028).
 - A run stopped by the account's daily AI spend ceiling is `refused` with `reason:
   spend_ceiling` and no usage.
 - `acted_for` is the staff user the AI acted for, the guest for the Concierge, or `null` for
@@ -96,5 +97,5 @@ An `ai_run` entry also carries `trigger_kind` (`guest_message`, `staff_request`,
 | Case | Code |
 | --- | --- |
 | No `history.view` | 403 |
-| Super admin without `hotel_id` | 422 |
+| A caller with no hotel | 403 `You must belong to a hotel.` |
 | `POST` | 405 |

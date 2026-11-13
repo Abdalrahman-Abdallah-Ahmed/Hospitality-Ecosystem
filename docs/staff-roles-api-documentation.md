@@ -8,7 +8,7 @@ Defined by `App\Http\Controllers\StaffRoleController` and `App\Http\Controllers\
 
 | User | What they can do |
 | --- | --- |
-| `super_admin` | Everything, in every hotel. |
+| `super_admin` | Nothing on the hotel routes: their own token gets `403` there (spec 028). They work in `/api/superadmin`, and reach a hotel by impersonating one of its users. |
 | `admin` | Everything in their own hotel. Admins never have a staff role. |
 | `employee` with no staff role | The [default permissions](#default-permissions), which match what every employee could do before staff roles existed. |
 | `employee` with a staff role | **Exactly** the role's permissions. The role replaces the defaults rather than adding to them, so a role without `guests.view` removes guest access. |
@@ -184,7 +184,7 @@ Content-Type: application/json
 
 ## Who Can Call These Endpoints
 
-Every endpoint in this document, including `GET /api/permissions`, is for `admin` (own hotel) and `super_admin` (any hotel). An employee gets `403` whatever their role grants.
+Every endpoint in this document, including `GET /api/permissions`, is for `admin` (own hotel). An employee gets `403` whatever their role grants, and so does a super admin's own token. A super admin lists a hotel's roles through [`GET /api/superadmin/hotels/{hotel}/staff-roles`](superadmin-accounts-api-documentation.md#a-hotels-staff-roles-and-teams) and assigns one through `PUT /api/superadmin/users/{user}/access`; only the hotel's own admins define roles.
 
 ### While Impersonating
 
@@ -269,7 +269,7 @@ Not every group has all four of view/create/update/delete (for example, `transac
 
 `GET /api/staff-roles`
 
-Supports the usual `filter[<column>]`, `search`, `sort` (`-name` for descending), `page` and `per_page` (1–100, default 15). An admin sees only their own hotel's roles; a super admin sees all.
+Supports the usual `filter[<column>]`, `search`, `sort` (`-name` for descending), `page` and `per_page` (1–100, default 15). An admin sees only their own hotel's roles.
 
 HTTP `200`. `body.data` holds [staff role objects](#the-staff-role-object); pagination is under `body.meta` and `body.links`.
 
@@ -290,14 +290,14 @@ HTTP `200`. `body.data` holds [staff role objects](#the-staff-role-object); pagi
 | `name` | required, string, max 255, unique among this hotel's roles. Another hotel may use the same name, and so can a new role after the old one is deleted. |
 | `description` | optional, string. |
 | `permissions` | required but may be empty `[]`; must be a JSON array (not an object) of distinct values from the [permission reference](#permission-reference). An unknown value, for example `users.update`, returns `422`. |
-| `hotel_id` | Ignored for an admin: the role always goes to their own hotel. A super admin must send it. |
+| `hotel_id` | Ignored: the role always goes to the hotel the request works in. |
 
 HTTP `201` with the created staff role.
 
 Errors:
 
 - `422`: validation (duplicate name, unknown or repeated permission, missing `name`).
-- `403` `{ "message": "You must belong to, or specify, a valid hotel.", "code": 403, "body": null }`: an admin with no hotel, or a super admin who didn't send a valid `hotel_id`.
+- `403` `{ "message": "You must belong to a hotel.", "code": 403, "body": null }`: an admin with no hotel.
 
 ## 4. Get a Staff Role
 
@@ -355,7 +355,7 @@ PUT /api/users/{id}
 
 `GET /api/user` (and every user object from `/api/users`) includes `permissions`, the user's **effective** permissions:
 
-- the full list for admins and super admins,
+- the full list for admins and super admins (a super admin's is reported but used nowhere: their own token never reaches a hotel route),
 - the defaults for an employee without a role,
 - the role's list otherwise.
 

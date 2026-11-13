@@ -6,6 +6,8 @@ It covers **four CRUD-style actions** (`index`, `show`, `update`, `destroy`) plu
 
 **There is no `store`/create endpoint.** Recommendations cannot be created directly through this API — the only way a new recommendation comes into existence is via `generate`, which queues an AI agent (`App\Ai\Agents\RecommendationAgent`) that decides what to recommend and writes the rows itself (through an internal tool, not this controller). If you send `POST /api/recommendation`, you'll get a `404` — that route doesn't exist.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, served under `/api`:
@@ -36,9 +38,9 @@ Content-Type: application/json
 
 > **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `recommendations.view` (index, show), `recommendations.update`, `recommendations.delete`, `recommendations.generate`, `recommendations.record_outcome`, and `recommendations.approve` (approve, reject, bulk decide — added 2026-10-10, never an employee default). Employees without a role hold only `recommendations.record_outcome`.
 
-Gated by `App\Policies\RecommendationPolicy`, which has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
+Gated by `App\Policies\RecommendationPolicy`.
 
-| Action | Rule (non-super-admin) |
+| Action | Rule |
 | --- | --- |
 | `index` | The user's `role` must be `admin`. |
 | `show` / `update` / `destroy` | The user's `role` must be `admin`, **and** the recommendation's `hotel_id` must equal the hotel the user owns. |
@@ -288,7 +290,7 @@ None.
 
 ### What Happens Server-Side
 
-1. The reservation is authorized (`view` ability on `Reservation` — same-hotel admin, or super admin).
+1. The reservation is authorized (`view` ability on `Reservation` — same-hotel admin).
 2. `App\Jobs\GenerateActivityRecommendationsJob` is dispatched with that reservation.
 3. When the queue worker processes it, the job loads the reservation's guest and hotel, then runs `RecommendationAgent` scoped to that one guest. The agent looks at party composition (adults/children), room tier, reservation value, recent guest messages, the hotel's available activities, and the knowledge base (for eligibility/policy rules), then decides on up to 3 activities to recommend.
 4. For each one, it creates a `Recommendation` row (`status: pending_approval`, `source: staff_request`) with a `reason` and `predicted_confidence`. Nothing reaches a guest until an approver approves it ([6. Approval](#6-approval)).

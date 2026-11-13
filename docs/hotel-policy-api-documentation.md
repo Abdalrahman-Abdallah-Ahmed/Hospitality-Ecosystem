@@ -6,6 +6,8 @@ A "hotel policy" is a knowledge-base entry attached to a hotel (e.g. a cancellat
 
 It covers `index`, `store`, `update`, and `destroy`. **There is no `show` endpoint** — the route is explicitly excluded (`Route::resource('/hotel-policy', ...)->except(['edit', 'create', 'show'])`), and the policy class has no `view()` method either. Build the detail/edit view from the row you already have in the list, not from a dedicated fetch-by-id call.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, so they are served under:
@@ -40,18 +42,18 @@ Notes:
 
 > **Staff roles (2026-09-15):** an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants the matching permission passes the `admin` checks below, always within their own hotel: `hotel_policies.view`, `hotel_policies.create`, `hotel_policies.update`, `hotel_policies.delete`. Employees without a role have none of these.
 
-Every action is gated by `App\Policies\HotelPolicyPolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
+Every action is gated by `App\Policies\HotelPolicyPolicy`.
 
-| Action | Rule (non-super-admin) | Super admin |
-| --- | --- | --- |
-| `index` (list) | The user's `role` must be `admin`. | Allowed. |
-| `store` (create) | The user's `role` must be `admin`, **and** they must have an associated hotel (see below). | Allowed, but see the same associated-hotel caveat under [Create](#2-create-a-hotel-policy). |
-| `update` / `destroy` | The user must be `admin`, **and** the policy's `hotel_id` must equal the hotel the user owns. | Allowed for any hotel's policy. |
+| Action | Rule |
+| --- | --- |
+| `index` (list) | The user's `role` must be `admin`. |
+| `store` (create) | The user's `role` must be `admin`, **and** they must have an associated hotel (see below). |
+| `update` / `destroy` | The user must be `admin`, **and** the policy's `hotel_id` must equal the hotel the user owns. |
 
 Practical implications for the UI:
 
 - A non-admin user should never reach this screen; treat a `403` here as "shouldn't be on this page."
-- `index` is additionally query-scoped to the caller's own hotel for regular admins (see below) — a super admin's scoping is different, see the caveat there.
+- `index` is additionally query-scoped to the caller's own hotel (see below).
 - A `403` on `update`/`destroy` for a specific policy id most likely means it belongs to a different hotel — treat it like a 404.
 
 ## Response Format
@@ -119,7 +121,7 @@ All optional:
 
 `filter`/`sort` are validated against the hotel_policies table's real columns; an unknown key returns a `422`.
 
-**Scoping caveat:** the query is hardcoded to `where('hotel_id', <the caller's own hotel>)`. For a regular admin this correctly shows only their hotel's policies. **For a super admin, who has no owned hotel, this currently returns an empty list** rather than every policy across every hotel — the `before()` bypass only affects the authorization check, not this query's scoping. If you're building a super-admin "browse all policies" screen, confirm with the backend team whether this has been fixed before relying on it; as of this writing it has not.
+**Scoping:** the query is limited to the hotel the request works in.
 
 ### Success Response
 
@@ -169,7 +171,7 @@ HTTP `422`:
 
 **Important — `hotel_id` is always server-resolved, never client-supplied:** the backend ignores whatever you send and overwrites it with `<the caller's own hotel>`. If you send a `hotel_id` for a different hotel, it is silently discarded — the policy is still created under the caller's own hotel, not the one you specified. Simplest correct behavior: don't include `hotel_id` in the request body at all.
 
-**Important — the caller must have an associated hotel:** if the logged-in admin has no hotel (their `hotel` relation resolves to nothing — which is also always true for a super admin, since this endpoint doesn't distinguish "no hotel" from "is a super admin"), the request is rejected. In practice this means **a super admin currently cannot create a hotel policy through this endpoint** — there is no way for them to specify which hotel it belongs to. If a super-admin "create policy for hotel X" flow is needed, confirm with the backend team; it isn't supported as of this writing.
+**Important — the caller must have an associated hotel:** if the logged-in admin has no hotel, the request is rejected.
 
 ### Success Response
 
@@ -254,7 +256,7 @@ HTTP `403` for a regular admin whose own hotel doesn't match the policy's hotel 
 { "message": "This action is unauthorized." }
 ```
 
-Treat this the same as a 404 in the UI. Super admins bypass this entirely.
+Treat this the same as a 404 in the UI.
 
 ## 4. Delete a Hotel Policy
 
@@ -278,7 +280,7 @@ HTTP `200 OK`:
 
 ### Error: Not Found / Wrong Hotel
 
-Same as [update](#3-update-a-hotel-policy): `404` if the id doesn't exist, `403` if it belongs to a different hotel (bypassed for super admins).
+Same as [update](#3-update-a-hotel-policy): `404` if the id doesn't exist, `403` if it belongs to a different hotel.
 
 ## Validation Errors
 
@@ -345,7 +347,6 @@ curl -X DELETE http://your-domain.com/api/hotel-policy/019facde-1111-7000-9000-a
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
 - There is no single-resource `GET` — build the detail/edit view from the row already loaded in the list.
 - Never send `hotel_id` on create or update — it's always forced server-side and any value you send is silently ignored (not rejected, not applied).
-- `create` requires the caller to have an associated hotel; there is currently no way for a super admin to create a policy for an arbitrary hotel through this endpoint.
-- A super admin's `index` currently returns an **empty list**, not "every policy" — the scoping query doesn't know about super admins even though the authorization check does. Don't build a super-admin "browse all policies" screen against this endpoint without confirming that's fixed.
+- `create` requires the caller to have an associated hotel.
 - `category` is free-text server-side — enforce the fixed category list client-side.
 - `DELETE` is soft-delete, not hard-delete.

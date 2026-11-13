@@ -6,6 +6,8 @@
 
 ---
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Overview
 
 The Room Types API provides endpoints for hotel staff to manage room type inventory. Room types categorize guest accommodations (e.g., Standard, Deluxe, Suite) and serve as the foundation for availability calculations and reservation workflows.
@@ -43,7 +45,7 @@ The Room Types API provides endpoints for hotel staff to manage room type invent
 }
 ```
 
-`hotel_id` is required, as on every other create endpoint. A hotel admin always gets their own hotel whatever id they send; a super admin must name the hotel.
+`hotel_id` is required, as on every other create endpoint. The role always goes to the hotel the request works in, whatever id is sent.
 
 **Response** (201 Created):
 

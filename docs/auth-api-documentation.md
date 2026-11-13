@@ -226,7 +226,7 @@ A header naming a hotel the user can't reach, including an unknown, deleted or m
 { "message": "This action is unauthorized.", "code": 403, "body": null }
 ```
 
-Clear the stored choice when you get it. A suspended hotel of the user's still gets the suspended `403` below. `POST /api/logout`, `GET /api/hotel`, `POST /api/connect` and `GET /api/check-paired` ignore the header, so a client can always recover. Super admins are unaffected.
+Clear the stored choice when you get it. A suspended hotel of the user's still gets the suspended `403` below. `POST /api/logout`, `GET /api/hotel`, `POST /api/connect` and `GET /api/check-paired` ignore the header, so a client can always recover. A super admin's own token reaches only `POST /api/logout` and `GET /api/user` here; every other hotel route answers `403` (spec 028).
 
 ### Suspended Account or Hotel
 

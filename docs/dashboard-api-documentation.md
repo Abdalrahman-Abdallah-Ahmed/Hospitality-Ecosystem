@@ -11,6 +11,8 @@ the same figures; a caller who can see a different set of hotels (a group admin,
 admin, a single-hotel employee), or a call for another `date`, is computed separately. The permission check runs on every call, before the cache
 is read.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 `GET /api/dashboard`
@@ -31,7 +33,7 @@ Accept: application/json
 
 ## Who Can Call This
 
-Any authenticated user holding `dashboard.view` (admins, employees without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md), and employees whose role grants it), **as long as they belong to a hotel.** An employee whose role leaves out `dashboard.view` gets `403` `{ "message": "This action is unauthorized.", "code": 403, "body": null }`. A user with no `hotel_id` (e.g. a super admin, who typically has no owned hotel) gets a `403` — see below. There is no hotel-scoping query param; the response is always scoped to the caller's own hotel, with no way for a super admin to request another hotel's dashboard through this endpoint. (There is an optional `?date=` param — see [Occupancy Object](#occupancy-object) — but it only changes which date the occupancy figures describe, not which hotel.)
+Any authenticated user holding `dashboard.view` (admins, employees without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md), and employees whose role grants it), **as long as they belong to a hotel.** An employee whose role leaves out `dashboard.view` gets `403` `{ "message": "This action is unauthorized.", "code": 403, "body": null }`. A user with no `hotel_id` gets a `403` — see below. A super admin's own token gets `403` `Super admins use /api/superadmin.` (spec 028); the platform-wide figures are in the [super admin dashboard](superadmin-dashboard-api-documentation.md). There is no hotel-scoping query param; the response is always scoped to the caller's own hotel. (There is an optional `?date=` param — see [Occupancy Object](#occupancy-object) — but it only changes which date the occupancy figures describe, not which hotel.)
 
 ## Response Format
 
@@ -183,7 +185,7 @@ HTTP `403`:
 }
 ```
 
-Treat this the same as other "no hotel" errors elsewhere in this API (e.g. [AI Insights](/D:/Hospitality%20Ecosystem/docs/ai-insights-api-documentation.md#error-no-associated-hotel), [User Management create](/D:/Hospitality%20Ecosystem/docs/user-management-api-documentation.md#error-no-associated-hotel)) — most likely means a super admin or a user whose `hotel_id` hasn't been backfilled; don't build a "your hotel has no data yet" empty state around it.
+Treat this the same as other "no hotel" errors elsewhere in this API (e.g. [AI Insights](/D:/Hospitality%20Ecosystem/docs/ai-insights-api-documentation.md#error-no-associated-hotel), [User Management create](/D:/Hospitality%20Ecosystem/docs/user-management-api-documentation.md#error-no-associated-hotel)) — most likely means a user whose `hotel_id` hasn't been set; don't build a "your hotel has no data yet" empty state around it.
 
 ## Example cURL Request
 
@@ -205,7 +207,7 @@ curl -X GET http://your-domain.com/api/dashboard \
 - **Breaking change:** the old flat `occupancy_percentage` and `revenue_today` fields are gone. `occupancy_percentage` is now `occupancy.percentage`. `revenue_today` is renamed `booking_value_today` (same value, honest name) — the old name implied stay revenue, which is what `room_revenue_today` is for.
 - `booking_value_today` sums `reservation_value` for reservations **created** today (not arriving today), includes cancelled ones, and switches type between a numeric string and plain `0` depending on whether any rows matched — coerce with `Number(...)` rather than assuming one type.
 - **`occupancy` and `room_revenue_today` now work for any date** (Phase 1 WP-2 shipped): `occupancy.occupied_rooms`/`percentage` are real numbers for a past/future `?date=` too (computed from `stays`, `basis: "stay_events"`), not `null` like they briefly were. `room_revenue_today` is a real sum of in-house stays' room revenue, not always `null` anymore.
-- A user with no hotel (most commonly a super admin) gets a `403`, not an empty dashboard.
+- A user with no hotel gets a `403`, not an empty dashboard. So does a super admin's own token, with `Super admins use /api/superadmin.`
 
 ## Related Docs
 

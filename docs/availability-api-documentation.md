@@ -6,6 +6,8 @@
 
 ---
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Overview
 
 Availability answers "how many rooms of each type can the hotel still sell, night by
@@ -45,7 +47,6 @@ get it by default.
 | `arrival_date` | `YYYY-MM-DD` | yes | The first night. Cannot be before today in the hotel's time zone. |
 | `departure_date` | `YYYY-MM-DD` | yes | Not a night. Must be after `arrival_date`, at most 90 nights later. |
 | `room_type_ids[]` | uuid[] | no | Only these room types. They are returned even when inactive. By default every active room type is returned. |
-| `hotel_id` | uuid | super admin only | The hotel to look up. Ignored for other users. |
 
 ### Example
 
@@ -92,7 +93,7 @@ GET /api/availability?arrival_date=2026-03-12&departure_date=2026-03-15
 
 | Status | When |
 | --- | --- |
-| `403` | The user lacks `availability.view`, or a super admin did not send a valid `hotel_id` (`"You must belong to, or specify, a valid hotel."`) |
+| `403` | The user lacks `availability.view`, or has no hotel (`"You must belong to a hotel."`) |
 | `422` | `arrival_date` or `departure_date` missing or not `YYYY-MM-DD`; `departure_date` not after `arrival_date`; more than 90 nights; `arrival_date` in the past (errors keyed by field) |
 | `422` | A `room_type_ids` entry that is not a live room type of this hotel: `"One or more of the selected room types are invalid."` The message is the same for another hotel's type, a deleted type and an unknown id. |
 

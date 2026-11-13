@@ -6,6 +6,8 @@
 
 ---
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Overview
 
 A **stay** is a guest being physically in one room. Every room line of a reservation has
@@ -76,7 +78,6 @@ All endpoints need the `X-API-KEY` header and a Bearer token. Responses use the 
 
 **Authorization**: `stays.view` (not an employee default).
 
-A super admin must add `?hotel_id=`.
 
 ### `GET /api/stays/arrivals?date=YYYY-MM-DD`
 

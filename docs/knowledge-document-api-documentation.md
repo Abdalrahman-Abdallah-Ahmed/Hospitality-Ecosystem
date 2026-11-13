@@ -6,6 +6,8 @@ Defined by `App\Http\Controllers\KnowledgeDocumentController` (the shared action
 
 These routes are always about **one hotel's** documents. Global documents (shared platform knowledge, `hotel_id = null`) are managed by super admins under `/api/superadmin` — see the [global knowledge admin API](/D:/Hospitality%20Ecosystem/docs/global-knowledge-admin-api-documentation.md). A global document id is a `404` on every route here.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL and Headers
 
 All endpoints are under `/api` and need:
@@ -37,8 +39,6 @@ Uploads (`POST /knowledge-documents`, `POST /knowledge-documents/{id}/file`) are
 | `POST /api/knowledge-documents/{id}/restore` | `knowledge_documents.delete` | Restore |
 
 Admins hold every permission. Employees hold what their [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md) grants; **an employee without a role has none of these**.
-
-**Super admins** must name the hotel with `hotel_id` (query string, or form field on uploads). Without it every route answers `422 A hotel_id is required.`; an unknown hotel is `404`.
 
 **Another hotel's document is always `404`, never `403`**, so the API does not reveal that it exists.
 
@@ -117,7 +117,6 @@ Deleted documents are not listed. `body` is a paginator; `body.data` holds docum
 | `title` | required, string, max 255 — this is the name the AI cites |
 | `category` | optional, one of the [knowledge base categories](/D:/Hospitality%20Ecosystem/docs/knowledge-base-article-api-documentation.md#allowed-category-values) |
 | `is_active` | optional boolean, default `true` |
-| `hotel_id` | super admins only, required for them |
 
 Responses:
 

@@ -4,6 +4,8 @@ Every create, update, and delete of an audited record is written to an
 append-only `event_log`. This endpoint reads the history of one record — who
 changed it, when, and from what.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 `GET /api/history/{type}/{id}`
@@ -30,8 +32,7 @@ Accept: application/json
 
 ## Who Can Call This
 
-`App\Policies\EventLogPolicy`: the caller's `role` must be `admin` (super admin
-bypasses), or an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md)
+`App\Policies\EventLogPolicy`: the caller's `role` must be `admin`, or an employee whose [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md)
 grants `history.view`. The events returned are automatically scoped to the caller's own
 hotel(s) — asking for a record that belongs to another hotel returns `404`, the
 same as an id that doesn't exist. A soft-deleted record still has a readable
@@ -104,12 +105,12 @@ Field notes:
 
 ## Super Admin Actors
 
-When the caller isn't a super admin and an event's actor is a super admin, or a user who no longer exists:
+When an event's actor is a super admin, or a user who no longer exists:
 
 - `actor` has only `id` and `name`, or is `null` if the user no longer exists.
 - `context` has no `ip`.
 
-A super admin's own token reads the full row, and the stored row doesn't change.
+The stored row doesn't change. A super admin's own token gets `403` on this route (spec 028).
 
 A write made through an [impersonation session](superadmin-impersonation-api-documentation.md) names the super admin as actor, with the user in `context.impersonated_user_id`.
 

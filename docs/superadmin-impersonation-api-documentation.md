@@ -4,6 +4,8 @@ For the frontend's super admin area: acting as a hotel user for up to 30 minutes
 
 The three endpoints sit under `/api/superadmin`, in `routes/superadmin.php`, and only a super admin can call them. An impersonation token gets `403` on every route in that file.
 
+> **The only way into a hotel (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every hotel route except `POST /api/logout` and `GET /api/user`. To see or change what a hotel's user sees, start a session here.
+
 ## Required Headers
 
 ```http
