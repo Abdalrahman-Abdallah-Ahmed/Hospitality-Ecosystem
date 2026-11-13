@@ -34,7 +34,7 @@ class HotelPolicyController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
             return apiResponse('User does not have an associated hotel.', 403);
         }

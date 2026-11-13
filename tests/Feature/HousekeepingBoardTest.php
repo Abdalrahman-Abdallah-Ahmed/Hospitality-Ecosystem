@@ -58,15 +58,14 @@ it('filters the board by housekeeping status, room status, floor, building and t
     fdGet($this, adminOfHotel($hotel), '/api/housekeeping/board?status=out_of_order')->assertOk()->assertJsonCount(0, 'body.rooms');
 });
 
-it('needs rooms.view, and a super admin must name the hotel', function () {
+it('needs rooms.view, and refuses a super admin\'s own token', function () {
     [$hotel] = fdHotel(1);
 
     fdGet($this, fdEmployee($hotel, [Permission::TASKS_VIEW]), '/api/housekeeping/board')->assertForbidden();
     fdGet($this, fdEmployee($hotel, [Permission::ROOMS_VIEW]), '/api/housekeeping/board')->assertOk();
 
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    fdGet($this, $super, '/api/housekeeping/board')->assertForbidden();
-    fdGet($this, $super, "/api/housekeeping/board?hotel_id={$hotel->id}")->assertOk();
+    assertSuperAdminRefused(fdGet($this, $super, "/api/housekeeping/board?hotel_id={$hotel->id}"));
 });
 
 it('shows the board of a 500-room hotel in under 2 seconds with a fixed number of queries', function () {

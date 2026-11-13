@@ -35,11 +35,18 @@ function userWithOwnHotel(): array
 }
 
 it('rejects a user with no associated hotel', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
 
-    $this->withHeaders(dashboardApiHeaders())->actingAs($superAdmin, 'sanctum')
+    $this->withHeaders(dashboardApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/dashboard')
         ->assertStatus(403);
+});
+
+it('refuses a super admin\'s own token', function () {
+    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+
+    assertSuperAdminRefused($this->withHeaders(dashboardApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->getJson('/api/dashboard'));
 });
 
 it('no longer returns a field named revenue_today', function () {

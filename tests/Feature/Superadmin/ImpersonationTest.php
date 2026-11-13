@@ -58,20 +58,6 @@ function imSuperAdmin(): User
 }
 
 /**
- * @return array{token: string, token_id: int, expires_at: string}
- */
-function imStart($test, User $superAdmin, User $target): array
-{
-    app('auth')->forgetGuards();
-
-    return $test->withHeaders(apiHeaders())
-        ->actingAs($superAdmin, 'sanctum')
-        ->postJson("/api/superadmin/users/{$target->id}/impersonate")
-        ->assertOk()
-        ->json('body');
-}
-
-/**
  * @param  array<string, mixed>  $payload
  * @param  array<string, string>  $headers
  */
@@ -157,7 +143,7 @@ it('starts a session that expires in 30 minutes', function () {
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
 
-    $body = imStart($this, $superAdmin, $target);
+    $body = impersonationSessionFor($this, $superAdmin, $target);
     $row = PersonalAccessToken::find($body['token_id']);
 
     expect($body['token'])->toBeString()
@@ -170,7 +156,7 @@ it('starts a session that expires in 30 minutes', function () {
 
 it('never stores the plain token in the audit trail', function () {
     $target = adminOfHotel(makeHotel());
-    $body = imStart($this, imSuperAdmin(), $target);
+    $body = impersonationSessionFor($this, imSuperAdmin(), $target);
     [, $secret] = explode('|', $body['token'], 2);
 
     $row = EventLog::withoutGlobalScopes()->where('event_type', 'platform.impersonation.started')->firstOrFail();
@@ -181,7 +167,7 @@ it('never stores the plain token in the audit trail', function () {
 it('applies the user\'s permissions', function () {
     $hotel = makeHotel();
     $employee = imEmployee($hotel, [Permission::GUESTS_VIEW]);
-    $token = imStart($this, imSuperAdmin(), $employee)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $employee)['token'];
 
     imRequest($this, $token, 'GET', '/api/guest')->assertOk();
     imRequest($this, $token, 'GET', '/api/room')->assertForbidden();
@@ -189,7 +175,7 @@ it('applies the user\'s permissions', function () {
 
 it('cannot read a record of a hotel the user cannot reach', function () {
     $guest = imGuest(makeHotel());
-    $token = imStart($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
 
     imRequest($this, $token, 'GET', "/api/guest/{$guest->id}")->assertNotFound();
 });
@@ -199,7 +185,7 @@ it('lets an owner session choose any hotel of the account, and only those', func
     $owner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $a->id, 'hotel_group_id' => $account->id, 'group_role' => 'owner']);
     $guest = imGuest($b);
     $other = makeHotel();
-    $token = imStart($this, imSuperAdmin(), $owner)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $owner)['token'];
 
     imRequest($this, $token, 'GET', "/api/guest/{$guest->id}", headers: ['X-Hotel-Id' => $b->id])->assertOk();
     imRequest($this, $token, 'GET', '/api/guest', headers: ['X-Hotel-Id' => $other->id])->assertForbidden();
@@ -210,7 +196,7 @@ it('works in an admin\'s default hotel when no header is sent', function () {
     $admin = spUser($a, [$b]);
     $inA = imGuest($a, 'InA');
     $inB = imGuest($b, 'InB');
-    $token = imStart($this, imSuperAdmin(), $admin)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $admin)['token'];
 
     imRequest($this, $token, 'GET', "/api/guest/{$inA->id}")->assertOk();
     imRequest($this, $token, 'GET', "/api/guest/{$inB->id}")->assertNotFound();
@@ -221,7 +207,7 @@ it('keeps an employee\'s whole scope', function () {
     $employee = imEmployee($a, [Permission::GUESTS_VIEW], [$b]);
     imGuest($a, 'InA');
     imGuest($b, 'InB');
-    $token = imStart($this, imSuperAdmin(), $employee)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $employee)['token'];
 
     $names = collect(imRequest($this, $token, 'GET', '/api/guest')->assertOk()->json('body.data'))->pluck('first_name');
 
@@ -247,7 +233,7 @@ it('refuses an impersonation token on every super admin route', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
     $other = User::factory()->create(['hotel_id' => $hotel->id]);
-    $session = imStart($this, imSuperAdmin(), $target);
+    $session = impersonationSessionFor($this, imSuperAdmin(), $target);
 
     imRequest($this, $session['token'], 'POST', "/api/superadmin/users/{$other->id}/impersonate")->assertForbidden();
     imRequest($this, $session['token'], 'POST', '/api/superadmin/impersonation/end', ['token_id' => $session['token_id']])->assertForbidden();
@@ -260,7 +246,7 @@ it('refuses an impersonation token on every super admin route', function () {
 it('reports the session on GET /api/user', function () {
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $session = imStart($this, $superAdmin, $target);
+    $session = impersonationSessionFor($this, $superAdmin, $target);
 
     imRequest($this, $session['token'], 'GET', '/api/user')
         ->assertOk()
@@ -273,14 +259,14 @@ it('reports the session on GET /api/user', function () {
 
 it('has no impersonation key on the user\'s own GET /api/user', function () {
     $target = adminOfHotel(makeHotel());
-    imStart($this, imSuperAdmin(), $target);
+    impersonationSessionFor($this, imSuperAdmin(), $target);
 
     imOwnRequest($this, $target, 'GET', '/api/user')->assertOk()->assertJsonMissingPath('body.impersonation');
 });
 
 it('has no impersonation key on a list of users', function () {
     $target = adminOfHotel(makeHotel());
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     $users = imRequest($this, $token, 'GET', '/api/users')->assertOk()->json('body.data');
 
@@ -294,7 +280,7 @@ it('has no impersonation key on a list of users', function () {
 
 it('works until 30 minutes and stops after, with no event', function () {
     $this->freezeTime();
-    $token = imStart($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
 
     $this->travel(29)->minutes();
     $this->travel(59)->seconds();
@@ -311,7 +297,7 @@ it('works until 30 minutes and stops after, with no event', function () {
 it('lets any super admin end a session by id', function () {
     $target = adminOfHotel(makeHotel());
     $other = imSuperAdmin();
-    $session = imStart($this, imSuperAdmin(), $target);
+    $session = impersonationSessionFor($this, imSuperAdmin(), $target);
 
     imAsSuperAdmin($this, $other, 'POST', '/api/superadmin/impersonation/end', ['token_id' => $session['token_id']])->assertOk();
 
@@ -354,7 +340,7 @@ it('validates token_id', function (array $payload) {
 
 it('answers 404 when the session has already ended, with no second event', function () {
     $superAdmin = imSuperAdmin();
-    $session = imStart($this, $superAdmin, adminOfHotel(makeHotel()));
+    $session = impersonationSessionFor($this, $superAdmin, adminOfHotel(makeHotel()));
 
     imAsSuperAdmin($this, $superAdmin, 'POST', '/api/superadmin/impersonation/end', ['token_id' => $session['token_id']])->assertOk();
     imAsSuperAdmin($this, $superAdmin, 'POST', '/api/superadmin/impersonation/end', ['token_id' => $session['token_id']])->assertNotFound();
@@ -364,7 +350,7 @@ it('answers 404 when the session has already ended, with no second event', funct
 
 it('answers 404 for an expired session that is not pruned yet, with no event', function () {
     $superAdmin = imSuperAdmin();
-    $session = imStart($this, $superAdmin, adminOfHotel(makeHotel()));
+    $session = impersonationSessionFor($this, $superAdmin, adminOfHotel(makeHotel()));
 
     $this->travel(31)->minutes();
 
@@ -376,7 +362,7 @@ it('answers 404 for an expired session that is not pruned yet, with no event', f
 it('answers 404 with no server error when the user has been deleted', function () {
     $superAdmin = imSuperAdmin();
     $target = User::factory()->create(['hotel_id' => makeHotel()->id]);
-    $session = imStart($this, $superAdmin, $target);
+    $session = impersonationSessionFor($this, $superAdmin, $target);
 
     $target->delete();
 
@@ -390,7 +376,7 @@ it('ends the session on logout, with the same event', function () {
     $hotel = makeHotel();
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
-    $session = imStart($this, $superAdmin, $target);
+    $session = impersonationSessionFor($this, $superAdmin, $target);
 
     imRequest($this, $session['token'], 'POST', '/api/logout')->assertOk();
 
@@ -413,7 +399,7 @@ it('records nothing when a normal token logs out', function () {
 });
 
 it('answers 401 to logout with an expired token, with no event', function () {
-    $token = imStart($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
 
     $this->travel(31)->minutes();
 
@@ -426,10 +412,10 @@ it('gives a second session its own 30 minutes, and leaves the first expiry alone
     $this->freezeTime();
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $first = imStart($this, $superAdmin, $target);
+    $first = impersonationSessionFor($this, $superAdmin, $target);
 
     $this->travel(10)->minutes();
-    $second = imStart($this, $superAdmin, $target);
+    $second = impersonationSessionFor($this, $superAdmin, $target);
 
     $this->travel(21)->minutes();
 
@@ -442,11 +428,11 @@ it('gives a second session its own 30 minutes, and leaves the first expiry alone
 it('prunes tokens expired over an hour ago and keeps running sessions', function () {
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $old = imStart($this, $superAdmin, $target);
+    $old = impersonationSessionFor($this, $superAdmin, $target);
     $oldCode = PersonalAccessToken::findToken(pairingCodeFor($target, now()->addMinutes(15)));
 
     $this->travel(2)->hours();
-    $running = imStart($this, $superAdmin, $target);
+    $running = impersonationSessionFor($this, $superAdmin, $target);
 
     $this->artisan('sanctum:prune-expired', ['--hours' => 1])->assertSuccessful();
 
@@ -459,8 +445,8 @@ it('ends all of a user\'s sessions and nothing else', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
     $caller = imSuperAdmin();
-    $first = imStart($this, imSuperAdmin(), $target);
-    $second = imStart($this, imSuperAdmin(), $target);
+    $first = impersonationSessionFor($this, imSuperAdmin(), $target);
+    $second = impersonationSessionFor($this, imSuperAdmin(), $target);
     $login = $target->createToken('api-token');
     WhatsAppDevice::create(['user_id' => $target->id, 'phone_number' => '201000000021', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-21', 'status' => 'active']);
 
@@ -487,7 +473,7 @@ it('ends nothing and records nothing when the user has no running session', func
     imAsSuperAdmin($this, $superAdmin, 'POST', "/api/superadmin/users/{$target->id}/end-impersonation")
         ->assertOk()->assertJsonPath('body.ended', 0);
 
-    imStart($this, $superAdmin, $target);
+    impersonationSessionFor($this, $superAdmin, $target);
     $this->travel(31)->minutes();
 
     imAsSuperAdmin($this, $superAdmin, 'POST', "/api/superadmin/users/{$target->id}/end-impersonation")
@@ -507,7 +493,7 @@ it('still unpairs the device on revoke-tokens', function () {
     $hotel = makeHotel();
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
-    $session = imStart($this, $superAdmin, $target);
+    $session = impersonationSessionFor($this, $superAdmin, $target);
     WhatsAppDevice::create(['user_id' => $target->id, 'phone_number' => '201000000022', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-22', 'status' => 'active']);
 
     imAsSuperAdmin($this, $superAdmin, 'POST', "/api/superadmin/users/{$target->id}/revoke-tokens")->assertOk();
@@ -526,7 +512,7 @@ it('records a write with the super admin as actor and the user in context', func
     $hotel = makeHotel();
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
-    $token = imStart($this, $superAdmin, $target)['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $target)['token'];
 
     $id = imRequest($this, $token, 'POST', '/api/guest', ['hotel_id' => $hotel->id, 'first_name' => 'Attributed', 'channel' => 'booking_com', 'external_id' => 'im-1'])
         ->assertCreated()->json('body.id');
@@ -542,7 +528,7 @@ it('records a write with the super admin as actor and the user in context', func
 it('records the user\'s own write as theirs', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
-    imStart($this, imSuperAdmin(), $target);
+    impersonationSessionFor($this, imSuperAdmin(), $target);
 
     $id = imOwnRequest($this, $target, 'POST', '/api/guest', ['hotel_id' => $hotel->id, 'first_name' => 'Own', 'channel' => 'booking_com', 'external_id' => 'im-2'])
         ->assertCreated()->json('body.id');
@@ -557,7 +543,7 @@ it('resolves the same actor for a platform event in a session\'s request', funct
     $hotel = makeHotel();
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
-    $token = imStart($this, $superAdmin, $target)['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $target)['token'];
 
     app('auth')->forgetGuards();
     Auth::setUser($target->withAccessToken(PersonalAccessToken::findToken($token)));
@@ -576,7 +562,7 @@ it('keeps an AI write as ai_agent and names the super admin', function () {
     Queue::fake();
     $s = aatSeed();
     $superAdmin = imSuperAdmin();
-    $token = imStart($this, $superAdmin, $s['admin'])['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $s['admin'])['token'];
 
     app('auth')->forgetGuards();
     Auth::setUser($s['admin']->withAccessToken(PersonalAccessToken::findToken($token)));
@@ -595,7 +581,7 @@ it('keeps an AI write as ai_agent and names the super admin', function () {
 it('records the start event', function () {
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $session = imStart($this, $superAdmin, $target);
+    $session = impersonationSessionFor($this, $superAdmin, $target);
 
     $event = imEvent('platform.impersonation.started');
 
@@ -611,7 +597,7 @@ it('records the start event', function () {
 it('keeps session events off every hotel\'s event rows', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
-    $session = imStart($this, imSuperAdmin(), $target);
+    $session = impersonationSessionFor($this, imSuperAdmin(), $target);
     imRequest($this, $session['token'], 'POST', '/api/logout')->assertOk();
 
     expect(TenantContext::runForHotel($hotel->id, fn () => EventLog::query()->where('event_type', 'like', 'platform.impersonation.%')->count()))->toBe(0);
@@ -625,7 +611,7 @@ it('keeps session events off every hotel\'s event rows', function () {
 
 it('records a job\'s later write as the hotel user', function () {
     $target = adminOfHotel(makeHotel());
-    imStart($this, imSuperAdmin(), $target);
+    impersonationSessionFor($this, imSuperAdmin(), $target);
 
     app('auth')->forgetGuards();
 
@@ -659,7 +645,7 @@ it('records one event for a session write to an unaudited record type, by field 
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
     $path = $uri($hotel);
-    $token = imStart($this, $superAdmin, $target)['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $target)['token'];
 
     imRequest($this, $token, $method, $path, $method === 'POST' ? ['hotel_id' => $hotel->id, ...$payload] : $payload)->assertSuccessful();
 
@@ -694,7 +680,7 @@ it('records nothing new for the same write with the user\'s own token', function
 
 it('keeps the guest memories event beside the settings event', function () {
     $hotel = makeHotel();
-    $token = imStart($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
 
     imRequest($this, $token, 'PUT', "/api/hotel/{$hotel->id}", ['guest_memories_enabled' => ! $hotel->fresh()->guest_memories_enabled])->assertOk();
 
@@ -707,8 +693,8 @@ it('records nothing when a session write changes nothing or is refused', functio
     $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Same']);
     $other = Team::create(['hotel_id' => makeHotel()->id, 'name' => 'Theirs']);
     $employee = imEmployee($hotel, [Permission::TEAMS_VIEW]);
-    $adminToken = imStart($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
-    $employeeToken = imStart($this, imSuperAdmin(), $employee)['token'];
+    $adminToken = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
+    $employeeToken = impersonationSessionFor($this, imSuperAdmin(), $employee)['token'];
 
     imRequest($this, $adminToken, 'PUT', "/api/team/{$team->id}", ['name' => 'Same'])->assertOk();
     imRequest($this, $adminToken, 'PUT', "/api/team/{$other->id}", ['name' => 'Taken'])->assertNotFound();
@@ -748,7 +734,7 @@ it('shows hotel readers only a super admin\'s id and name, with no IP', function
     $superAdmin = imSuperAdmin();
     $reader = adminOfHotel($hotel);
     $guest = imHistoryRow($hotel, $superAdmin, ['impersonated_user_id' => $reader->id]);
-    $token = imStart($this, $superAdmin, $reader)['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $reader)['token'];
 
     $responses = [
         imOwnRequest($this, $reader, 'GET', "/api/history/guest/{$guest->id}"),
@@ -768,15 +754,12 @@ it('shows hotel readers only a super admin\'s id and name, with no IP', function
     expect($stored->context['ip'])->toBe('203.0.113.9');
 });
 
-it('shows a super admin the full row', function () {
+it('refuses a super admin\'s own token on the history route (spec 028)', function () {
     $hotel = makeHotel();
     $superAdmin = imSuperAdmin();
     $guest = imHistoryRow($hotel, $superAdmin);
 
-    $row = imAsSuperAdmin($this, imSuperAdmin(), 'GET', "/api/history/guest/{$guest->id}")->assertOk()->json('body.data.0');
-
-    expect($row['actor']['email'])->toBe($superAdmin->email)
-        ->and($row['context']['ip'])->toBe('203.0.113.9');
+    assertSuperAdminRefused(imAsSuperAdmin($this, imSuperAdmin(), 'GET', "/api/history/guest/{$guest->id}"));
 });
 
 it('leaves a hotel user\'s row as it is', function () {
@@ -806,7 +789,7 @@ it('tags Sentry on a session\'s request, and clears it on the next', function ()
     config(['sentry.dsn' => 'https://public@example.ingest.sentry.io/1']);
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $token = imStart($this, $superAdmin, $target)['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $target)['token'];
 
     $hub = SentrySdk::getCurrentHub();
     $hub->pushScope();
@@ -828,7 +811,7 @@ it('tags Sentry on a session\'s request, and clears it on the next', function ()
 
 it('tags nothing and fails nothing with no DSN', function () {
     config(['sentry.dsn' => null]);
-    $token = imStart($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel(makeHotel()))['token'];
 
     $hub = SentrySdk::getCurrentHub();
     $hub->pushScope();
@@ -867,7 +850,7 @@ it('refuses every write that could gain lasting access', function (string $metho
     $staff = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $hotel->id]);
     $role = StaffRole::withoutGlobalScopes()->create(['hotel_id' => $hotel->id, 'name' => 'Desk', 'permissions' => []]);
     $team = Team::create(['hotel_id' => $hotel->id, 'name' => 'Team']);
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     $tokensBefore = PersonalAccessToken::count();
     $usersBefore = User::count();
@@ -888,7 +871,7 @@ it('refuses every write that could gain lasting access', function (string $metho
 
 it('cannot set the admin\'s own password', function () {
     $target = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => makeHotel()->id, 'email' => 'admin-im@example.com', 'password' => 'Original-Password1!']);
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     imRequest($this, $token, 'PUT', "/api/users/{$target->id}", ['password' => 'A-new-Password1!'])->assertForbidden();
 
@@ -904,7 +887,7 @@ it('cannot set a staff member\'s password or email through an owner', function (
     [$account, $a] = spAccount();
     $owner = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => $a->id, 'hotel_group_id' => $account->id, 'group_role' => 'owner']);
     $staff = User::factory()->role(UserRole::EMPLOYEE)->create(['hotel_id' => $a->id, 'email' => 'staff-im@example.com', 'password' => 'Original-Password1!']);
-    $token = imStart($this, imSuperAdmin(), $owner)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $owner)['token'];
 
     imRequest($this, $token, 'PUT', "/api/users/{$staff->id}", ['password' => 'A-new-Password1!', 'email' => 'taken@example.com'])->assertForbidden();
 
@@ -915,7 +898,7 @@ it('cannot set a staff member\'s password or email through an owner', function (
 it('refuses before looking the record up', function () {
     $hotel = makeHotel();
     $otherHotel = makeHotel();
-    $token = imStart($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
     $otherRole = StaffRole::withoutGlobalScopes()->create(['hotel_id' => $otherHotel->id, 'name' => 'Theirs', 'permissions' => []]);
     $otherTeam = Team::create(['hotel_id' => $otherHotel->id, 'name' => 'Theirs']);
 
@@ -939,7 +922,7 @@ it('keeps reads of those routes open', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
     $role = StaffRole::withoutGlobalScopes()->create(['hotel_id' => $hotel->id, 'name' => 'Desk', 'permissions' => []]);
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     imRequest($this, $token, 'GET', '/api/users')->assertOk();
     imRequest($this, $token, 'GET', "/api/users/{$target->id}")->assertOk();
@@ -947,18 +930,18 @@ it('keeps reads of those routes open', function () {
     imRequest($this, $token, 'GET', "/api/staff-roles/{$role->id}")->assertOk();
 });
 
-it('leaves the admin\'s own token and a super admin\'s own token as they were', function () {
+it('leaves the admin\'s own token as it was, and a super admin\'s own token still refused', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
-    imStart($this, imSuperAdmin(), $target);
+    impersonationSessionFor($this, imSuperAdmin(), $target);
 
     imOwnRequest($this, $target, 'POST', '/api/connect')->assertOk();
     imOwnRequest($this, $target, 'POST', '/api/staff-roles', ['hotel_id' => $hotel->id, 'name' => 'Own', 'permissions' => []])->assertCreated();
     imOwnRequest($this, $target, 'PUT', "/api/users/{$target->id}", ['name' => 'Renamed'])->assertOk();
 
-    imAsSuperAdmin($this, imSuperAdmin(), 'PUT', "/api/users/{$target->id}", ['name' => 'Renamed again'])->assertOk();
+    assertSuperAdminRefused(imAsSuperAdmin($this, imSuperAdmin(), 'PUT', "/api/users/{$target->id}", ['name' => 'Renamed again']));
 
-    expect($target->fresh()->name)->toBe('Renamed again');
+    expect($target->fresh()->name)->toBe('Renamed');
 });
 
 /*
@@ -968,7 +951,7 @@ it('leaves the admin\'s own token and a super admin\'s own token as they were', 
 it('reads a suspended only hotel, and refuses every other method', function () {
     $hotel = makeHotel();
     $guest = imGuest($hotel);
-    $token = imStart($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
     spSuspend($hotel);
 
     imRequest($this, $token, 'GET', "/api/guest/{$guest->id}")->assertOk();
@@ -985,7 +968,7 @@ it('reads a suspended only hotel, and refuses every other method', function () {
 it('reads a suspended account, and refuses a write with scope account', function () {
     [$account, $a] = spAccount();
     $guest = imGuest($a);
-    $token = imStart($this, imSuperAdmin(), spUser($a))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), spUser($a))['token'];
     spSuspend($account);
 
     imRequest($this, $token, 'GET', "/api/guest/{$guest->id}")->assertOk();
@@ -994,7 +977,7 @@ it('reads a suspended account, and refuses a write with scope account', function
 
 it('ends the session on logout in a suspended hotel', function () {
     $hotel = makeHotel();
-    $token = imStart($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
     spSuspend($hotel);
 
     imRequest($this, $token, 'POST', '/api/logout')->assertOk();
@@ -1011,7 +994,7 @@ it('reads the suspended default hotel and writes only to the active one', functi
     [, $a, $b] = spAccount();
     $target = $makeTarget($a, $b);
     $inA = imGuest($a, 'InA');
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
     spSuspend($a);
 
     // A read with no header keeps the whole scope, so A's record is there.
@@ -1037,7 +1020,7 @@ it('reads the suspended default hotel and writes only to the active one', functi
 
 it('refuses a write to the suspended hotel\'s own record', function () {
     [, $a, $b] = spAccount();
-    $token = imStart($this, imSuperAdmin(), spUser($a, [$b]))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), spUser($a, [$b]))['token'];
     spSuspend($a);
     $name = $a->name;
 
@@ -1052,7 +1035,7 @@ it('refuses a write to the suspended hotel\'s own record', function () {
 
 it('ends the session with no event when the super admin who started it is deleted', function () {
     $superAdmin = imSuperAdmin();
-    $session = imStart($this, $superAdmin, adminOfHotel(makeHotel()));
+    $session = impersonationSessionFor($this, $superAdmin, adminOfHotel(makeHotel()));
 
     $superAdmin->delete();
 
@@ -1065,7 +1048,7 @@ it('ends the session with no event when the super admin who started it is delete
 it('ends the session with no end event when the user\'s tokens are revoked', function () {
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $session = imStart($this, $superAdmin, $target);
+    $session = impersonationSessionFor($this, $superAdmin, $target);
 
     imAsSuperAdmin($this, $superAdmin, 'POST', "/api/superadmin/users/{$target->id}/revoke-tokens")->assertOk();
 
@@ -1077,7 +1060,7 @@ it('ends the session with no end event when the user\'s tokens are revoked', fun
 
 it('ends the session with no end event when the user resets their password', function () {
     $target = adminOfHotel(makeHotel());
-    $session = imStart($this, imSuperAdmin(), $target);
+    $session = impersonationSessionFor($this, imSuperAdmin(), $target);
     $resetToken = Password::broker()->createToken($target);
 
     app('auth')->forgetGuards();
@@ -1097,7 +1080,7 @@ it('ends the session with no end event when the user resets their password', fun
 
 it('cannot redeem an impersonation token as a WhatsApp pairing code', function () {
     $target = adminOfHotel(makeHotel());
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     app('auth')->forgetGuards();
     app('auth')->shouldUse('web');
@@ -1113,7 +1096,7 @@ it('cannot redeem an impersonation token as a WhatsApp pairing code', function (
 
 it('gives a target with no hotels the same answers as their own token', function () {
     $target = User::factory()->role(UserRole::ADMIN)->create(['hotel_id' => null]);
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     foreach ([['GET', '/api/guest'], ['GET', '/api/hotel'], ['POST', '/api/team', ['name' => 'Nope']]] as $call) {
         [$method, $uri] = $call;
@@ -1131,8 +1114,8 @@ it('runs sessions from two super admins side by side', function () {
     $first = imSuperAdmin();
     $second = imSuperAdmin();
     $target = adminOfHotel(makeHotel());
-    $sessionOne = imStart($this, $first, $target);
-    $sessionTwo = imStart($this, $second, $target);
+    $sessionOne = impersonationSessionFor($this, $first, $target);
+    $sessionTwo = impersonationSessionFor($this, $second, $target);
 
     imRequest($this, $sessionOne['token'], 'GET', '/api/user')
         ->assertJsonPath('body.impersonation.impersonator.id', $first->id);
@@ -1150,7 +1133,7 @@ it('runs sessions from two super admins side by side', function () {
 it('stops writes but not reads when the hotel is suspended mid-session', function () {
     $hotel = makeHotel();
     $guest = imGuest($hotel);
-    $token = imStart($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), adminOfHotel($hotel))['token'];
 
     imRequest($this, $token, 'PUT', "/api/guest/{$guest->id}", ['first_name' => 'Before'])->assertOk();
 
@@ -1164,7 +1147,7 @@ it('stops writes but not reads when the hotel is suspended mid-session', functio
 
 it('leaves a session running when the super admin\'s own tokens are revoked', function () {
     $superAdmin = imSuperAdmin();
-    $session = imStart($this, $superAdmin, adminOfHotel(makeHotel()));
+    $session = impersonationSessionFor($this, $superAdmin, adminOfHotel(makeHotel()));
 
     $superAdmin->tokens()->delete();
 
@@ -1181,7 +1164,7 @@ it('records the hotel settings a session clears by deleting a team or category',
     Hotel::whereKey($hotel->id)->update([$column => $record->id]);
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
-    $token = imStart($this, $superAdmin, $target)['token'];
+    $token = impersonationSessionFor($this, $superAdmin, $target)['token'];
 
     imRequest($this, $token, 'DELETE', "{$path}/{$record->id}")->assertSuccessful();
 
@@ -1206,7 +1189,7 @@ it('records no settings event when the deleted record is not a hotel default, or
     $used = Team::create(['hotel_id' => $hotel->id, 'name' => 'Used']);
     Hotel::whereKey($hotel->id)->update(['housekeeping_team_id' => $used->id]);
     $target = adminOfHotel($hotel);
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     imRequest($this, $token, 'DELETE', "/api/team/{$unused->id}")->assertSuccessful();
     imOwnRequest($this, $target, 'DELETE', "/api/team/{$used->id}")->assertSuccessful();
@@ -1218,7 +1201,7 @@ it('names the super admin even if they are deleted during the request', function
     $hotel = makeHotel();
     $superAdmin = imSuperAdmin();
     $target = adminOfHotel($hotel);
-    $token = PersonalAccessToken::findToken(imStart($this, $superAdmin, $target)['token']);
+    $token = PersonalAccessToken::findToken(impersonationSessionFor($this, $superAdmin, $target)['token']);
     $superAdminId = $superAdmin->id;
 
     app('auth')->forgetGuards();
@@ -1237,7 +1220,7 @@ it('refuses to change a user or issue a token during a session, whichever code t
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
     $staff = User::factory()->create(['hotel_id' => $hotel->id]);
-    $token = PersonalAccessToken::findToken(imStart($this, imSuperAdmin(), $target)['token']);
+    $token = PersonalAccessToken::findToken(impersonationSessionFor($this, imSuperAdmin(), $target)['token']);
     $name = $target->name;
 
     app('auth')->forgetGuards();
@@ -1265,7 +1248,7 @@ it('refuses to change a user or issue a token during a session, whichever code t
 it('lists the same writes in a capture with or without a session', function () {
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
-    $token = PersonalAccessToken::findToken(imStart($this, imSuperAdmin(), $target)['token']);
+    $token = PersonalAccessToken::findToken(impersonationSessionFor($this, imSuperAdmin(), $target)['token']);
 
     app('auth')->forgetGuards();
 
@@ -1284,7 +1267,7 @@ it('lists the same writes in a capture with or without a session', function () {
 
 it('does not authenticate anyone just by checking for a session', function () {
     $target = adminOfHotel(makeHotel());
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     imRequest($this, $token, 'GET', '/api/user')->assertOk();
 
@@ -1300,7 +1283,7 @@ it('shows a session the user\'s own device, and pairing stays refused', function
     $hotel = makeHotel();
     $target = adminOfHotel($hotel);
     WhatsAppDevice::create(['user_id' => $target->id, 'phone_number' => '201000000041', 'hotel_id' => $hotel->id, 'wa_user_id' => 'wa-41', 'status' => 'active']);
-    $token = imStart($this, imSuperAdmin(), $target)['token'];
+    $token = impersonationSessionFor($this, imSuperAdmin(), $target)['token'];
 
     imRequest($this, $token, 'GET', '/api/whatsapp-device')
         ->assertOk()

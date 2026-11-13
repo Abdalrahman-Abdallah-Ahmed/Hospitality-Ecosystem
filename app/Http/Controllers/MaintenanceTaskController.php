@@ -20,9 +20,9 @@ class MaintenanceTaskController extends Controller
     {
         $this->authorize('viewAny', Task::class);
 
-        $hotel = resolveHotel($request->user(), $request->input('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $filters = (array) $request->input('filter', []);

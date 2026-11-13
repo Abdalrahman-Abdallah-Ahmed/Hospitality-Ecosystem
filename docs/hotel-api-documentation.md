@@ -4,6 +4,8 @@ This document describes the hotel management APIs, defined by `App\Http\Controll
 
 It covers `index`, `show` and `update`. Creating and deleting a hotel moved to the super admin API on 2026-11-06: see [superadmin-accounts-api-documentation.md](superadmin-accounts-api-documentation.md). `POST /api/hotel` and `DELETE /api/hotel/{id}` now return `405` for everyone.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Important — This Is Not Where Most Hotels Get Created
 
 When a new customer signs up, the hotel is created as part of **`POST /api/register`** (see `docs/register-api-update.md`, which supersedes the registration section in `docs/auth-api-documentation.md`), in the same transaction as the user account. The new user becomes the owner of the account created for that hotel. That endpoint is open to anyone registering themselves plus their hotel in one call.
@@ -41,21 +43,21 @@ Notes:
 
 ## Who Can Call These Endpoints
 
-Every action is gated by `App\Policies\HotelPolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally** — the per-action rules only apply to non-super-admins.
+Every action is gated by `App\Policies\HotelPolicy`.
 
-| Action | Rule (non-super-admin) | Super admin |
-| --- | --- | --- |
-| `index` (list) | Allowed for an `admin`, and for an `employee` whose staff role grants `hotels.view`. Only the hotels they can reach and that aren't suspended. | Allowed — sees **every** hotel. |
-| `show` | The user must be an `admin` who can reach the hotel: the account owner for every hotel of the account, and any other admin for their home hotel and the hotels they are a member of. | Allowed for any hotel. |
-| `update` | Same as `show`. | Allowed for any hotel. |
+| Action | Rule |
+| --- | --- |
+| `index` (list) | Allowed for an `admin`, and for an `employee` whose staff role grants `hotels.view`. Only the hotels they can reach and that aren't suspended. |
+| `show` | The user must be an `admin` who can reach the hotel: the account owner for every hotel of the account, and any other admin for their home hotel and the hotels they are a member of. |
+| `update` | Same as `show`. |
 
 Practical implications for the UI:
 
 - **`index` lists the hotels a user works in**, so a multi-hotel user can choose where to work with `X-Hotel-Id`. It always lists all of them, whichever hotel is chosen, and ignores a stale `X-Hotel-Id`. An admin gets the full hotel object. An employee gets a short record, and it doesn't open `show` or `update` for them.
 - **`show` and `update` reach every hotel the admin can reach, whichever one is chosen.** They don't need `X-Hotel-Id`. Any admin of a hotel can edit its settings, not one particular admin.
-- **A suspended hotel is refused.** It leaves the list, and `show`/`update` return the [suspended `403`](auth-api-documentation.md#suspended-account-or-hotel) to whoever would otherwise pass. Anyone else gets the normal `403`, with no `reason`, and is never told it is suspended. A super admin isn't affected.
+- **A suspended hotel is refused.** It leaves the list, and `show`/`update` return the [suspended `403`](auth-api-documentation.md#suspended-account-or-hotel) to whoever would otherwise pass. Anyone else gets the normal `403`, with no `reason`, and is never told it is suspended.
 - `show`/`update` for a regular admin: a `403` on a hotel from their own list should not normally happen; a `403` on any other hotel id means "not yours" — treat it like a 404.
-- A super admin's UI can freely browse and edit any hotel.
+- A super admin browses and edits hotels through [`/api/superadmin/hotels`](superadmin-accounts-api-documentation.md); their own token gets `403` here.
 - **A soft-deleted hotel can't be reached by its staff.** It drops out of what a user can reach, by default or with `X-Hotel-Id`. Links and tokens are kept, so access returns if the hotel is restored.
 
 ## Response Format
@@ -191,7 +193,7 @@ For an employee, `filter` and `sort` accept only `id`, `name`, `slug`, `timezone
 
 ### Success Response
 
-HTTP `200 OK`. `body` is a Laravel paginator object; `body.data` contains the hotels the caller can reach and that aren't suspended (every hotel for a super admin), each shaped as the [hotel object](#the-hotel-object). An employee gets a short record instead:
+HTTP `200 OK`. `body` is a Laravel paginator object; `body.data` contains the hotels the caller can reach and that aren't suspended, each shaped as the [hotel object](#the-hotel-object). An employee gets a short record instead:
 
 ```json
 { "id": "…", "name": "Grand Harbor Hotel", "slug": "grand-harbor", "timezone": "UTC", "currency": "USD", "city": "Cairo" }
@@ -223,7 +225,7 @@ HTTP `404` if the id doesn't exist at all:
 { "message": "No query results for model [App\\Models\\Hotel] {id}" }
 ```
 
-### Error: Not Yours (Non-Super-Admin)
+### Error: Not Yours
 
 HTTP `403` if the hotel exists but the caller can't reach it, or is an employee — Laravel's default authorization-failure shape:
 
@@ -273,7 +275,7 @@ merged over the stored settings, e.g. `{"proactive_settings": {"enabled": true}}
 for a bad time (`H:i`), `daily_cap` outside 1–3, `reminder.hours_before` outside 1–24, or an
 unknown key (`Unknown proactive setting [send_at_midnight].`).
 
-**`hotel_group_id` is ignored**, for every caller, super admins included, and so is a stray `owner_id`. Moving a hotel to another account goes through [`PUT /api/superadmin/hotels/{hotel}`](superadmin-accounts-api-documentation.md). Ownership belongs to the account, and a super admin assigns it through the user endpoints.
+**`hotel_group_id` is ignored**, for every caller, and so is a stray `owner_id`. Moving a hotel to another account goes through [`PUT /api/superadmin/hotels/{hotel}`](superadmin-accounts-api-documentation.md). Ownership belongs to the account, and a super admin assigns it through the user endpoints.
 
 **Team and category settings are checked against the hotel being edited**, whichever hotel the request otherwise works in.
 
@@ -308,16 +310,16 @@ Always check for an `errors` key to distinguish this from the custom-wrapper bus
 
 ## Example cURL Requests
 
-### List (super admin)
+### List
 
 ```bash
 curl -X GET "http://your-domain.com/api/hotel?search=Harbor&sort=-created_at&per_page=20" \
   -H "Accept: application/json" \
   -H "X-API-KEY: YOUR_API_KEY" \
-  -H "Authorization: Bearer SUPER_ADMIN_LOGIN_TOKEN"
+  -H "Authorization: Bearer USER_LOGIN_TOKEN"
 ```
 
-### Update (owning admin or super admin)
+### Update (an admin who can reach the hotel)
 
 ```bash
 curl -X PUT http://your-domain.com/api/hotel/019f9b37-c265-726d-a6fe-f7eaa7852636 \
@@ -332,7 +334,7 @@ curl -X PUT http://your-domain.com/api/hotel/019f9b37-c265-726d-a6fe-f7eaa785263
 
 - Most hotels are created via `/api/register`, not this resource. Build a "manage my hotel" screen (`show`/`update` on the admin's own hotel) for regular admins. Super admin creation and deletion use `/api/superadmin`.
 - Every request needs `X-API-KEY` and `Authorization: Bearer {login_token}`.
-- `index` lists every hotel the user can reach; `show`/`update` work for any admin who can reach the hotel, **or** a super admin.
+- `index` lists every hotel the user can reach; `show`/`update` work for any admin who can reach the hotel.
 - List with `GET /api/hotel`, filter with `filter[column]=value`, free-text search with `search=`, sort with `sort=column`/`sort=-column`, paginate with `page`/`per_page`.
 - `hotel_group_id` is ignored on update, so leave it out of edit forms. There is no `owner_id` any more, and `filter[owner_id]` or `sort=owner_id` return `422`.
 - `email`, `currency`, `country_code` are only length/type validated server-side — enforce format client-side.

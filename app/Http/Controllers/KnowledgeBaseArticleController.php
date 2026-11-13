@@ -19,20 +19,10 @@ class KnowledgeBaseArticleController extends Controller
     {
         $this->authorize('viewAny', KnowledgeBaseArticle::class);
 
-        // These are hotel routes: always one hotel's articles. A super admin
-        // names the hotel; the global knowledge base is managed from
+        // These are hotel routes: always the user's hotels' articles, by the
+        // tenant scope. The global knowledge base is managed from
         // /api/superadmin/knowledge-base-articles.
-        $query = KnowledgeBaseArticle::with(['hotel']);
-
-        if ($request->user()->isSuperAdmin()) {
-            if (! $request->filled('hotel_id')) {
-                return apiResponse('A hotel_id is required.', 422);
-            }
-
-            $query->where('hotel_id', $request->input('hotel_id'));
-        }
-
-        $articles = GenericQuery::apply($query, $request);
+        $articles = GenericQuery::apply(KnowledgeBaseArticle::with(['hotel']), $request);
 
         return apiResponse('Articles fetched successfully.', 200, KnowledgeBaseArticleResource::collection($articles));
     }
@@ -45,19 +35,13 @@ class KnowledgeBaseArticleController extends Controller
         $this->authorize('create', KnowledgeBaseArticle::class);
         $user = $request->user();
 
-        // Every article created here belongs to a hotel: a scoped user's own,
-        // or the one a super admin names. Global articles are created only
-        // from /api/superadmin/knowledge-base-articles.
-        if ($user->isSuperAdmin() && ! $request->filled('hotel_id')) {
-            return apiResponse('A hotel_id is required.', 422);
-        }
-
-        $hotel = resolveHotel($user, $request->input('hotel_id'));
+        // Every article created here belongs to the hotel the request works
+        // in. Global articles are created only from
+        // /api/superadmin/knowledge-base-articles.
+        $hotel = resolveHotel($user);
 
         if (! $hotel) {
-            return $user->isSuperAdmin()
-                ? apiResponse('Hotel not found.', 404)
-                : apiResponse('You do not belong to any hotel.', 403);
+            return apiResponse('You do not belong to any hotel.', 403);
         }
 
         $article = app(ArticleCommands::class)->create($hotel, unsetAttributes($request->validated(), ['hotel_id']));
@@ -105,8 +89,8 @@ class KnowledgeBaseArticleController extends Controller
 
     /**
      * Global articles are only reachable from /api/superadmin/knowledge-base-articles.
-     * Scoped users never see them here anyway (the tenant scope); this closes
-     * the same door for an unrestricted super admin.
+     * The tenant scope already leaves them out here; this keeps the door shut
+     * if that ever changes.
      */
     private function rejectGlobal(KnowledgeBaseArticle $article): void
     {

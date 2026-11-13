@@ -19,7 +19,6 @@ class ReplaceKnowledgeDocumentFileRequest extends FormRequest
     {
         return [
             'file' => $this->knowledgeFileRules(),
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 

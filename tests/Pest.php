@@ -16,6 +16,7 @@ use App\Enums\KnowledgeAudience;
 use App\Enums\OutcomeType;
 use App\Enums\Permission;
 use App\Enums\UserRole;
+use App\Http\Middleware\DenySuperAdmin;
 use App\Jobs\EvaluateProactiveTriggersJob;
 use App\Jobs\PrepareReservationImportJob;
 use App\Jobs\WriteReservationImportJob;
@@ -2186,4 +2187,41 @@ function spRequest($test, User $user, string $method, string $uri, array $payloa
         'Authorization' => 'Bearer '.$user->createToken('api')->plainTextToken,
         ...$headers,
     ]);
+}
+
+/*
+| Impersonation sessions (spec 027), shared since spec 028 made them the only way
+| into a hotel for a super admin.
+*/
+
+/**
+ * Starts a session as $superAdmin for $target, through the real endpoint.
+ *
+ * @return array{token: string, token_id: int, expires_at: string}
+ */
+function impersonationSessionFor($test, User $superAdmin, User $target): array
+{
+    app('auth')->forgetGuards();
+
+    return $test->withHeaders(apiHeaders())
+        ->actingAs($superAdmin, 'sanctum')
+        ->postJson("/api/superadmin/users/{$target->id}/impersonate")
+        ->assertOk()
+        ->json('body');
+}
+
+/**
+ * The plain-text token of a new session as $superAdmin for $target.
+ */
+function impersonationTokenFor($test, User $superAdmin, User $target): string
+{
+    return impersonationSessionFor($test, $superAdmin, $target)['token'];
+}
+
+/**
+ * A super admin's own token on a hotel route (spec 028).
+ */
+function assertSuperAdminRefused(TestResponse $response): TestResponse
+{
+    return $response->assertForbidden()->assertJsonPath('message', DenySuperAdmin::REFUSAL);
 }

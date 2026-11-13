@@ -1,7 +1,5 @@
 <?php
 
-use App\Enums\UserRole;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 /*
@@ -19,7 +17,7 @@ beforeEach(function () {
 function hotelListAs($test, string $query)
 {
     return $test->withHeaders(apiHeaders())
-        ->actingAs(User::factory()->role(UserRole::SUPER_ADMIN)->create(), 'sanctum')
+        ->actingAs(adminWithHotel()[0], 'sanctum')
         ->getJson('/api/hotel?'.$query);
 }
 

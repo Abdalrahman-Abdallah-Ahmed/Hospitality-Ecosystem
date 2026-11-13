@@ -6,6 +6,8 @@
 
 ---
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Overview
 
 A voucher template is a hotel's own voucher design: one image (the letterhead, logo, labels and
@@ -163,8 +165,7 @@ None of these permissions is an employee default.
 `GET /api/voucher-templates?filter[language]=ar&filter[is_default]=1&search=Stan&sort=-created_at&per_page=15`
 
 The usual list parameters. `search` matches the name. Deleted templates are not listed.
-A super admin sees every hotel's templates; `filter[hotel_id]=<uuid>` narrows the list to one
-hotel (for a scoped user it can only narrow within their own hotels).
+`filter[hotel_id]=<uuid>` narrows the list to one of the user's own hotels.
 
 ### 3. Upload
 
@@ -176,7 +177,6 @@ hotel (for a scoped user it can only narrow within their own hotels).
 | `language` | Required, `en` or `ar` |
 | `is_default` | Optional boolean. `true` makes it the default for its language and clears the previous one. |
 | `image` | Required file, see [image rules](#image-rules) |
-| `hotel_id` | Super admins only, who must name the hotel; a hotel admin always gets their own hotel |
 
 `201` with the template and `layout: []`. `422` names the failed rule.
 

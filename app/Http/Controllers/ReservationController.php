@@ -118,9 +118,9 @@ class ReservationController extends Controller
 
         $validated = $request->validated();
 
-        $hotel = resolveHotel($request->user(), $validated['hotel_id'] ?? null);
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
@@ -374,14 +374,14 @@ class ReservationController extends Controller
     /**
      * Queues a reservation import of an uploaded spreadsheet (SPEC-100/101)
      * and answers at once with the import, whose progress and report are
-     * read from ReservationImportController. Scoped to the uploader's own
-     * hotel, or the one a super admin names; never a hotel_id from the file.
+     * read from ReservationImportController. Scoped to the hotel the request
+     * works in; never a hotel_id from the file.
      */
     public function import(ImportReservationsRequest $request): JsonResponse
     {
         $this->authorize('import', Reservation::class);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
             throw ValidationException::withMessages(['hotel_id' => 'Name a valid hotel to import into.']);
         }

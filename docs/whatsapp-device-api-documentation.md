@@ -122,6 +122,10 @@ HTTP `200 OK`
 - It is **not an API credential**. Sending it as `Authorization: Bearer …` returns `401` on every authenticated route.
 - Conversely, a normal login token is rejected by `/api/pair` (`Invalid token.`).
 
+### Super Admins
+
+A super admin's own token gets `403` `Super admins use /api/superadmin.` on `POST /api/connect`, `GET /api/check-paired` and `GET`/`DELETE /api/whatsapp-device` (spec 028): a device belongs to a hotel user's home hotel, and a super admin has none.
+
 ### While Impersonating
 
 `POST /api/connect` returns `403` to a super admin's [impersonation token](superadmin-impersonation-api-documentation.md), so a session can't pair a device.

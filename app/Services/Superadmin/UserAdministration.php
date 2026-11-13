@@ -27,6 +27,8 @@ class UserAdministration
 
     public const SUPER_ADMIN_REFUSAL = 'The super admin role cannot be assigned through the API.';
 
+    public const OWNER_DELETE_REFUSAL = 'Transfer ownership first: clear this user\'s owner role, then delete them.';
+
     /** A new user's first link, which lasts longer than a reset link. */
     private const FIRST_LINK_BROKER = 'invitations';
 
@@ -191,6 +193,32 @@ class UserAdministration
 
             EventLogger::recordPlatform('platform.user.access_revoked', $user);
         });
+    }
+
+    /**
+     * Delete a user for good (spec 028). An account owner is refused: an account
+     * is never left without one by a delete. Every token goes with the row,
+     * impersonation tokens included, so a session for the user ends here. The
+     * event is written first, while the row still holds what it records.
+     *
+     * @throws DomainRuleException
+     */
+    public function delete(User $user): void
+    {
+        if ($user->isOwner()) {
+            throw new DomainRuleException(self::OWNER_DELETE_REFUSAL, 409);
+        }
+
+        TenantContext::withoutScope(fn () => DB::transaction(function () use ($user) {
+            $snapshot = collect($user->only(['name', 'email', 'role', 'hotel_id', 'hotel_group_id']))
+                ->map(fn ($from) => ['from' => EventLogger::normalize($from), 'to' => null])
+                ->all();
+            $tokens = $user->tokens()->delete();
+
+            EventLogger::recordPlatform('platform.user.deleted', $user, $snapshot, ['tokens_revoked' => $tokens]);
+
+            $user->delete();
+        }));
     }
 
     /**

@@ -74,38 +74,31 @@ it('rejects an admin without an associated hotel from creating an article', func
         ->assertJsonPath('message', 'You do not belong to any hotel.');
 });
 
-// store — super admin (SPEC 008: global articles moved to /api/superadmin)
+// a super admin's own token (spec 028); global articles live in /api/superadmin (SPEC 008)
 
-it('makes a super admin name the hotel an article belongs to', function () {
+it('refuses a super admin\'s own token, named hotel or not, and changes nothing', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
     [, $hotel] = adminWithOwnedHotelForArticles();
+    $article = articleFor($hotel, ['title' => 'Original']);
+    $call = fn (string $method, string $uri, array $body = []) => $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->json($method, $uri, $body);
 
-    $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->postJson('/api/knowledge-base-articles', [
-            'title' => 'Hospitality Best Practices',
-            'content' => 'Always greet guests by name when possible.',
-        ])
-        ->assertStatus(422);
+    assertSuperAdminRefused($call('GET', "/api/knowledge-base-articles?hotel_id={$hotel->id}"));
+    assertSuperAdminRefused($call('POST', '/api/knowledge-base-articles', ['hotel_id' => $hotel->id, 'title' => 'New', 'content' => 'Text.']));
+    assertSuperAdminRefused($call('PUT', "/api/knowledge-base-articles/{$article->id}", ['title' => 'Updated by Super Admin']));
+    assertSuperAdminRefused($call('DELETE', "/api/knowledge-base-articles/{$article->id}"));
 
-    $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->postJson('/api/knowledge-base-articles', [
-            'hotel_id' => $hotel->id,
-            'title' => 'Hospitality Best Practices',
-            'content' => 'Always greet guests by name when possible.',
-        ])
-        ->assertStatus(201)
-        ->assertJsonPath('body.hotel_id', $hotel->id);
-
-    expect(KnowledgeBaseArticle::withoutGlobalScope('hotel')->whereNull('hotel_id')->exists())->toBeFalse();
+    expect($article->fresh()->title)->toBe('Original')
+        ->and(KnowledgeBaseArticle::withoutGlobalScope('hotel')->count())->toBe(1);
 });
 
 // global articles are not reachable from the hotel routes
 
-it('does not let a super admin read, change or delete a global article through the hotel routes', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+it('keeps global articles out of reach on the hotel routes', function () {
+    [$admin] = adminWithOwnedHotelForArticles();
     $article = articleFor(null, ['title' => 'Original']);
 
-    $call = fn (string $method) => $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
+    $call = fn (string $method) => $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($admin, 'sanctum')
         ->json($method, "/api/knowledge-base-articles/{$article->id}", ['title' => 'Updated']);
 
     $call('GET')->assertNotFound();
@@ -113,30 +106,6 @@ it('does not let a super admin read, change or delete a global article through t
     $call('DELETE')->assertNotFound();
 
     expect($article->fresh()->title)->toBe('Original');
-});
-
-it('lets a super admin update a hotel-specific article without reassigning its hotel_id', function () {
-    [, $hotel] = adminWithOwnedHotelForArticles();
-    $article = articleFor($hotel, ['title' => 'Original']);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $response = $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/knowledge-base-articles/{$article->id}", ['title' => 'Updated by Super Admin']);
-
-    $response->assertOk()->assertJsonPath('body.title', 'Updated by Super Admin');
-    expect($article->fresh()->hotel_id)->toBe($hotel->id);
-});
-
-it('lets a super admin delete an article belonging to any hotel', function () {
-    [, $hotel] = adminWithOwnedHotelForArticles();
-    $article = articleFor($hotel);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->deleteJson("/api/knowledge-base-articles/{$article->id}")
-        ->assertOk();
-
-    expect(KnowledgeBaseArticle::find($article->id))->toBeNull();
 });
 
 // index scoping
@@ -155,26 +124,6 @@ it('only lists articles belonging to the admin own hotel', function () {
 
     $response->assertOk();
     $data = collect($response->json('body.data'));
-    expect($data)->toHaveCount(1);
-    expect($data->first()['id'])->toBe($mine->id);
-});
-
-it('lists the named hotel articles for a super admin, never the global ones', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    [, $hotel] = adminWithOwnedHotelForArticles();
-    $mine = articleFor($hotel, ['title' => 'Hotel Specific']);
-    articleFor(null, ['title' => 'Global']);
-
-    $this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson('/api/knowledge-base-articles')
-        ->assertStatus(422);
-
-    $data = collect($this->withHeaders(knowledgeBaseArticleApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson("/api/knowledge-base-articles?hotel_id={$hotel->id}")
-        ->assertOk()
-        ->json('body.data'));
-
     expect($data)->toHaveCount(1);
     expect($data->first()['id'])->toBe($mine->id);
 });

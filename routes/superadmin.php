@@ -9,6 +9,8 @@ use App\Http\Controllers\Superadmin\ImpersonationController;
 use App\Http\Controllers\Superadmin\KnowledgeBaseArticleController;
 use App\Http\Controllers\Superadmin\KnowledgeDocumentController;
 use App\Http\Controllers\Superadmin\KnowledgeRebuildController;
+use App\Http\Controllers\Superadmin\StaffRoleController;
+use App\Http\Controllers\Superadmin\TeamController;
 use App\Http\Controllers\Superadmin\UsageController;
 use App\Http\Controllers\Superadmin\UserController;
 use Illuminate\Support\Facades\Route;
@@ -90,10 +92,15 @@ Route::put('/hotels/{hotel}', [HotelController::class, 'update']);
 Route::delete('/hotels/{hotel}', [HotelController::class, 'destroy']);
 Route::post('/hotels/{hotel}/suspend', [HotelController::class, 'suspend']);
 Route::post('/hotels/{hotel}/reactivate', [HotelController::class, 'reactivate']);
+// A hotel's roles and teams, for the user access screen (spec 028). Read-only:
+// only the hotel's own admins define them.
+Route::get('/hotels/{hotel}/staff-roles', [StaffRoleController::class, 'index']);
+Route::get('/hotels/{hotel}/teams', [TeamController::class, 'index']);
 Route::get('/users', [UserController::class, 'index']);
 Route::post('/users', [UserController::class, 'store']);
 Route::get('/users/{user}', [UserController::class, 'show']);
 Route::put('/users/{user}', [UserController::class, 'update']);
+Route::delete('/users/{user}', [UserController::class, 'destroy']);
 Route::put('/users/{user}/access', [UserController::class, 'updateAccess']);
 Route::post('/users/{user}/password-reset', [UserController::class, 'sendPasswordReset']);
 Route::post('/users/{user}/revoke-tokens', [UserController::class, 'revokeTokens']);

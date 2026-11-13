@@ -93,16 +93,17 @@ it('refuses login only after the password, and issues no token', function () {
     expect($user->tokens()->count())->toBe(0);
 });
 
-it('never checks a super admin at login or on hotel routes', function () {
+it('never checks a super admin at login, and refuses their own token on hotel routes', function () {
     [$account, $hotel] = spAccount();
     spSuspend($account);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create(['password' => Hash::make('secret-password')]);
 
     spLogin($this, $superAdmin)->assertOk();
 
-    spRequest($this, $superAdmin, 'GET', "/api/hotel/{$hotel->id}")->assertOk();
     spRequest($this, $superAdmin, 'GET', "/api/superadmin/hotels/{$hotel->id}")->assertOk();
-    spRequest($this, $superAdmin, 'PUT', "/api/hotel/{$hotel->id}", ['city' => 'Cairo'])->assertOk();
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'GET', "/api/hotel/{$hotel->id}"));
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'PUT', "/api/hotel/{$hotel->id}", ['city' => 'Cairo']));
+    expect($hotel->fresh()->city)->not->toBe('Cairo');
 });
 
 // User Story 2: reactivate

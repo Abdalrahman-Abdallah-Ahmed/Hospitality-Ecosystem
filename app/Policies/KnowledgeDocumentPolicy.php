@@ -17,10 +17,8 @@ class KnowledgeDocumentPolicy
     use ChecksPermissions;
 
     /**
-     * Global records are refused outright. A super admin is otherwise let
-     * through: allows() compares the record's hotel with the user's own, and a
-     * super admin has none, while the controller has already pinned them to
-     * the hotel they named.
+     * Global records are refused outright on the hotel routes: they are managed
+     * only under /api/superadmin, which doesn't authorize through this policy.
      */
     public function before(User $user, string $ability, mixed $document = null): ?bool
     {
@@ -28,7 +26,7 @@ class KnowledgeDocumentPolicy
             return false;
         }
 
-        return $user->isSuperAdmin() ? true : null;
+        return null;
     }
 
     public function viewAny(User $user): bool

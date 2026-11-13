@@ -96,6 +96,18 @@ Responses use the same hotel object as [the hotel API](hotel-api-documentation.m
 | `GET /hotels/{hotel}` | View | |
 | `PUT /hotels/{hotel}` | Edit or move | `name`, `slug`, `hotel_group_id` only |
 | `DELETE /hotels/{hotel}` | Soft-delete | Its staff can no longer reach it. Links and tokens stay |
+| `GET /hotels/{hotel}/staff-roles` | The hotel's staff roles | Read-only. See [A hotel's staff roles and teams](#a-hotels-staff-roles-and-teams) |
+| `GET /hotels/{hotel}/teams` | The hotel's teams | Read-only. Same |
+
+### A hotel's staff roles and teams
+
+*Added 2026-11-10 (spec 028).* `GET /hotels/{hotel}/staff-roles` and `GET /hotels/{hotel}/teams` list one hotel's roles and teams, to offer them when [changing a user's access](#changing-access). They replace the hotel routes `GET /api/staff-roles?filter[hotel_id]=` and `GET /api/team?filter[hotel_id]=`, which refuse a super admin's own token.
+
+- Only the named hotel's records, never another hotel's. A deleted staff role isn't listed.
+- The usual `filter[<column>]`, `search`, `sort` (`-name` for descending), `page` and `per_page` (1–100, default 15).
+- Each item has the same shape as on the hotel routes: a [staff role](staff-roles-api-documentation.md) with `permissions` and `users_count`, or a [team](task-management-api-documentation.md).
+- `404` for an unknown or deleted hotel. A suspended hotel is listed as usual.
+- Read-only: only a hotel's own admins define roles and teams.
 
 ### Create fields
 
@@ -140,6 +152,7 @@ Responses use the same user object as [the user API](user-management-api-documen
 | `PUT /users/{user}/access` | Change access | See below |
 | `POST /users/{user}/password-reset` | Send a reset email | See below |
 | `POST /users/{user}/revoke-tokens` | Cut off access | See below |
+| `DELETE /users/{user}` | Delete for good | See below |
 
 ### Creating a user
 
@@ -193,6 +206,18 @@ The response includes `reset_email_sent`. When it is `false`, the email failed b
 
 `POST /users/{user}/revoke-tokens` removes all the user's login tokens and pairing codes and unpairs their WhatsApp device, so the Admin Advisor stops answering them. It succeeds even with nothing to revoke. To lock out a compromised user, call this, then send a reset email.
 
+### Deleting a user
+
+*Added 2026-11-10 (spec 028).* `DELETE /users/{user}` deletes the user for good. It replaces `DELETE /api/users/{id}`, which refuses a super admin's own token.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | `User deleted successfully.` The row is gone, all the user's tokens are revoked (an impersonation session for them ends), and the account's seat count drops |
+| `404` | Unknown user, or a super admin |
+| `409` | `Transfer ownership first: clear this user's owner role, then delete them.` The user is an account owner. Nothing changes |
+
+To delete an owner, first send `PUT /users/{user}/access` with `{ "group_role": null }`, optionally make another user owner the same way, then delete. An account is never left without an owner by a delete.
+
 ## Suspending a Customer
 
 A full stop for an account or one hotel, for a customer who hasn't paid. Data is kept, and reactivating restores everything. `is_active` isn't involved.
@@ -232,6 +257,7 @@ Each successful write records one event in `event_log`, with no hotel attached, 
 | `platform.hotel.created`, `.updated`, `.deleted` | Hotel writes. A restore is `.created` with `context.restored = true` |
 | `platform.user.created`, `.updated`, `.access_changed` | User writes. An email sent on create isn't recorded separately |
 | `platform.user.password_reset_sent`, `.access_revoked` | Reset access |
+| `platform.user.deleted` | A user deleted. `changes` holds the deleted user's `name`, `email`, `role`, `hotel_id` and `hotel_group_id` as `from` values, and `context.tokens_revoked` the number of tokens removed |
 | `platform.account.suspended`, `.reactivated` | Account suspension. A suspension has `context.reason` |
 | `platform.hotel.suspended`, `.reactivated` | Hotel suspension. A suspension has `context.reason` |
 

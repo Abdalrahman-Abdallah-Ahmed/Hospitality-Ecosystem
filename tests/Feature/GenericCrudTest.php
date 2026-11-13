@@ -32,18 +32,11 @@ it('derives a required column and a boolean cast from the hotels table', functio
         ->and($validator->errors()->keys())->toContain('name', 'is_active');
 });
 
-it('lists all hotels for a super admin', function () {
+it('refuses a super admin\'s own token on the hotel list', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $ownerA = User::factory()->role(UserRole::ADMIN)->create();
-    $ownerB = User::factory()->role(UserRole::ADMIN)->create();
-
     Hotel::create(['name' => 'Mine', 'slug' => 'mine', 'currency' => 'USD']);
-    Hotel::create(['name' => 'Theirs', 'slug' => 'theirs', 'currency' => 'USD']);
 
-    $response = asUser($superAdmin)->getJson('/api/hotel');
-
-    $response->assertOk();
-    expect($response->json('body.data'))->toHaveCount(2);
+    assertSuperAdminRefused(asUser($superAdmin)->getJson('/api/hotel'));
 });
 
 it('limits an admin\'s hotel list to the hotels they can reach', function () {

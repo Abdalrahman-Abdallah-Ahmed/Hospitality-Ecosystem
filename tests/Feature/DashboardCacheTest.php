@@ -91,9 +91,10 @@ it('keys the cache on what the caller can see, not on their home hotel', functio
     pendingTaskFor($hotelB);
     pendingTaskFor($hotelB);
 
-    // A super admin with a home hotel sees every hotel's figures...
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create(['hotel_id' => $hotelA->id]);
-    expect(dashboardFor($this, $superAdmin)->assertOk()->json('body.pending_tasks'))->toBe(3);
+    // An employee based at hotel A who is also a member of hotel B sees both
+    // hotels' figures (employees keep their whole scope, spec 025)...
+    $employee = spUser($hotelA, [$hotelB], UserRole::EMPLOYEE);
+    expect(dashboardFor($this, $employee)->assertOk()->json('body.pending_tasks'))->toBe(3);
 
     // ...which must never be served to that hotel's own admin.
     expect(dashboardFor($this, adminOfHotel($hotelA))->assertOk()->json('body.pending_tasks'))->toBe(1);

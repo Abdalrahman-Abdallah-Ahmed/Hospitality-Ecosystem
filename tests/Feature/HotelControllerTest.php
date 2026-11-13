@@ -114,18 +114,17 @@ it('opens only the list with hotels.view', function () {
     spRequest($this, $employee, 'PUT', "/api/hotel/{$a->id}", ['city' => 'Cairo'])->assertForbidden();
 });
 
-it('lets a super admin list every hotel regardless of owner', function () {
+it('refuses a super admin\'s own token on the tenant hotel routes, and changes nothing', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $ownerA = User::factory()->role(UserRole::ADMIN)->create();
-    $ownerB = User::factory()->role(UserRole::ADMIN)->create();
-    hotelFor($ownerA);
-    hotelFor($ownerB);
+    $hotel = hotelFor(User::factory()->role(UserRole::ADMIN)->create());
+    $call = fn (string $method, string $uri, array $body = []) => $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->json($method, $uri, $body);
 
-    $response = $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson('/api/hotel');
+    assertSuperAdminRefused($call('GET', '/api/hotel'));
+    assertSuperAdminRefused($call('GET', "/api/hotel/{$hotel->id}"));
+    assertSuperAdminRefused($call('PUT', "/api/hotel/{$hotel->id}", ['name' => 'Reassigned']));
 
-    $response->assertOk();
-    expect($response->json('body.data'))->toHaveCount(2);
+    expect($hotel->fresh()->name)->not->toBe('Reassigned');
 });
 
 // Creating and deleting a hotel moved to /api/superadmin (spec 023), where
@@ -166,17 +165,6 @@ it('lets the owning admin view their own hotel', function () {
     $hotel = hotelFor($admin);
 
     $this->withHeaders(hotelApiHeaders())->actingAs($admin, 'sanctum')
-        ->getJson("/api/hotel/{$hotel->id}")
-        ->assertOk()
-        ->assertJsonPath('body.id', $hotel->id);
-});
-
-it('lets a super admin view any hotel', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = hotelFor($owner);
-
-    $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
         ->getJson("/api/hotel/{$hotel->id}")
         ->assertOk()
         ->assertJsonPath('body.id', $hotel->id);
@@ -226,15 +214,13 @@ it('rejects an admin updating a hotel they do not own', function () {
     expect($hotel->fresh()->name)->not->toBe('Hijacked');
 });
 
-it('ignores owner and account on a tenant hotel update, for every caller', function (UserRole $role) {
+it('ignores owner and account on a tenant hotel update', function () {
     $owner = User::factory()->role(UserRole::ADMIN)->create();
     $hotel = hotelFor($owner);
     $account = $hotel->hotel_group_id;
     $elsewhere = HotelGroup::create(['name' => 'Elsewhere', 'slug' => 'elsewhere']);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $caller = $role === UserRole::ADMIN ? $owner : $superAdmin;
 
-    $this->withHeaders(hotelApiHeaders())->actingAs($caller, 'sanctum')
+    $this->withHeaders(hotelApiHeaders())->actingAs($owner, 'sanctum')
         ->putJson("/api/hotel/{$hotel->id}", [
             'name' => 'Renamed',
             'hotel_group_id' => $elsewhere->id,
@@ -245,10 +231,7 @@ it('ignores owner and account on a tenant hotel update, for every caller', funct
     $fresh = $hotel->fresh();
 
     expect($fresh->hotel_group_id)->toBe($account);
-})->with([
-    'the owning admin' => UserRole::ADMIN,
-    'a super admin' => UserRole::SUPER_ADMIN,
-]);
+});
 
 it('refuses a slug a soft-deleted hotel holds, without a server error', function () {
     $admin = User::factory()->role(UserRole::ADMIN)->create();
@@ -261,15 +244,4 @@ it('refuses a slug a soft-deleted hotel holds, without a server error', function
         ->assertJsonValidationErrors(['slug']);
 
     expect($hotel->fresh()->slug)->not->toBe('gone');
-});
-
-it('lets a super admin update a hotel they do not own', function () {
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-    $owner = User::factory()->role(UserRole::ADMIN)->create();
-    $hotel = hotelFor($owner);
-
-    $this->withHeaders(hotelApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/hotel/{$hotel->id}", ['name' => 'Reassigned'])
-        ->assertOk()
-        ->assertJsonPath('body.name', 'Reassigned');
 });

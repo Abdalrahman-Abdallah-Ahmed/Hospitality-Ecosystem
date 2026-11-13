@@ -129,7 +129,7 @@ return [
     // Intended global records (FR-007): visible to the AI for every hotel,
     // never readable or changeable through the hotel routes.
     'global_data' => [
-        'App\\Models\\KnowledgeBaseArticle' => ['covered_by' => 'does not let a super admin read, change or delete a global article through the hotel routes'],
+        'App\\Models\\KnowledgeBaseArticle' => ['covered_by' => 'keeps global articles out of reach on the hotel routes'],
         'App\\Models\\KnowledgeDocument' => ['covered_by' => 'keeps global documents out of reach on the hotel routes, download included'],
         'App\\Models\\AiModelPrice' => ['reason' => 'Platform price list with no hotel_id; read only by cost attribution'],
     ],

@@ -47,9 +47,9 @@ class TaskController extends Controller
         $validated = unsetAttributes($request->validated(), ['hotel_id', 'guest_id']);
         $validated['created_by_user_id'] = $validated['created_by_user_id'] ?? $request->user()->id;
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $task = $tasks->create($hotel, $validated);

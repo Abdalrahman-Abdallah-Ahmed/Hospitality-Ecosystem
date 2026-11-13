@@ -102,17 +102,15 @@ it('takes a decimal mark on a direct upload, defaulting to auto (016)', function
     imUpload($this, $admin, $file(), ['decimal_mark' => 'euro'])->assertUnprocessable()->assertJsonValidationErrors('decimal_mark');
 });
 
-it('makes a super admin name the hotel', function () {
+it('refuses a super admin\'s own token, named hotel or not', function () {
     [, $hotel] = adminWithHotel();
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
     $file = fn () => imCsv(IM_HEADER, [['555-0100', 'Ann', 'Lee', '', '2026-09-01', '2026-09-04']]);
 
-    imUpload($this, $super, $file())->assertUnprocessable()->assertJsonValidationErrors('hotel_id');
+    assertSuperAdminRefused(imUpload($this, $super, $file()));
+    assertSuperAdminRefused(imUpload($this, $super, $file(), ['hotel_id' => $hotel->id]));
 
-    $import = imRun(imUpload($this, $super, $file(), ['hotel_id' => $hotel->id])->assertStatus(202)->json('body.id'));
-
-    expect($import->hotel_id)->toBe($hotel->id)
-        ->and($import->imported)->toBe(1);
+    expect(ReservationImport::withoutGlobalScopes()->count())->toBe(0);
 });
 
 // --- Running and reporting -------------------------------------------------

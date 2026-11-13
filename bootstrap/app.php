@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApiKeyMiddleware;
+use App\Http\Middleware\DenySuperAdmin;
 use App\Http\Middleware\EnsureFeatureEnabled;
 use App\Http\Middleware\EnsureNotImpersonating;
 use App\Http\Middleware\EnsureNotSuspended;
@@ -21,7 +22,6 @@ use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
-        web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
@@ -49,6 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'not_suspended' => EnsureNotSuspended::class,
             'hotel_choice' => UseChosenHotel::class,
             'not_impersonating' => EnsureNotImpersonating::class,
+            'no_super_admin' => DenySuperAdmin::class,
             'super_admin' => EnsureSuperAdmin::class,
             'feature' => EnsureFeatureEnabled::class,
             'whatsapp.signature' => VerifyWhatsAppWebhookSignature::class,
@@ -75,6 +76,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // An impersonation session is refused before any record is looked up, so
         // the answer doesn't depend on whether the id exists (spec 027).
         $middleware->prependToPriorityList(SubstituteBindings::class, EnsureNotImpersonating::class);
+
+        // A super admin's own token is refused on the hotel routes before any record
+        // is looked up, so an unknown id gets 403 too (spec 028).
+        $middleware->prependToPriorityList(SubstituteBindings::class, DenySuperAdmin::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -157,10 +157,12 @@ records both the hotel user and the real super admin.
 
 ## Open Questions
 
-*   **Existing `api/admin` controllers (blocks stage 6).** It is not yet
-    verified which of them rely on the unrestricted tenant scope
-    (`TenantContext::hotelIds() === null`). `KnowledgeRebuildController` is
-    known to. The others need checking one by one before stage 6.
+*   ~~**Existing `api/admin` controllers (blocks stage 6).**~~ **Settled
+    2026-11-09 (spec 028):** none of the moved controllers relies on the
+    unrestricted tenant scope implicitly. Each reads models with no hotel
+    scope, or opts out with `withoutScope()` / `withoutGlobalScope('hotel')`;
+    `KnowledgeRebuildController` no longer relies on it either. Per-controller
+    results: `specs/028-superadmin-hotel-lockout/plan-verification.md`, Task 1.
 
 ## Critical User Journeys (CUJs)
 
@@ -1478,6 +1480,14 @@ Dates below are placeholders for the day each stage is written.
     impersonating).
 
 ### Stage 6: Remove super admin access to hotel endpoints
+
+**Built as spec 028 (2026-11-10).** Where this plan and the code differed, the
+code and `specs/028-superadmin-hotel-lockout/plan-verification.md` ([V1]–[V18])
+win: among others, the read lists are `Superadmin\StaffRoleController` and
+`Superadmin\TeamController`, `resolveHotel()` lost its `hotel_id` parameter
+together with the super-admin-only `hotel_id` inputs, two policies keep a
+`before()` for their own rules, the user delete refuses an owner with `409`,
+and `routes/web.php` was removed.
 
 **Added by spec 025**: `DELETE /api/users/{id}` is the only way to delete a user, and spec 025 kept it open to super admins for that reason. This stage must add a super admin delete route before closing it. The tenant `/api/users` endpoint already ignores `hotel_group_id` and `group_role` for every caller.
 

@@ -7,7 +7,7 @@ use Illuminate\Validation\Rule;
 
 /**
  * What a list export adds to its list's query string (spec 021): the file
- * format, CSV unless asked otherwise, and the hotel a super admin exports.
+ * format, CSV unless asked otherwise.
  */
 trait ValidatesExportFormat
 {
@@ -28,7 +28,6 @@ trait ValidatesExportFormat
     {
         return [
             'format' => ['nullable', Rule::enum(ExportFormat::class)],
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 

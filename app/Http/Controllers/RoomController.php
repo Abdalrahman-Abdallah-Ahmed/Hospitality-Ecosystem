@@ -46,8 +46,7 @@ class RoomController extends Controller
         // One read of each hotel for the whole page, for readiness.
         $hotels = Hotel::whereIn('id', collect($rooms->items())->pluck('hotel_id')->unique())->get()->keyBy('id');
         collect($rooms->items())->each(fn (Room $room) => $room->readinessHotel = $hotels->get($room->hotel_id));
-        // The hotel scope limits this to the caller's hotel; a super admin gets
-        // every hotel's types and picks by hotel_id.
+        // The hotel scope limits this to the hotel the request works in.
         $roomTypes = RoomType::query()->orderBy('name')->get();
 
         $data = RoomResource::collection($rooms)->additional([
@@ -66,9 +65,9 @@ class RoomController extends Controller
 
         $validated = unsetAttributes($request->validated(), ['hotel_id']);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         if ($this->roomTypeIsDeleted($validated)) {
@@ -185,9 +184,9 @@ class RoomController extends Controller
     {
         $this->authorize('assignRoom', Reservation::class);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         $lines = $this->assignments->unassignedArrivals(

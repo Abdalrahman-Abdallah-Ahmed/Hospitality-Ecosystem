@@ -2,7 +2,9 @@
 
 This document describes the AI Advisor chat endpoint, defined by `App\Http\Controllers\AiAdvisorController` and backed by `App\Services\Ai\AdvisorTurn` and `App\Ai\Agents\AdminAdvisorAgent`.
 
-The advisor is a conversational operations assistant for a **hotel admin** (not a super admin, not an employee — see [Who Can Call This Endpoint](#who-can-call-this-endpoint)). It reads and changes the admin's own hotel through tools (SPEC-055): guests, reservations, rooms, availability, stays, tasks, housekeeping, maintenance, activities, bookings, reports and the knowledge base. Hard-to-reverse changes wait for the admin's confirmation. It is a single `POST` action, not a CRUD resource.
+The advisor is a conversational operations assistant for a **hotel admin** (not an employee — see [Who Can Call This Endpoint](#who-can-call-this-endpoint); a super admin's own token gets `403`). It reads and changes the admin's own hotel through tools (SPEC-055): guests, reservations, rooms, availability, stays, tasks, housekeeping, maintenance, activities, bookings, reports and the knowledge base. Hard-to-reverse changes wait for the admin's confirmation. It is a single `POST` action, not a CRUD resource.
+
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
 
 ## Base URL
 
@@ -28,7 +30,7 @@ Content-Type: application/json
 | Regular admin (`role: admin`) with a hotel | Allowed. |
 | Regular admin with no hotel | `403`, `"You do not belong to any hotel."` |
 | Employee | `403`, `"This action is unauthorized."` |
-| Super admin | `403`, `"This action is unauthorized."` |
+| Super admin (own token) | `403`, `"Super admins use /api/superadmin."` |
 
 Every tool still checks the acting admin's permission each time it runs (see [Tool catalog](#tool-catalog)), and runs only inside the admin's own hotel. Admins hold every permission, so for them this never refuses today; it keeps the tools safe if the advisor is ever opened to employees.
 

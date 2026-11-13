@@ -8,6 +8,8 @@ It covers four endpoints: a **bulk import** (`import`), two **read** endpoints
 (`index`, `show`), and **reverse** (the only correction path). There is
 deliberately **no create, update, or delete** — the ledger is append-only.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Feature flag — off by default
 
 *Added 2026-10-30, spec 019 (SPEC-005, D11).* Finance is not part of the MVP, so the
@@ -57,9 +59,9 @@ Gated by `App\Policies\TransactionPolicy` on top of the bearer-token check:
 
 | Action | Rule |
 | --- | --- |
-| `index` (list) | `role` must be `admin` (super admin bypasses). |
+| `index` (list) | `role` must be `admin`. |
 | `show` | `admin`, **and** the transaction's `hotel_id` must equal the user's own hotel. |
-| `import` | Same `create` check — `role` must be `admin`. **A super admin cannot target an arbitrary hotel here** (same as reservation import): the import always uses `$request->user()->hotel`, so a super admin gets `403 You do not belong to any hotel.` |
+| `import` | Same `create` check — `role` must be `admin`. The import always uses the hotel the request works in. |
 | `reverse` | `admin`, **and** the transaction's `hotel_id` must equal the user's own hotel. |
 
 Every query is also automatically scoped to the caller's hotel(s) by the

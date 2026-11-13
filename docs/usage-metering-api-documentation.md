@@ -119,6 +119,8 @@ them, the argument that follows is not one anybody wins.
 | `GET /api/superadmin/usage` | Super admin | Every account | `routes/superadmin.php` |
 | `GET /api/usage` | Hotel-group admin | Their own account only | `routes/api.php` |
 
+A super admin's own token gets `403` on `GET /api/usage`, like every hotel route (spec 028).
+
 Cross-account routes live in their own file, registered in
 `bootstrap/app.php` with the `super_admin` guard applied to the whole file
 rather than to a group inside it — so a route added there is protected by

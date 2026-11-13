@@ -35,6 +35,9 @@ Every tenant-owned model uses `App\Concerns\BelongsToHotel`, which adds a global
 middleware (`ResolveTenant`).
 
 - `hotelIds() === null` means **unrestricted** (super admin, or no context at all).
+  A super admin's own token never reaches a hotel route (spec 028, `no_super_admin`),
+  so for them it matters only on `routes/superadmin.php`, `GET /user` and logout.
+  They reach a hotel's data only by impersonating one of its users.
 - `hotelIds() === []` means **restricted to zero hotels** and must match nothing.
   Never collapse these two — `!== null` is the correct check, not truthiness.
 - Code without an HTTP request (queue jobs, webhooks, schedulers) must opt in
@@ -57,16 +60,21 @@ middleware (`ResolveTenant`).
 
 What a user may do is decided by `App\Enums\Permission`, not by their role name:
 
-- `admin` and `super_admin` hold every permission. An `employee` holds what their
+- `admin` holds every permission. An `employee` holds what their
   staff role (`App\Models\StaffRole`, one per employee, per hotel) grants, or
   `Permission::employeeDefaults()` when they have no role. See `User::permissions()`.
+  `super_admin` is reported with every permission by login and `GET /user`, but
+  nothing uses it: their own token is refused on every hotel route before any
+  policy runs. Never add a super admin bypass to a policy or a hotel controller
+  (constitution IV, v3.0.0).
 - Policies check `$this->allows($user, Permission::X, $record)` from
   `App\Policies\Concerns\ChecksPermissions`, which is the permission **plus** the
   same-hotel check against `$user->hotel`, the hotel the request works in. Never
   write `isAdmin()` / `isEmployee()` in a policy for a hotel resource.
-- Admins are managed by the account owner alone: only the owner (or a super
-  admin) creates, promotes, edits or deletes another admin (`UserPolicy`,
-  `UserController`). An account has at most one owner, enforced by the
+- Admins are managed by the account owner alone: only the owner creates,
+  promotes, edits or deletes another admin on the hotel routes (`UserPolicy`,
+  `UserController`); a super admin does it through `/api/superadmin/users`.
+  An account has at most one owner, enforced by the
   `users_one_owner_per_account` index.
 
 **Every new module or resource must add its permissions alongside the existing
@@ -96,7 +104,7 @@ permissions without a separate change.
 ### Request flow
 
 ```
-api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  not_suspended  →  hotel_choice  →  (policy authorize)  →  controller
+api.key  →  auth:sanctum  →  throttle:api  →  tenant  →  not_suspended  →  hotel_choice  →  no_super_admin  →  (policy authorize)  →  controller
 ```
 
 Middleware aliases are registered in `bootstrap/app.php`. Cross-account
@@ -104,9 +112,13 @@ super-admin reporting lives in `routes/superadmin.php`, which is registered in
 `bootstrap/app.php` with the same stack **plus `super_admin`** and the
 `api/superadmin` prefix — the guard is applied to the whole file on purpose, so a
 new route there cannot be left unprotected. Do not put tenant-facing endpoints
-in that file, and do not wrap its routes in their own group.
+in that file, and do not wrap its routes in their own group. The tenant group in
+`routes/api.php` refuses a super admin's own token (`no_super_admin`, before
+route-model binding); only `POST /logout` and `GET /user` opt out, and
+`SuperAdminDeniedOnTenantRoutesTest` fails by name for any other route that does.
 
-A super admin can act as a hotel user for up to 30 minutes (spec 027). A session is
+A super admin can act as a hotel user for up to 30 minutes (spec 027), and since
+spec 028 this is the only way into a hotel's screens. A session is
 a token of that user with an `impersonator_id`, so the stack above applies unchanged.
 `App\Support\Impersonation\CurrentImpersonation` is the only check for whether a
 request is one. `EventLogger::write()` then records the super admin as actor, with
@@ -139,8 +151,8 @@ or edits a user. A model that is not audited but that a session can write uses
   `AiCostController`, `DashboardController`) pass plain arrays and use no Resource,
   and `Superadmin\DashboardController` adds cost to the usage section itself, because
   `CostVisibilityTest` keeps cost out of `app/Services/Reports/`.
-- **Other helpers**: `resolveHotel()` (scoped admin gets their own hotel; super
-  admin must name one), `invalidRelation()` (reject cross-tenant foreign keys),
+- **Other helpers**: `resolveHotel()` (the hotel the request works in; a submitted
+  `hotel_id` is never used), `invalidRelation()` (reject cross-tenant foreign keys),
   `unsetAttributes()` (strip client-supplied `hotel_id` before writing).
 - **Models**: UUID primary keys (`HasUuids`, `$keyType = 'string'`,
   `$incrementing = false`), `SoftDeletes`, explicit `$fillable` and `$casts`,

@@ -4,6 +4,8 @@ This document describes the hotel **activity** and **activity category** managem
 
 An activity is something a hotel sells to guests beyond the room itself (spa treatment, airport transfer, breakfast buffet, etc.), optionally grouped under an activity category (e.g. "Wellness", "Transport"). Build the category picker first — an activity's `category_id` references it — but categories aren't required; an activity can exist with none.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, served under:
@@ -34,9 +36,9 @@ Content-Type: application/json
 
 > **Staff roles (2026-09-15):** the `employee` rules below are the defaults for an employee without a [staff role](/D:/Hospitality%20Ecosystem/docs/staff-roles-api-documentation.md). A role replaces them, always within the employee's own hotel: `activities.view` (index, show), `activities.create`, `activities.update`, `activities.delete`, and `activity_categories.view`, `.create`, `.update`, `.delete`.
 
-Both resources follow the same shape: `App\Policies\ActivityPolicy` / `App\Policies\ActivityCategoryPolicy`, each with a `before()` hook that lets `super_admin` bypass every rule below unconditionally — but see [Super Admin Caveats](#super-admin-caveats), because several of these endpoints have a separate hotel check that isn't bypassed.
+Both resources follow the same shape: `App\Policies\ActivityPolicy` / `App\Policies\ActivityCategoryPolicy`.
 
-| Resource | Action | Rule (non-super-admin) |
+| Resource | Action | Rule |
 | --- | --- | --- |
 | Activity | `index` | `role` must be `admin` or `employee`. |
 | Activity | `show` | `role` must be `admin` or `employee`, **and** the activity's `hotel_id` must equal the caller's own hotel. |
@@ -257,14 +259,13 @@ HTTP `422`:
 GET /api/activity/export
 ```
 
-Requires `activities.export` (admins and super admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
+Requires `activities.export` (admins have it; employees only through a staff role — it is not a default, and the view permission alone is not enough). At most **10 exports per user per minute**, shared by all four list exports.
 
 ### Query Parameters
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `format` | string | `csv` (default), `xlsx` or `sql` |
-| `hotel_id` | uuid | Super admin only, and required for them: the hotel to export. Ignored for everyone else |
 | `search`, `sort`, `filter[...]` | | Same as the list |
 | `page`, `per_page` | | Accepted and ignored: the export covers every page |
 
@@ -286,7 +287,7 @@ Columns (CSV and Excel), in order: Name, Category, Description, Price, Currency,
 
 | Code | When |
 |------|------|
-| `403` | No `activities.export`; or a super admin without a valid `hotel_id` |
+| `403` | No `activities.export` |
 | `422` | Unknown `format`, filter column or sort column (standard validation error shape). Checked after the permission, so a user without it only ever sees `403` |
 | `422` | More records match than the export limit (10,000 by default, `EXPORT_MAX_ROWS`). Nothing is cut short: narrow the filters. Body: `{ "matching": 12345, "max_rows": 10000 }` |
 | `429` | More than 10 exports by this user in the last minute |
@@ -618,17 +619,7 @@ Success: `200`, `body: null`.
 
 ## Super Admin Caveats
 
-Both policies' `before()` hooks let a `super_admin` pass every *authorization* check unconditionally. But `index` and `store` on **both** controllers separately gate on `$request->user()->hotel` for their own business logic — and a super admin typically has no owned hotel. The two checks don't agree, so behavior is inconsistent per endpoint:
-
-| Endpoint | Super admin can actually use it? |
-| --- | --- |
-| `GET /api/activity`, `GET /api/activity-category` (list) | **No** — the query is hardcoded to `where('hotel_id', <caller's hotel>)`, which is `null` for a super admin, so this returns an **empty list**, not "everything." |
-| `POST /api/activity`, `POST /api/activity-category` | **No** — blocked by the "You do not belong to any hotel." check before the insert. |
-| `GET /api/activity/{id}`, `GET /api/activity-category/{id}` | **Yes** — only the (bypassed) policy gates this; a super admin can view any hotel's row by id. |
-| `PUT /api/activity/{id}`, `PUT /api/activity-category/{id}` | **Yes** — same reasoning; no hotel check beyond the bypassed policy. |
-| `DELETE /api/activity/{id}`, `DELETE /api/activity-category/{id}` | **Yes** — same reasoning. |
-
-If a super-admin "manage everything across all hotels" screen is in scope, flag this gap to the backend team — as of this writing a super admin can view/edit/delete an individual activity or category by id but cannot list or create either.
+None since spec 028 (2026-11-10): a super admin's own token gets `403` on every endpoint here, and the policy bypass this section described is gone. A super admin works on a hotel's activities and activity categories through an [impersonation session](superadmin-impersonation-api-documentation.md).
 
 ## Error Shapes
 
@@ -720,8 +711,7 @@ curl -X POST http://your-domain.com/api/activity-category \
 - The optional timeframe fields (`available_from`, `available_until`, `operating_hours`, `unavailable_periods`) set the season, weekly working hours in hotel local time, and closed date ranges. `null` means no restriction. `operating_hours` and `unavailable_periods` are replaced whole on update. See [Activity Timeframe](#activity-timeframe).
 - Treat `403` on `show`/`update`/`destroy` the same as `404` in the UI — it means "not yours" (or you're not an admin).
 - A cross-hotel `category_id` error names the relation (`"activityCategories"`), not the field — show it as a form-level error, not tied to one input.
-- A `super_admin` can view/edit/delete an individual activity by id, but currently **cannot** list or create activities (see [Super Admin Caveats](#super-admin-caveats)) — don't build a super-admin activity console assuming full parity with a regular admin yet.
-- Activity categories are a separate, simpler resource at `/api/activity-category` — no `SoftDeletes` (hard delete), no cross-hotel FK to validate beyond `hotel_id` itself, and `hotel_id` on update is silently ignored (kept as the record's existing value) rather than re-forced to the caller's hotel. Same super-admin list/create gap applies to it too.
+- Activity categories are a separate, simpler resource at `/api/activity-category` — no `SoftDeletes` (hard delete), no cross-hotel FK to validate beyond `hotel_id` itself, and `hotel_id` on update is silently ignored (kept as the record's existing value) rather than re-forced to the caller's hotel.
 
 ## Related Docs
 

@@ -73,7 +73,6 @@ it('refuses every transaction endpoint to every role while the ledger is off', f
     [$admin, $hotel, $transaction] = ffHotelWithLedgerRow();
 
     $user = match ($actor) {
-        'super admin' => knSuperAdmin(),
         'admin' => $admin,
         'employee with every transactions permission' => fdEmployee($hotel, [
             Permission::TRANSACTIONS_VIEW, Permission::TRANSACTIONS_IMPORT, Permission::TRANSACTIONS_REVERSE,
@@ -88,7 +87,7 @@ it('refuses every transaction endpoint to every role while the ledger is off', f
 
     expect(Transaction::withoutGlobalScopes()->count())->toBe(1)
         ->and(MeterEvent::where('feature_code', MeterFeature::TRANSACTION_ROWS_IMPORTED->value)->count())->toBe(0);
-})->with(['super admin', 'admin', 'employee with every transactions permission']);
+})->with(['admin', 'employee with every transactions permission']);
 
 it('answers "not enabled" for an id that does not exist', function () {
     [$admin] = wp5AdminWithHotel();

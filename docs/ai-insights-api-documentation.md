@@ -6,6 +6,8 @@ It covers **only two actions**: `index` (list insights) and `store` (kick off AI
 
 **This is an asynchronous, fire-and-forget endpoint.** `POST /api/ai-insights` does not return any insight data — it queues a background job (`App\Jobs\CreateAiInsightsJob`) that calls an AI agent and, some time later, writes up to 5 new rows into the `ai_insights` table. See [How to Integrate This (Read First)](#how-to-integrate-this-read-first) before building the UI.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL
 
 All endpoints below are defined in `routes/api.php`, served under:
@@ -32,16 +34,16 @@ Content-Type: application/json
 
 ## Who Can Call These Endpoints
 
-Gated by `App\Policies\AiInsightsPolicy`. The policy has a `before()` hook: **a user whose `role` is `super_admin` passes every check below, unconditionally.**
+Gated by `App\Policies\AiInsightsPolicy`.
 
-| Action | Permission (non-super-admin) |
+| Action | Permission |
 | --- | --- |
 | `index` (list) | `ai_insights.view` |
 | `store` (generate) | `ai_insights.generate` |
 
 Admins hold every permission. An `employee` gets HTTP `403` unless their [staff role](staff-roles-api-documentation.md) grants the permission. Employees without a role have neither. Citations need no extra permission.
 
-`index` additionally scopes the query to `where('hotel_id', <caller's own hotel>)` — a regular admin only ever sees their own hotel's insights. **Caveat:** unlike some other list endpoints in this app, this uses `$request->user()->hotel?->id`, which resolves to `null` for a super admin (who typically has no owned hotel) or for an admin with no hotel — in that case the query becomes `where('hotel_id', null)` and returns an **empty list**, not "everything" or an error. Don't assume a `200` with an empty array means "no insights exist" for a super admin.
+`index` additionally scopes the query to `where('hotel_id', <caller's own hotel>)`: an admin only ever sees their own hotel's insights. An admin with no hotel gets an **empty list**, not an error.
 
 ## Response Format
 
@@ -277,12 +279,12 @@ curl -X POST http://your-domain.com/api/ai-insights \
 
 ## Summary for the Frontend
 
-- Two endpoints only: `GET /api/ai-insights` (list) and `POST /api/ai-insights` (trigger generation). Both admin/super-admin only.
+- Two endpoints only: `GET /api/ai-insights` (list) and `POST /api/ai-insights` (trigger generation). Both admin only.
 - **`POST` is fire-and-forget.** It queues a job and returns `201` with an empty body immediately — it does **not** return the generated insights. Poll `GET /api/ai-insights` afterward to pick up new rows; there's no job status, correlation id, or webhook to know when generation finished or failed.
 - A single `POST` call can add anywhere from **0 to 5** new rows. Don't assume a fixed count.
 - `category` (what the insight is about: `reservation`/`task`/`guest_message`/`general`) and `insight_type` (what the `POST` request asked for) are two different fields — use `category` for any per-insight icon/label.
 - `insightable_type`/`insightable_id` give you a link to the source record, but are frequently `null` (general insights, or when the AI's claimed source id didn't check out) — always null-check before offering a "view record" action, and note the related model itself is never eager-loaded, only the raw id/type.
-- `index` is hotel-scoped for regular admins; a super admin with no owned hotel currently gets an **empty list**, not "every hotel's insights" — don't build a cross-hotel insights view against this endpoint as-is.
+- `index` is hotel-scoped. A super admin's own token gets `403`; there is no cross-hotel insights view.
 - There is no delete/dismiss endpoint yet — insights accumulate; plan the UI (e.g. "seen" state, client-side dismissal) accordingly if that matters for this release.
 
 ## Related Docs

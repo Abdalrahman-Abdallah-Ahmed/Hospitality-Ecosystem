@@ -24,7 +24,6 @@ class StoreKnowledgeDocumentRequest extends FormRequest
             'title' => ['required', 'string', 'max:255'],
             'category' => ['nullable', Rule::enum(KnowledgeBaseCategory::class)],
             'is_active' => ['sometimes', 'boolean'],
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 

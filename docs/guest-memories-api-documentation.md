@@ -6,6 +6,8 @@ the evening", "loved the sunset camel ride" — so the Concierge can welcome the
 are **guest memories**. This page covers how they are made, how the Concierge uses them, and
 the endpoints to review and delete them.
 
+> **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every hotel endpoint in this document, before any record is looked up (the two `/api/superadmin` endpoints below are theirs). A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.
+
 ## Base URL and Headers
 
 Same as every tenant endpoint: `X-API-KEY`, `Authorization: Bearer <token>`, `Accept: application/json`.
@@ -33,7 +35,7 @@ Responses use `{ message, code, body }`.
   (`skipped_no_messages`), or the hotel has memories switched off (`skipped_disabled`).
 - **Retries.** If the AI fails after three quick attempts, or the account's daily AI spend
   ceiling stops it, the extraction gets **one** more try about 24 hours later; after that the
-  result is final (`failed` or `skipped_spend_ceiling`). A super admin can re-run a final one
+  result is final (`failed` or `skipped_spend_ceiling`). A super admin can re-run a final one through `/api/superadmin`
   by hand ([below](#super-admin-re-run-an-extraction)).
 
 ## How the Concierge Uses Them
@@ -61,7 +63,7 @@ and recorded as `hotel.guest_memories_toggled`.
 | Delete a memory | `guest_memories.delete` |
 
 Admins hold both. Employees get them only through a [staff role](staff-roles-api-documentation.md);
-employees without a role never do. Super admins can read any hotel's.
+employees without a role never do.
 
 ## List a Guest's Memories
 
@@ -100,8 +102,7 @@ Newest first.
 ```
 
 `confidence` is `medium` or `high`. `source_stay` and `extracted_at` can be `null`. There is
-no `hotel_id` parameter: the guest id decides the hotel, and a super admin can read any hotel's
-guest. Every call records `guest.memories_viewed` in the guest's
+no `hotel_id` parameter: the guest id decides the hotel, within the user's own hotels. Every call records `guest.memories_viewed` in the guest's
 [history](history-api-documentation.md), without any memory text.
 
 ## Delete a Memory

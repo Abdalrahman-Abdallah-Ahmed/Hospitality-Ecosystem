@@ -12,14 +12,6 @@ class HotelPolicy
     use ChecksPermissions;
 
     /**
-     * Super admins bypass every ability below.
-     */
-    public function before(User $user, string $ability): ?bool
-    {
-        return $user->isSuperAdmin() ? true : null;
-    }
-
-    /**
      * Whether the user can list the hotels they work in. The list itself is
      * limited to those, in HotelController. Every other ability stays with
      * admins: hotels.view opens only this.

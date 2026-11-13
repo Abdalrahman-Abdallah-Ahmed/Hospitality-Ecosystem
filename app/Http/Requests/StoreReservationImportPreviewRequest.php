@@ -24,8 +24,6 @@ class StoreReservationImportPreviewRequest extends FormRequest
             // 'txt' is included alongside 'csv' because PHP's fileinfo
             // sometimes sniffs a small/simple CSV's content as text/plain.
             'file' => ['required', 'file', 'mimes:xlsx,xls,csv,txt', 'max:5120'],
-            // Super admins name the hotel; everyone else uploads into their own.
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 }

@@ -26,7 +26,6 @@ class AvailabilityRequest extends FormRequest
             'departure_date' => ['required', 'date_format:Y-m-d', 'after:arrival_date'],
             'room_type_ids' => ['sometimes', 'array'],
             'room_type_ids.*' => ['uuid', 'distinct'],
-            'hotel_id' => ['sometimes', 'uuid'],
         ];
     }
 }

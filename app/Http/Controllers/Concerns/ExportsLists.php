@@ -14,8 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * The export action the reservation, activity, booking and guest lists share
- * (spec 021): the module's export permission, one hotel (a super admin names
- * it), then the file. The query is the list's own, so the file holds exactly
+ * (spec 021): the module's export permission, the hotel the request works
+ * in, then the file. The query is the list's own, so the file holds exactly
  * what the list shows.
  */
 trait ExportsLists
@@ -37,9 +37,9 @@ trait ExportsLists
     {
         $this->authorize('export', $modelClass);
 
-        $hotel = resolveHotel($request->user(), $request->validated('hotel_id'));
+        $hotel = resolveHotel($request->user());
         if (! $hotel) {
-            return apiResponse('You must belong to, or specify, a valid hotel.', 403);
+            return apiResponse('You must belong to a hotel.', 403);
         }
 
         // The export class decides what it eager loads.

@@ -84,13 +84,12 @@ it('lists another day when asked, and rejects a malformed date', function () {
     fdGet($this, adminOfHotel($hotel), '/api/stays/arrivals?date=tomorrow')->assertUnprocessable();
 });
 
-it('makes a super admin name the hotel', function () {
-    [$hotel, $type, [$a]] = fdHotel();
-    [$stay] = fdStays(fdBook($hotel, $type, [$a->id]));
+it('refuses a super admin\'s own token, named hotel or not', function () {
+    [$hotel] = fdHotel();
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    fdGet($this, $superAdmin, '/api/stays/arrivals')->assertForbidden();
-    expect(listedIds(fdGet($this, $superAdmin, "/api/stays/arrivals?hotel_id={$hotel->id}")->assertOk()))->toBe([$stay->id]);
+    assertSuperAdminRefused(fdGet($this, $superAdmin, '/api/stays/arrivals'));
+    assertSuperAdminRefused(fdGet($this, $superAdmin, "/api/stays/arrivals?hotel_id={$hotel->id}"));
 });
 
 it('filters and searches the stays index, and shows one stay', function () {

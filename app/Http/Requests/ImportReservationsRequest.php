@@ -28,8 +28,6 @@ class ImportReservationsRequest extends FormRequest
             // How "25,200" is read: "." or "," as the decimal mark (016).
             'decimal_mark' => ['nullable', Rule::enum(ImportDecimalMark::class)],
             'dry_run' => ['nullable', 'boolean'],
-            // Super admins name the hotel; everyone else imports into their own.
-            'hotel_id' => ['nullable', 'uuid'],
         ];
     }
 }
