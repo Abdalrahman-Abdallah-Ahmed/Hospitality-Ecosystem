@@ -11,7 +11,8 @@ use Illuminate\Support\Str;
 
 /*
  * SPEC-083 FR-025, FR-035: the AI activity list — everything the AI did for
- * the hotel, filterable, with cost only for super admins.
+ * the hotel, filterable. Run cost is never shown here: it is our cost of goods
+ * (spec 028 removed the super admin view of it).
  */
 
 uses(RefreshDatabase::class);
@@ -119,13 +120,11 @@ it('shows a run\'s provider cost to super admins only', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
     $asAdmin = cmaRequest($this, cmaAdmin($hotel), 'GET', '/api/ai-activity')->assertOk();
-    $asSuper = cmaRequest($this, $superAdmin, 'GET', "/api/ai-activity?hotel_id={$hotel->id}")->assertOk();
 
     expect($asAdmin->json('body.data.0'))->not->toHaveKey('cost_usd')
-        ->and($asAdmin->getContent())->not->toContain('cost')
-        ->and((float) $asSuper->json('body.data.0.cost_usd'))->toBe(0.02);
+        ->and($asAdmin->getContent())->not->toContain('cost');
 
-    cmaRequest($this, $superAdmin, 'GET', '/api/ai-activity')->assertUnprocessable();
+    assertSuperAdminRefused(cmaRequest($this, $superAdmin, 'GET', "/api/ai-activity?hotel_id={$hotel->id}"));
 });
 
 it('is open to employees only through history.view', function () {

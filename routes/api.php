@@ -68,12 +68,15 @@ Route::middleware('api.key')->group(function () {
     Route::post('/reset-password', [PasswordResetController::class, 'store'])->middleware('throttle:login');
     Route::post('/pair', [WhatsAppController::class, 'pair'])->middleware('throttle:pair');
 
-    // not_suspended and hotel_choice are on the whole group, so a new route
-    // can't be left out.
-    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant', 'not_suspended', 'hotel_choice'])->group(function () {
-        // A suspended user, or one with a stale X-Hotel-Id, can still end their session.
-        Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout'])->withoutMiddleware(['not_suspended', 'hotel_choice']);
-        // loadMissing keeps the current hotel EnsureNotSuspended may have set.
+    // not_suspended, hotel_choice and no_super_admin are on the whole group, so a
+    // new route can't be left out. A super admin's own token is refused here: they
+    // use /api/superadmin, or impersonate a hotel user (spec 028).
+    Route::middleware(['auth:sanctum', 'throttle:api', 'tenant', 'not_suspended', 'hotel_choice', 'no_super_admin'])->group(function () {
+        // A suspended user, or one with a stale X-Hotel-Id, can still end their
+        // session, and so can a super admin.
+        Route::post('/logout', [AuthenticatedSessionController::class, 'apiLogout'])->withoutMiddleware(['not_suspended', 'hotel_choice', 'no_super_admin']);
+        // loadMissing keeps the current hotel EnsureNotSuspended may have set. A
+        // super admin reads it too, so the client can route them to their area.
         Route::get('/user', function (Request $request) {
             $body = UserResource::make($request->user()->loadMissing(['hotel', 'team', 'staffRole']))->resolve();
 
@@ -83,7 +86,7 @@ Route::middleware('api.key')->group(function () {
             }
 
             return apiResponse('Authenticated user fetched successfully.', 200, $body);
-        });
+        })->withoutMiddleware('no_super_admin');
         // A device belongs to the user's home hotel, whichever hotel they're working in.
         Route::post('/connect', [WhatsAppController::class, 'connect'])->withoutMiddleware('hotel_choice')->middleware('not_impersonating');
         Route::get('/check-paired', [WhatsAppController::class, 'checkPaired'])->withoutMiddleware('hotel_choice');

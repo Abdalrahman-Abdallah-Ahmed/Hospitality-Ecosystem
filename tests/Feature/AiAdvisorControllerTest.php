@@ -48,12 +48,11 @@ it('rejects a worker from chatting with the advisor', function () {
         ->assertStatus(403);
 });
 
-it('rejects a super admin from chatting with the advisor, since it has no hotel', function () {
+it('refuses a super admin\'s own token', function () {
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    $this->withHeaders(aiAdvisorApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->postJson('/api/ai-advisor/chat', ['message' => 'Hello'])
-        ->assertStatus(403);
+    assertSuperAdminRefused($this->withHeaders(aiAdvisorApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->postJson('/api/ai-advisor/chat', ['message' => 'Hello']));
 });
 
 it('starts a new conversation and returns the reply', function () {

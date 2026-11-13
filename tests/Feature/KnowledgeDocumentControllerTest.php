@@ -134,28 +134,19 @@ it('streams the original file to permitted staff only', function () {
     knRequest($this, knEmployee($hotel, []), 'GET', "/api/knowledge-documents/{$id}/download")->assertForbidden();
 });
 
-it('makes a super admin name the hotel, and files the document under it', function () {
+it('refuses a super admin\'s own token, named hotel or not', function () {
     [, $hotel] = knHotel();
     $super = knSuperAdmin();
+    $document = knDocument($hotel);
 
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->post('/api/knowledge-documents', ['file' => knUpload('plain.txt'), 'title' => 'Notes'], ['Accept' => 'application/json'])
-        ->assertUnprocessable();
-
-    $id = $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->post('/api/knowledge-documents', ['file' => knUpload('plain.txt'), 'title' => 'Notes', 'hotel_id' => $hotel->id], ['Accept' => 'application/json'])
-        ->assertCreated()
-        ->assertJsonPath('body.hotel_id', $hotel->id)
-        ->json('body.id');
-
-    knRequest($this, $super, 'GET', "/api/knowledge-documents/{$id}?hotel_id={$hotel->id}")->assertOk();
-    knRequest($this, $super, 'PUT', "/api/knowledge-documents/{$id}?hotel_id={$hotel->id}", ['title' => 'Renamed'])->assertOk();
-    $this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
-        ->get("/api/knowledge-documents/{$id}/download?hotel_id={$hotel->id}")->assertOk();
+    assertSuperAdminRefused($this->withHeaders(['X-API-KEY' => 'test-api-key'])->actingAs($super, 'sanctum')
+        ->post('/api/knowledge-documents', ['file' => knUpload('plain.txt'), 'title' => 'Notes', 'hotel_id' => $hotel->id], ['Accept' => 'application/json']));
+    assertSuperAdminRefused(knRequest($this, $super, 'GET', "/api/knowledge-documents/{$document->id}?hotel_id={$hotel->id}"));
+    assertSuperAdminRefused(knRequest($this, $super, 'PUT', "/api/knowledge-documents/{$document->id}", ['title' => 'Renamed']));
 });
 
 it('never shows or serves a global document on the hotel routes', function () {
-    [$admin, $hotel] = knHotel();
+    [$admin] = knHotel();
     $global = knDocument(null, ['title' => 'Platform guidance']);
 
     expect(collect(knRequest($this, $admin, 'GET', '/api/knowledge-documents')->json('body.data'))->pluck('id'))
@@ -164,7 +155,6 @@ it('never shows or serves a global document on the hotel routes', function () {
     knRequest($this, $admin, 'GET', "/api/knowledge-documents/{$global->id}")->assertNotFound();
     knRequest($this, $admin, 'GET', "/api/knowledge-documents/{$global->id}/download")->assertNotFound();
     knRequest($this, $admin, 'PUT', "/api/knowledge-documents/{$global->id}", ['title' => 'Hijacked'])->assertNotFound();
-    knRequest($this, knSuperAdmin(), 'GET', "/api/knowledge-documents/{$global->id}?hotel_id={$hotel->id}")->assertNotFound();
 });
 
 it('lets an employee upload only with the create permission', function () {

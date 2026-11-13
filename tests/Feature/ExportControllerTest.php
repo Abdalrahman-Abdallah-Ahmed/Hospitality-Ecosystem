@@ -350,20 +350,12 @@ it('keeps another hotel out of a reservation export', function () {
         ->and(exportColumn($spoofed, 'Reservation Number'))->toBe(['RES-MINE']);
 });
 
-it('makes a super admin name the hotel to export', function () {
-    [, $hotel] = exportAdmin();
+it('refuses a super admin\'s own token, named hotel or not', function () {
     [, $other] = exportAdmin('Other Hotel');
-    exportReservation($hotel, ['reservation_id' => 'RES-A']);
-    exportReservation($other, ['reservation_id' => 'RES-B']);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    $this->withHeaders(exportHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson('/api/reservation/export')
-        ->assertForbidden();
-
-    $rows = csvRows(exportGet($superAdmin, "/api/reservation/export?hotel_id={$other->id}")->assertOk());
-
-    expect(exportColumn($rows, 'Reservation Number'))->toBe(['RES-B']);
+    assertSuperAdminRefused($this->withHeaders(exportHeaders())->actingAs($superAdmin, 'sanctum')->getJson('/api/reservation/export'));
+    assertSuperAdminRefused(exportGet($superAdmin, "/api/reservation/export?hotel_id={$other->id}"));
 });
 
 /*

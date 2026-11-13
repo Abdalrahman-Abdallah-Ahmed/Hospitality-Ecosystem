@@ -109,16 +109,12 @@ it('gives the same answer for an unknown, deleted or other hotel\'s room type', 
     }
 });
 
-it('makes a super admin name the hotel', function () {
+it('refuses a super admin\'s own token, named hotel or not', function () {
     $hotel = avHotel();
-    avType($hotel, 'Deluxe');
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    acGet($this, $superAdmin, acDates(1, 2))->assertForbidden();
-
-    acGet($this, $superAdmin, [...acDates(1, 2), 'hotel_id' => $hotel->id])
-        ->assertOk()
-        ->assertJsonPath('body.room_types.0.room_type.name', 'Deluxe');
+    assertSuperAdminRefused(acGet($this, $superAdmin, acDates(1, 2)));
+    assertSuperAdminRefused(acGet($this, $superAdmin, [...acDates(1, 2), 'hotel_id' => $hotel->id]));
 });
 
 it('lets an employee without a staff role look availability up by default', function () {

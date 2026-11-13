@@ -408,26 +408,14 @@ it('gates each template action by its own permission', function () {
     vtSend($this, $noRole, 'GET', '/api/voucher-templates')->assertForbidden();
 });
 
-it('creates a super admin\'s template in the hotel they name', function () {
+it('refuses a super admin\'s own token, named hotel or not', function () {
     $hotel = avHotel();
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    vtUpload($this, $super, ['name' => 'HQ', 'language' => 'en'])->assertForbidden();
+    assertSuperAdminRefused(vtUpload($this, $super, ['name' => 'HQ', 'language' => 'en', 'hotel_id' => $hotel->id]));
+    assertSuperAdminRefused(vtSend($this, $super, 'GET', "/api/voucher-templates?filter[hotel_id]={$hotel->id}"));
 
-    $id = vtUpload($this, $super, ['name' => 'HQ', 'language' => 'en', 'hotel_id' => $hotel->id])->assertCreated()->json('body.id');
-
-    expect(VoucherTemplate::withoutGlobalScopes()->find($id)->hotel_id)->toBe($hotel->id);
-});
-
-it('lets a super admin list one hotel\'s templates by hotel_id', function () {
-    $hotel = avHotel();
-    $other = avHotel();
-    vtCreate($this, $hotel, 'Alpha');
-    vtCreate($this, $other, 'Gamma');
-    $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    expect(vtSend($this, $super, 'GET', '/api/voucher-templates')->assertOk()->json('body.data'))->toHaveCount(2);
-    expect(vtSend($this, $super, 'GET', "/api/voucher-templates?filter[hotel_id]={$hotel->id}")->assertOk()->json('body.data.*.name'))->toBe(['Alpha']);
+    expect(VoucherTemplate::withoutGlobalScopes()->count())->toBe(0);
 });
 
 // --- Review fixes -----------------------------------------------------------

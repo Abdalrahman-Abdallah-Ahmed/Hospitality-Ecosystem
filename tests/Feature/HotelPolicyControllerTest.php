@@ -186,27 +186,17 @@ it('rejects an admin deleting a policy belonging to a different hotel', function
     expect(HotelPolicy::withoutGlobalScope('hotel')->find($policy->id))->not->toBeNull();
 });
 
-// super admin bypass
+// a super admin's own token (spec 028)
 
-it('lets a super admin update a hotel policy belonging to any hotel', function () {
+it('refuses a super admin\'s own token on any hotel\'s policy, and changes nothing', function () {
     [, $hotel] = adminWithOwnedHotel();
     $policy = hotelPolicyFor($hotel);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $call = fn (string $method, array $body = []) => $this->withHeaders(hotelPolicyApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->json($method, "/api/hotel-policy/{$policy->id}", $body);
 
-    $this->withHeaders(hotelPolicyApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/hotel-policy/{$policy->id}", ['title' => 'Updated by Super Admin'])
-        ->assertOk()
-        ->assertJsonPath('body.title', 'Updated by Super Admin');
-});
+    assertSuperAdminRefused($call('PUT', ['title' => 'Updated by Super Admin']));
+    assertSuperAdminRefused($call('DELETE'));
 
-it('lets a super admin delete a hotel policy belonging to any hotel', function () {
-    [, $hotel] = adminWithOwnedHotel();
-    $policy = hotelPolicyFor($hotel);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(hotelPolicyApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->deleteJson("/api/hotel-policy/{$policy->id}")
-        ->assertOk();
-
-    expect(HotelPolicy::find($policy->id))->toBeNull();
+    expect($policy->fresh()->title)->toBe($policy->title);
 });

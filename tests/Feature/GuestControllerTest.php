@@ -114,15 +114,18 @@ it('allows creating multiple guests without channel or external id', function ()
 
 // show
 
-it('lets a super admin view a guest belonging to any hotel', function () {
+it('refuses a super admin\'s own token on any hotel\'s guest, and changes nothing', function () {
     [, $hotel] = adminWithGuestHotel();
     $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $call = fn (string $method, array $body = []) => $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->json($method, "/api/guest/{$guest->id}", $body);
 
-    $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson("/api/guest/{$guest->id}")
-        ->assertOk()
-        ->assertJsonPath('body.id', $guest->id);
+    assertSuperAdminRefused($call('GET'));
+    assertSuperAdminRefused($call('PUT', ['first_name' => 'New Name']));
+    assertSuperAdminRefused($call('DELETE'));
+
+    expect($guest->fresh()->first_name)->toBe('Youssef');
 });
 
 // update
@@ -139,30 +142,7 @@ it('ignores an attempt to reassign a guest to a different hotel on update', func
     expect($guest->fresh()->hotel_id)->toBe($hotel->id);
 });
 
-it('lets a super admin update a guest belonging to any hotel', function () {
-    [, $hotel] = adminWithGuestHotel();
-    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Old Name', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/guest/{$guest->id}", ['first_name' => 'New Name'])
-        ->assertOk()
-        ->assertJsonPath('body.first_name', 'New Name');
-});
-
 // destroy
-
-it('lets a super admin delete a guest belonging to any hotel', function () {
-    [, $hotel] = adminWithGuestHotel();
-    $guest = Guest::create(['hotel_id' => $hotel->id, 'first_name' => 'Youssef', 'channel' => 'booking_com', 'external_id' => 'ext-1']);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(guestApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->deleteJson("/api/guest/{$guest->id}")
-        ->assertOk();
-
-    expect(Guest::find($guest->id))->toBeNull();
-});
 
 // dedup by email/phone across channels
 

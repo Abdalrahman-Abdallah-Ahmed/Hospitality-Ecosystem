@@ -106,13 +106,13 @@ it('gives an owner the suspended answer on a suspended hotel, and writes nothing
     expect($b->fresh()->city)->toBeNull();
 })->with(['GET', 'PUT', 'PATCH']);
 
-it('leaves a super admin unaffected, suspended hotel or not', function () {
+it('refuses a super admin\'s own token, suspended hotel or not', function () {
     [, $a, $b] = spAccount();
     spSuspend($b);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    spRequest($this, $superAdmin, 'GET', "/api/hotel/{$a->id}")->assertOk();
-    spRequest($this, $superAdmin, 'GET', "/api/hotel/{$b->id}")->assertOk();
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'GET', "/api/hotel/{$a->id}"));
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'GET', "/api/hotel/{$b->id}"));
 });
 
 // User Story 8: one hotel per request, in every module
@@ -329,12 +329,12 @@ it('refuses a header naming a hotel out of reach, the same way every time', func
     'employee' => UserRole::EMPLOYEE,
 ]);
 
-it('leaves a super admin free to send any header', function () {
+it('refuses a super admin\'s own token, whatever hotel header they send', function () {
     [, $a] = spAccount();
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    spRequest($this, $superAdmin, 'GET', '/api/team', headers: mhChoose($a))->assertOk();
-    spRequest($this, $superAdmin, 'GET', '/api/team', headers: ['X-Hotel-Id' => (string) Str::uuid()])->assertOk();
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'GET', '/api/team', headers: mhChoose($a)));
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'GET', '/api/team', headers: ['X-Hotel-Id' => (string) Str::uuid()]));
 });
 
 it('still lets a user with a stale header log out, list hotels and use their device', function () {

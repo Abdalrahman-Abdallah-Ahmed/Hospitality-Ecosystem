@@ -258,56 +258,33 @@ it('rejects an admin deleting a room belonging to a different hotel', function (
     expect(Room::withoutGlobalScope('hotel')->find($room->id))->not->toBeNull();
 });
 
-// super admin bypass
+// a super admin's own token (spec 028)
 
-it('lets a super admin view a room belonging to any hotel', function () {
+it('refuses a super admin\'s own token on any hotel\'s room, and changes nothing', function () {
     [, $hotel] = adminWithOwnHotel();
     $room = roomFor($hotel);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    $call = fn (string $method, string $uri, array $body = []) => $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
+        ->json($method, $uri, $body);
 
-    $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson("/api/room/{$room->id}")
-        ->assertOk()
-        ->assertJsonPath('body.id', $room->id);
+    assertSuperAdminRefused($call('GET', '/api/room'));
+    assertSuperAdminRefused($call('GET', "/api/room/{$room->id}"));
+    assertSuperAdminRefused($call('PUT', "/api/room/{$room->id}", ['floor' => '7']));
+    assertSuperAdminRefused($call('DELETE', "/api/room/{$room->id}"));
+
+    expect(Room::find($room->id))->not->toBeNull()
+        ->and($room->fresh()->floor)->not->toBe('7');
 });
 
-it('lists room types for the picker: own hotel for an admin, every hotel for a super admin', function () {
+it('lists only the admin\'s own hotel\'s room types for the picker', function () {
     [$admin, $hotel] = adminWithOwnHotel();
     [, $otherHotel] = adminWithOwnHotel();
     $mine = roomTypeIdFor($hotel);
-    $theirs = roomTypeIdFor($otherHotel);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
+    roomTypeIdFor($otherHotel);
 
     $adminTypes = $this->withHeaders(roomApiHeaders())->actingAs($admin, 'sanctum')
         ->getJson('/api/room')->assertOk()->json('body.room_types');
     expect(collect($adminTypes)->pluck('id')->all())->toBe([$mine]);
-
-    $superTypes = $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->getJson('/api/room')->assertOk()->json('body.room_types');
-    expect(collect($superTypes)->pluck('id')->all())->toContain($mine, $theirs);
-});
-
-it('lets a super admin update a room belonging to any hotel', function () {
-    [, $hotel] = adminWithOwnHotel();
-    $room = roomFor($hotel);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->putJson("/api/room/{$room->id}", ['floor' => '7'])
-        ->assertOk()
-        ->assertJsonPath('body.floor', '7');
-});
-
-it('lets a super admin delete a room belonging to any hotel', function () {
-    [, $hotel] = adminWithOwnHotel();
-    $room = roomFor($hotel);
-    $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
-
-    $this->withHeaders(roomApiHeaders())->actingAs($superAdmin, 'sanctum')
-        ->deleteJson("/api/room/{$room->id}")
-        ->assertOk();
-
-    expect(Room::find($room->id))->toBeNull();
 });
 
 // housekeeping status

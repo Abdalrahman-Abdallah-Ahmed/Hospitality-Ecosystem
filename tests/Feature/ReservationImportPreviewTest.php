@@ -183,14 +183,12 @@ it('keeps an unexpired preview when pruning', function () {
     pvGet($this, $admin, "/api/reservation/import-previews/{$id}")->assertOk();
 });
 
-it('makes a super admin name the hotel', function () {
+it('refuses a super admin\'s own token, named hotel or not', function () {
     [, $hotel] = imHotel();
     $super = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    imPreview($this, $super, pvReport())->assertUnprocessable()->assertJsonValidationErrors('hotel_id');
-
-    $id = imPreview($this, $super, pvReport(), ['hotel_id' => $hotel->id])->assertCreated()->json('body.id');
-    expect(pvPreview($id)->hotel_id)->toBe($hotel->id);
+    assertSuperAdminRefused(imPreview($this, $super, pvReport()));
+    assertSuperAdminRefused(imPreview($this, $super, pvReport(), ['hotel_id' => $hotel->id]));
 });
 
 // --- Suggestions (US2) -------------------------------------------------------

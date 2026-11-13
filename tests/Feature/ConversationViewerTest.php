@@ -119,16 +119,14 @@ it('never shows staff conversations or a deleted guest\'s conversations', functi
     cmaRequest($this, $admin, 'GET', '/api/conversations/'.Str::uuid7())->assertNotFound();
 });
 
-it('makes a super admin name the hotel', function () {
+it('refuses a super admin\'s own token, named hotel or not', function () {
     $hotel = cmaHotel();
     $id = cmaGuestConversation(gsGuest($hotel), [['role' => 'user', 'content' => 'Hi']]);
     $superAdmin = User::factory()->role(UserRole::SUPER_ADMIN)->create();
 
-    cmaRequest($this, $superAdmin, 'GET', '/api/conversations')->assertUnprocessable();
-    cmaRequest($this, $superAdmin, 'GET', "/api/conversations/{$id}")->assertUnprocessable();
-
-    expect(cmaRequest($this, $superAdmin, 'GET', "/api/conversations?hotel_id={$hotel->id}")->assertOk()->json('body.data.0.id'))->toBe($id);
-    cmaRequest($this, $superAdmin, 'GET', "/api/conversations/{$id}?hotel_id={$hotel->id}")->assertOk();
+    assertSuperAdminRefused(cmaRequest($this, $superAdmin, 'GET', '/api/conversations'));
+    assertSuperAdminRefused(cmaRequest($this, $superAdmin, 'GET', "/api/conversations?hotel_id={$hotel->id}"));
+    assertSuperAdminRefused(cmaRequest($this, $superAdmin, 'GET', "/api/conversations/{$id}?hotel_id={$hotel->id}"));
 });
 
 it('lets an employee in only when their role grants conversations.view', function () {

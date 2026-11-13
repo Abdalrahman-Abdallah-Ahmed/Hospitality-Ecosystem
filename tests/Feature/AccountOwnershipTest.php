@@ -139,7 +139,9 @@ it('frees the account for a new owner once its owner is deleted', function () {
     $admin = spUser($a);
     $superAdmin = aoSuperAdmin();
 
-    spRequest($this, $superAdmin, 'DELETE', "/api/users/{$owner->id}")->assertOk();
+    // An owner is deleted only once their owner role is cleared (spec 028).
+    spRequest($this, $superAdmin, 'PUT', "/api/superadmin/users/{$owner->id}/access", ['group_role' => null])->assertOk();
+    spRequest($this, $superAdmin, 'DELETE', "/api/superadmin/users/{$owner->id}")->assertOk();
     spRequest($this, $superAdmin, 'PUT', "/api/superadmin/users/{$admin->id}/access", ['group_role' => 'owner'])->assertOk();
 
     expect($admin->fresh()->isOwner())->toBeTrue();
@@ -319,45 +321,28 @@ it('lets the owner edit their own details, but not their role or their existence
         ->and($owner->fresh()->isOwner())->toBeTrue();
 });
 
-it('ends the ownership when a super admin changes an owner\'s role on the tenant endpoint', function () {
-    [$account, $a, $b] = spAccount();
-    $owner = aoOwner($account, $a);
-
-    spRequest($this, aoSuperAdmin(), 'PUT', "/api/users/{$owner->id}", ['role' => 'employee'])->assertOk();
-
-    $fresh = $owner->fresh();
-    $event = EventLog::query()->where('event_type', 'platform.user.access_changed')->sole();
-
-    expect($event->changes['group_role'])->toBe(['from' => 'owner', 'to' => null])
-        ->and($event->changes['hotel_group_id'])->toBe(['from' => $account->id, 'to' => null])
-        ->and($event->changes['role'])->toBe(['from' => 'admin', 'to' => 'employee'])
-        ->and($fresh->group_role)->toBeNull()
-        ->and($fresh->hotel_group_id)->toBeNull()
-        ->and($fresh->accessibleHotelIds())->toBe([$a->id])
-        ->and($fresh->accessibleHotelIds())->not->toContain($b->id);
-});
-
-it('lets a super admin delete an owner on the tenant endpoint', function () {
+it('changes an owner\'s role or deletes them only through /api/superadmin', function () {
     [$account, $a] = spAccount();
     $owner = aoOwner($account, $a);
+    $superAdmin = aoSuperAdmin();
 
-    spRequest($this, aoSuperAdmin(), 'DELETE', "/api/users/{$owner->id}")->assertOk();
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'PUT', "/api/users/{$owner->id}", ['role' => 'employee']));
+    assertSuperAdminRefused(spRequest($this, $superAdmin, 'DELETE', "/api/users/{$owner->id}"));
 
-    expect(User::find($owner->id))->toBeNull();
+    expect($owner->fresh()->isOwner())->toBeTrue()
+        ->and($owner->fresh()->role)->toBe(UserRole::ADMIN);
 });
 
-it('ignores account attributes on the tenant endpoint for every caller', function () {
+it('ignores account attributes on the tenant endpoint', function () {
     [$account, $a] = spAccount();
     $employee = spUser($a, role: UserRole::EMPLOYEE);
 
-    foreach ([spUser($a), aoSuperAdmin()] as $caller) {
-        spRequest($this, $caller, 'PUT', "/api/users/{$employee->id}", [
-            'hotel_group_id' => $account->id, 'group_role' => 'owner', 'name' => 'Renamed',
-        ])->assertOk()->assertJsonPath('body.name', 'Renamed');
+    spRequest($this, spUser($a), 'PUT', "/api/users/{$employee->id}", [
+        'hotel_group_id' => $account->id, 'group_role' => 'owner', 'name' => 'Renamed',
+    ])->assertOk()->assertJsonPath('body.name', 'Renamed');
 
-        expect($employee->fresh()->group_role)->toBeNull()
-            ->and($employee->fresh()->hotel_group_id)->toBeNull();
-    }
+    expect($employee->fresh()->group_role)->toBeNull()
+        ->and($employee->fresh()->hotel_group_id)->toBeNull();
 });
 
 // User Story 4: the operator decides
