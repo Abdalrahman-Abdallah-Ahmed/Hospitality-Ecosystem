@@ -1,15 +1,19 @@
 # Faster Test Loop and Module-Scoped Test Runs
 
 *   **Author:** Abdalrahman-Abdallah-Ahmed
-*   **Status:** Proposed (revision 3)
-*   **Date:** 2026-11-15
+*   **Status:** Proposed (revision 4: Stage 0 results applied)
+*   **Date:** 2026-11-16
 *   **Reviews:**
     *   [round 1](reviews/test-suite-speed-and-module-runs/consolidated_review_report.md)
         reviewed revision 1;
     *   [round 2](reviews/test-suite-speed-and-module-runs/round-2/consolidated_review_report.md)
         reviewed revision 2.
 
-    Revision 3 applies the round-2 fixes.
+    Revision 3 applied the round-2 fixes. Revision 4 applies the Stage 0
+    measurements in [the stage log](../test-suite-performance.md):
+    *   the after-edit run drops the invariant tests;
+    *   large datasets may be split across files;
+    *   three flaky tests are fixed before Stage 1.
 
 ## Overview
 
@@ -26,7 +30,8 @@ This design makes three changes:
     measurement, and slow files are split only if the measurement shows they
     hold up the end of the run.
 2.  **Test folders by module.** Tests move into one folder per module. After
-    an edit, a developer runs one folder plus the invariant tests by path.
+    an edit, a developer runs only the changed module's folder, by path. The
+    invariant tests run in the full run before each commit.
 3.  **One safety guard and written rules.**
     *   A check at the top of `tests/Pest.php` refuses to run when the Laravel
         config is cached, because that would point the tests at the dev
@@ -41,26 +46,22 @@ before a merge.
 
 **Full run before commit.**
 
-*   **Baseline:** one warm run on 2026-11-14 took **403 s**.
-    *   Command: `php artisan test --parallel`, using the default 16 workers.
-    *   Machine: Windows 11, 12 cores, Postgres in Docker.
-    *   Stage 0 replaces this single run with a median of 3 runs.
-*   **Tests run 2–4x slower in parallel.**
-    *   Run alone, a test takes 0.25–0.5 s. In parallel the average is
-        0.97 s: 3,483 s of test time summed over 3,597 tests.
-    *   The likely cause is 16 workers sharing 12 cores with Postgres and
-        the Docker VM. The Stage 0 worker sweep tests this.
-*   **Workers spend about 46% of their time not running tests.**
-    *   16 workers × 403 s gives 6,448 worker-seconds, against 3,483 s of
-        test time.
-    *   The gap has three parts:
-        *   worker start-up;
-        *   each worker replaying 119 migrations (25–30 s);
-        *   waiting at the end while a few slow files finish.
-    *   Pest's parallel runner gives each worker whole files, so a slow file
-        cannot be shared between workers.
-    *   Stage 0 measures how large the end-of-run wait is before any file is
-        split.
+*   **Baseline (Stage 0, median of 3 warm runs):** **298.6 s** at the
+    default 12 workers.
+    *   The default worker count is one per logical CPU, which is 12 on this
+        machine (Windows 11, 6 cores / 12 threads, Postgres in Docker).
+    *   An earlier single run of 403 s was an outlier.
+*   **Worker count barely matters above 8.** Workers 8–16 all finish in
+    293–303 s. More workers make each test slower, because the CPU is the
+    limit.
+*   **One file sets the floor.**
+    *   `CrossTenantRouteTest` takes 218 s at 8 workers, which is 72% of the
+        run.
+    *   Pest's parallel runner gives each worker whole files, so no worker
+        count can make the run faster than that file.
+    *   `PermissionAuthorizationTest` is next, at 79 s.
+*   **Flaky tests.** Stage 0 found three tests that sometimes fail for
+    reasons unrelated to the change being tested.
 
 **After an edit.** There is no command that runs one module's tests:
 
@@ -85,9 +86,9 @@ before a merge.
 
     There are 21. They live in `tests/Feature/Invariants/`, listed in the
     move table (Detailed Implementation Plan, item 8).
-*   **Module run:** `php artisan test tests/Feature/<Module>
-    tests/Feature/Invariants`. It runs one module folder plus the invariant
-    tests, by path, in one process.
+*   **Module run:** `php artisan test tests/Feature/<Module>`. It runs one
+    module folder, by path, in one process. When an edit touches several
+    modules, all of their folders are passed in one command.
 *   **Warm run:** a run that meets all three conditions:
     *   it starts within 5 minutes of a completed run of the same command;
     *   Postgres has not been restarted since;
@@ -101,8 +102,10 @@ before a merge.
 
 *   **G1 — Full run:** under 3 min 30 s, warm, at the worker count chosen in
     Stage 1.
-*   **G2 — After-edit run:** the module run for the slowest module finishes in
-    under 3 minutes, warm. This includes the invariant tests.
+*   **G2 — After-edit run:** the module run for the slowest module
+    (`Reservations`) finishes in under 3 minutes, warm. The invariant tests
+    are not part of it. Stage 0 measured them at 325–540 s alone, so they
+    run only in the full run.
 *   **G3 — Same tests:** the full run executes the same 3,597 test cases as the
     baseline. Splitting or moving a file must not change the count. Any
     difference is recorded in the stage log with its reason.
@@ -140,9 +143,8 @@ before a merge.
 
 *   **Given:** Postgres is running and the developer changed
     `app/Services/HousekeepingService.php`.
-*   **When:** they run
-    `php artisan test tests/Feature/Housekeeping tests/Feature/Invariants`.
-*   **Then:** only those two folders run, within G2.
+*   **When:** they run `php artisan test tests/Feature/Housekeeping`.
+*   **Then:** only that folder runs, within G2.
 *   **Variant:** if the changed file serves more than one module, for example
     `app/Services/BookingService.php`, they do one of two things:
     *   search `tests/Feature` for the class name and pass every folder that
@@ -175,8 +177,8 @@ before a merge.
 *   **Given:** the change is ready and Postgres is running.
 *   **When:** the developer or an AI session runs `./vendor/bin/pint`, then
     `composer test`.
-*   **Then:** the full run finishes within G1 and reports the baseline test
-    count (G3).
+*   **Then:** the full run, including the invariant tests, finishes within
+    G1 and reports the baseline test count (G3).
 
 ### CUJ 5: AI session
 
@@ -207,7 +209,8 @@ Stage 0 Measure ─► Stage 1 Speed ─► Stage 2 Module folders ─► Stage 
 
 ### Stage 0 — Measure (no behaviour change)
 
-*   **Baseline:** three warm full parallel runs at the current 16 workers,
+*   **Baseline:** three warm full parallel runs at the default worker count
+    (12 on this machine),
     with JUnit output. The JUnit files give per-file and per-test times.
 *   **Worker sweep:** the same measurement with `--processes` set to 4, 6, 8,
     10, 12 and 16.
@@ -230,8 +233,17 @@ the 3 runs.
 
 ### Stage 1 — Speed
 
+*   **First, fix the three flaky tests Stage 0 found.** A run that fails
+    for unrelated reasons makes every timing below unreliable.
+    *   `AiActivityOutreachTest`: two rows tie on time, so their order
+        varies.
+    *   A worker database lost its tables partway through a run.
+    *   `ProactiveTriggersTest`: a unique-key violation.
+
+    Each fix goes in its own commit, with the cause recorded in the stage
+    log.
 *   **Worker count:** the lowest count whose median is within 5% of the
-    fastest median in the sweep.
+    fastest median in the sweep. Stage 0 chose **8**.
 *   **Full-run script:** the existing `composer test` script becomes the full
     run. It:
     *   turns off Composer's 300 s script timeout;
@@ -259,6 +271,17 @@ the 3 runs.
     *   A test that checks a total across a loop stays in one part, with its
         dataset. An example is the `$checked > 100` check in
         `CostVisibilityTest`.
+    *   **Exception for large datasets of independent rows.** When one test
+        runs over a big dataset, and each row is checked on its own, the rows
+        may be split across files. This applies to `CrossTenantRouteTest`
+        (315 routes) and `PermissionAuthorizationTest`.
+        *   The function that builds the dataset moves to `tests/Pest.php`.
+            It takes a fixed filter, for example a route-name prefix, and
+            each file passes its own filter.
+        *   Every row must land in exactly one file. A test in one of the
+            files checks this: the slices together must equal the full
+            list, with no row in two slices.
+        *   Each file's slice gets a similar summed time.
     *   The list of files to split, and their new names, is written into the
         stage log before any edit. That list is the set of files the PR may
         touch.
@@ -360,6 +383,14 @@ means the tools cannot do it.
     *   The 14 registration lines can fall out of step with the folders
         without any warning.
 *   **Decision:** rejected in favour of path runs.
+
+### Running the invariant tests after every edit
+
+*   **Pros:** catches cross-cutting breaks before the commit.
+*   **Cons:** Stage 0 measured them at 325–540 s alone, which is more than
+    the 3-minute after-edit target.
+*   **Decision:** rejected by measurement. They run in the full run before
+    each commit.
 
 ### A list of paths that trigger the invariant tests
 
@@ -503,8 +534,9 @@ content changes other than the path fix in item 9.
             php artisan test --parallel --processes=<N> --log-junit=storage/test-reports/<label>.xml
             ```
         *   discard the first run at each worker count.
-    *   **Pre-Stage 0 reference:** one warm run on 2026-11-14, with 16
-        workers: 403 s wall, 3,483 s summed test time, 3,597 tests.
+    *   **Pre-Stage 0 reference:** one run on 2026-11-14 at the default
+        worker count (12): 403 s wall, 3,483 s summed test time, 3,597
+        tests.
     *   **Stage 0 results:**
         *   the 3-run median and the test count;
         *   the sweep table (worker count against median wall time);
@@ -536,7 +568,8 @@ content changes other than the path fix in item 9.
     `@no_additional_args` keeps arguments such as `--filter` going to
     `artisan test`, not to `config:clear`. No other script is added.
 *   **Why:**
-    *   The 403 s baseline is longer than Composer's 300 s default timeout.
+    *   The 298.6 s baseline is within a few seconds of Composer's 300 s
+        default timeout, and a slow or failing run goes past it.
     *   A cached config ignores the database settings in `phpunit.xml`.
     *   Nothing else in the repository calls `composer test`; CI calls
         `php artisan test` directly.
@@ -667,9 +700,9 @@ content changes other than the path fix in item 9.
     *   **Line 20.** Replace it with three lines of text:
 
         ```text
-        php artisan test tests/Feature/<Module> tests/Feature/Invariants   # after each edit
-        composer test                                                       # full parallel run, before a commit
-        php artisan test --filter=SomeTest                                  # one test
+        php artisan test tests/Feature/<Module>   # after each edit (one or more changed modules)
+        composer test                             # full parallel run with invariant tests, before a commit
+        php artisan test --filter=SomeTest        # one test
         ```
     *   **Line 99.** Change the path to
         `tests/Feature/Invariants/PermissionAuthorizationTest.php`, or to
@@ -733,7 +766,7 @@ content changes other than the path fix in item 9.
     *   If it is not, record the result and settle Q1 before Stage 2.
 *   **G2:**
     *   Run each module run 3 times, warm, using the exact command from item
-        12, including the invariant tests.
+        12 (without the invariant tests).
     *   It passes if the slowest median is under 3 minutes.
     *   If it is not, apply Q2.
 *   **G3:** after each stage, the full run reports 3,597 tests, or the stage
