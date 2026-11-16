@@ -1166,6 +1166,20 @@ function rapEmployee(Hotel $hotel, array $permissions = []): User
 }
 
 /**
+ * A random room number not yet used in the hotel. A plain random number
+ * collides on rooms_hotel_id_room_number_unique when a test creates many
+ * stays in one hotel.
+ */
+function rapFreeRoomNumber(Hotel $hotel): string
+{
+    do {
+        $number = (string) random_int(1000, 9999);
+    } while (Room::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->where('room_number', $number)->exists());
+
+    return $number;
+}
+
+/**
  * A guest reachable on WhatsApp, in-house since yesterday (hotel time) and
  * leaving in four days, with one stay per room number.
  *
@@ -1176,7 +1190,7 @@ function rapInHouseStay(Hotel $hotel, array $guest = [], ?array $roomNumbers = n
 {
     $guest = gsGuest($hotel, ['preferred_language' => 'en', ...$guest]);
     $type = avType($hotel, 'Deluxe '.Str::random(4));
-    $roomNumbers ??= [(string) random_int(1000, 9999)];
+    $roomNumbers ??= [rapFreeRoomNumber($hotel)];
     $rooms = array_map(fn (string $number) => aatRoom($hotel, $type, $number), $roomNumbers);
 
     $reservation = ReservationCreator::create([
