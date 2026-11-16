@@ -760,3 +760,162 @@ cost.
 *   That is 3,597 plus the `GuestIdentityServiceTest` regression test. The
     coverage test went with the split.
 *   The full-run figure stays at about 300 s.
+
+## 7. Stage 2 — module folders and the guard (2026-11-16)
+
+Branch `031-test-module-folders`, based on `030-parallel-run-speedup` at
+`23b39bb`.
+
+### 7.1 Move
+
+One commit (`3e7db9a`) moved the 207 flat files with `git mv`, following the
+design's table (item 8) plus the Stage 1 update.
+
+| Folder | Files |
+| --- | --- |
+| `Core` | 32 |
+| `Rooms` | 10 |
+| `Reservations` | 34 |
+| `Housekeeping` | 7 |
+| `Tasks` | 5 |
+| `Activities` | 10 |
+| `Concierge` | 21 |
+| `Recommendations` | 19 |
+| `Knowledge` | 9 |
+| `AiPlatform` | 22 |
+| `Finance` | 5 |
+| `ImportExport` | 10 |
+| `Superadmin` | 12 existing + 1 (`SuspensionAdministrationTest`) |
+| `Invariants` | 22 (`PermissionAuthorizationResourcesTest` and `PermissionAuthorizationActionsTest` replace the table's `PermissionAuthorizationTest`) |
+
+*   **Files outside the table:** none. The listing taken just before the
+    move matched the table exactly.
+*   **Loose files:** no `*.php` file is left directly under `tests/Feature/`.
+*   **Path fix:** `Invariants/CrossTenantRouteTest.php` now requires
+    `dirname(__DIR__, 3).'/bootstrap/app.php'`. Its docblock is unchanged.
+    `grep -rn "__DIR__" tests/Feature` found no other match.
+*   **The commit:** 207 renames, 1 line changed.
+
+### 7.2 Guard
+
+The guard is commit `83fa7ff`, at the top of `tests/Pest.php`.
+`php artisan config:cache` created the cache file for the check.
+
+| Command (cache present) | Exit | Result |
+| --- | --- | --- |
+| `php artisan test` | 1 | guard message, no tests, 1 s |
+| `php artisan test tests/Feature/Tasks` | 1 | guard message, no tests |
+| `php artisan test --parallel --processes=8` | 1 | guard message **once**: the parent stops before any worker starts |
+| `vendor/bin/pest tests/Feature/Tasks` | 1 | message on stderr only |
+| `composer test` | 0 | cache cleared first; 3,598 passed in 313 s |
+
+*   **Where the message appears:** `php artisan test` shows it on stdout,
+    because Collision relays the Pest process's output. Pest itself writes
+    it to stderr.
+*   **Cache file:** still present after the three refused runs. Gone after
+    `composer test`.
+*   **Dev database:** 60, 119 and 17 straight after the refused runs.
+*   **After `config:clear`:** `php artisan test tests/Feature/Finance`
+    passed (41 tests).
+
+### 7.3 Isolation
+
+Each folder was run alone by path, serially. The first run of each
+(`s2-<Folder>-r1`) is the isolation result.
+
+| Folder | Tests | Alone |
+| --- | --- | --- |
+| `Core` | 454 | pass |
+| `Rooms` | 131 | pass |
+| `Reservations` | 489 | pass |
+| `Housekeeping` | 62 | pass |
+| `Tasks` | 44 | pass |
+| `Activities` | 141 | pass |
+| `Concierge` | 237 | pass |
+| `Recommendations` | 219 | pass |
+| `Knowledge` | 84 | pass |
+| `AiPlatform` | 231 | pass |
+| `Finance` | 41 | pass |
+| `ImportExport` | 201 | pass |
+| `Superadmin` | 671 | pass |
+| `Invariants` | 592 | pass |
+| **Total** | **3,597** | |
+
+*   **Helpers moved to `tests/Pest.php`:** none.
+    *   A static check before the move found no function, class or named
+        dataset used outside the file that defines it.
+    *   The runs confirmed it.
+*   **Other causes:** none.
+*   **Two-path check:** `php artisan test tests/Feature/Tasks tests/Feature/Finance`
+    (serial) ran 85 tests, which is 44 + 41. Parallel mode still accepts
+    only one path (§5).
+
+### 7.4 G2
+
+These are warm serial runs: `php artisan test tests/Feature/<Module>`, with
+`r1` (the isolation run) discarded as cold.
+
+| Module | Warm 1 (s) | Warm 2 (s) | Warm 3 (s) | Median (s) |
+| --- | --- | --- | --- | --- |
+| `Reservations` | 226 | 224 | 225 | **225** |
+| `Core` | 142 | 148 | 142 | **142** |
+| `Superadmin` | 134 | 135 | 135 | **135** |
+| `AiPlatform` | 85 | 84 | 84 | **84** |
+| `Recommendations` | 85 | 83 | 81 | **83** |
+| `Concierge` | 79 | 78 | 75 | **78** |
+| `ImportExport` | 54 | 54 | 49 | **54** |
+| `Activities` | 47 | 46 | 43 | **46** |
+| `Housekeeping` | 44 | 43 | 42 | **43** |
+| `Rooms` | 36 | 36 | 36 | **36** |
+| `Knowledge` | 29 | 31 | 31 | **31** |
+| `Tasks` | 21 | 25 | 25 | **25** |
+| `Finance` | 13 | 13 | 13 | **13** |
+
+*   **Slowest serial:** `Reservations`, 225 s. That misses the 180 s target.
+*   **`Invariants` alone (reference only):** 243 s and 237 s (the second
+    run is warm).
+*   **Q2:** `php artisan test tests/Feature/Reservations --parallel --processes=4`.
+
+    | Run | Wall (s) | Tests | Result |
+    | --- | --- | --- | --- |
+    | `s2-q2-r1` | 100 | 489 | cold, discarded |
+    | `s2-q2-r2` | 92 | 489 | passed |
+    | `s2-q2-r3` | 91 | 489 | passed |
+    | `s2-q2-r4` | 95 | 489 | passed |
+
+    The warm median is **92 s**.
+*   **G2 is met with Q2:** the slowest module runs in 92 s at 4 processes,
+    against 180 s.
+    *   As the design's Q2 says, the module run uses
+        `--parallel --processes=4` for all modules. Stage 3 writes it into
+        `CLAUDE.md`.
+    *   Serially, only `Reservations` misses. Every other module is at or
+        under 142 s.
+    *   A module run that covers two folders has to be serial, because
+        parallel mode accepts one path.
+
+### 7.5 G3 and the full run
+
+*   **`composer test` after the path-reference commit:** 3,598 passed in
+    310 s (and 313 s in the guard check).
+*   **Count:** the 14 folders (3,597) plus `tests/Unit` (1) make 3,598, the
+    same as after the Stage 1 cleanup. No test was lost or duplicated.
+*   **Pint:** `./vendor/bin/pint --test` is clean.
+*   **Scope:** `git diff 23b39bb -- app routes config database phpunit.xml composer.json .github`
+    is empty.
+
+### 7.6 Paths and safety
+
+*   **Paths updated** (commit `a2ecd52`):
+    *   `CLAUDE.md` lines 99, 188 and 191;
+    *   `docs/usage-metering-api-documentation.md` line 223;
+    *   `docs/ai-cost-attribution-api-documentation.md` lines 134 and 334;
+    *   `deploy/systemd/README.md` line 20.
+*   **`QueueLaneTest`:** passes (6 tests).
+*   **Unchanged as historical records:**
+    *   `docs/PGRIP_*`, `docs/designs/*` and `specs/**`;
+    *   the review reports in the repository root;
+    *   the per-file tables in §3.3 and §6.1 of this log, which give the
+        paths at the time they were measured.
+*   **Dev database:** 60 tables, 119 `migrations` rows and 17 `users` rows,
+    before and after Stage 2. Unchanged.
