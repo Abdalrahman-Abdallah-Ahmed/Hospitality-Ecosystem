@@ -506,8 +506,8 @@ median per test case, summed.
 **`CrossTenantRouteTest` → four parts, sliced by route.** One test checks a
 large dataset of independent rows, so the design's exception for large
 datasets applies. A route belongs to a part by the first segment of its URI
-after `api/`. Every `api/superadmin/...` route counts as `superadmin`. All
-six `it()` blocks run in every part, each on that part's routes.
+after `api/`. Every `api/superadmin/...` route counts as `superadmin`.
+Each part runs the original `it()` blocks on its own routes.
 
 | Part | Segments | Cases | Summed (s) |
 | --- | --- | --- | --- |
@@ -515,6 +515,15 @@ six `it()` blocks run in every part, each on that part's routes.
 | `CrossTenantRouteOperationsTest` | `room`, `room-types`, `housekeeping`, `maintenance`, `task`, `task-category`, `team` | 69 (+1 coverage test) | 47.8 |
 | `CrossTenantRouteGuestServicesTest` | `guest`, `booking`, `activity`, `activity-category`, `recommendation`, `proactive-messages`, `voucher-templates`, `transaction` | 80 | 61.6 |
 | `CrossTenantRoutePlatformTest` | `ai-activity`, `ai-insights`, `analytics`, `available-channels`, `check-paired`, `conversations`, `dashboard`, `hotel`, `hotel-policy`, `knowledge-base-articles`, `knowledge-documents`, `permissions`, `staff-roles`, `usage`, `user`, `users`, `whatsapp-device`, `superadmin` | 98 | 57.2 |
+
+**Amendment (made during the split).** The plan ran all six `it()` blocks in
+every part. Pest treats an empty dataset as a failure ("Empty data set
+provided by data provider"). The `super_admin` rule's 55 routes all sit under
+`api/superadmin`, which is in the Platform slice. So "keeps every cross-account
+admin route from a hotel admin" runs only in `CrossTenantRoutePlatformTest`,
+and the other three parts have five blocks each. The coverage test still
+checks the `super_admin` rule. Every other rule has at least one route in
+every part.
 
 **`PermissionAuthorizationTest` → two parts, by consecutive `it()` blocks.**
 The file is about 35 separate tests, not one large dataset, so the design's

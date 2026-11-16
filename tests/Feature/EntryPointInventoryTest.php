@@ -87,7 +87,7 @@ it('lists no route that no longer exists or that a generic check already drives'
 
         [$method] = explode(' ', $key, 2);
         expect(crossTenantRuleFor($routes->get($key), $method))
-            ->toBeNull("{$key} is driven by CrossTenantRouteTest; remove it from the inventory");
+            ->toBeNull("{$key} is driven by the CrossTenantRoute*Test parts; remove it from the inventory");
     }
 });
 
