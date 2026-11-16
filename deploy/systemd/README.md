@@ -17,7 +17,7 @@ count only after checking memory per worker (`ps -o rss,cmd -C php`).
 | `queue-worker@ai-batch-1` | `ai-batch` | insights, memories, recommendations, knowledge indexing |
 | `queue-worker@imports-1` | `imports` | reservation imports |
 
-`tests/Feature/QueueLaneTest.php` reads this table: every lane in
+`tests/Feature/Invariants/QueueLaneTest.php` reads this table: every lane in
 `App\Enums\QueueLane` must have at least one instance here.
 
 ## Install

@@ -131,7 +131,7 @@ This is not the same as the `agent` column, which holds the class that made the 
 | `guest_memory` | Guest memories | `guest_memory_extractions` |
 | `knowledge` | Knowledge indexing | `embeddings_generated` |
 
-`turn_signal` remains a valid value but is never a run of its own, so no row carries it. The mapping lives in `tests/Feature/AiCapabilityCoverageTest.php`, as an exhaustive `match` over `AiAgentName`; no runtime code reads it. The test fails when a capability has no mapping, when a capability's run records none of its features, or when running it leaves a row with an `unattributed` capability or trigger.
+`turn_signal` remains a valid value but is never a run of its own, so no row carries it. The mapping lives in `tests/Feature/AiPlatform/AiCapabilityCoverageTest.php`, as an exhaustive `match` over `AiAgentName`; no runtime code reads it. The test fails when a capability has no mapping, when a capability's run records none of its features, or when running it leaves a row with an `unattributed` capability or trigger.
 
 Rows written before the column existed were backfilled once by migration `2026_10_11_000002`: first from their run's entry in `ai_activities`, then from the agent class. Embedding and reranking calls made outside any run stay `unattributed`.
 
@@ -331,7 +331,7 @@ recorder failing outright.
 
 ## Verified by
 
-`tests/Feature/AiCostAttributionTest.php` — 15 tests covering every acceptance
+`tests/Feature/AiPlatform/AiCostAttributionTest.php` — 15 tests covering every acceptance
 criterion, including that historical prices are used rather than today's, that
 cached input is priced separately from fresh input, that an undeclared call is
 recorded as `unattributed` rather than guessed, that the logs are append-only,
