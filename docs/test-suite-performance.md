@@ -726,3 +726,37 @@ All are within the limit, and no file in the suite exceeds it.
 *   **Setting kept? No.** `php.ini` was restored after the runs, and
     `opcache.enable_cli` is off again. Turning it on is the developer's choice
     for this machine; it is not a repository setting.
+
+### 6.6 Cleanup after review (2026-11-16)
+
+Two Stage 1 changes were reverted. Neither made the run faster, and both had a
+cost.
+
+*   **The `CrossTenantRouteTest` split (commit `88a2a97`).**
+    *   **No speed gain:** the run is bound by summed work ÷ 8, not by one
+        file (§6.4).
+    *   **Upkeep:** the four parts were copies of the same test bodies,
+        differing only in the slice name, so every change to the cross-tenant
+        checks had to be made four times.
+    *   **What went:** the single file is back. `crossTenantSlices()`,
+        `crossTenantSegment()` and the slice coverage test are removed.
+*   **The timing-budget raise (commit `4b5806a`).**
+    *   **Wrong trigger:** it compared each test's whole JUnit time, which
+        includes building 100 recommendations or 500 rooms, against a budget
+        that only times the request.
+    *   **Not needed:** every run passed at 4.0 s.
+    *   **What went:** the budgets are 4.0 s again.
+
+**Kept:**
+
+*   the `PermissionAuthorizationTest` split, because its two parts are
+    different tests, not copies;
+*   `composer test` (8 workers, no timeout);
+*   the `GuestIdentityService` fix.
+
+**Check after the cleanup:**
+
+*   `composer test`: 3,598 tests passed in 304 s.
+*   That is 3,597 plus the `GuestIdentityServiceTest` regression test. The
+    coverage test went with the split.
+*   The full-run figure stays at about 300 s.

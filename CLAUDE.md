@@ -165,7 +165,7 @@ or edits a user. A model that is not audited but that a session can write uses
   `TenantContext::runForHotel()`. `QueueLaneTest` and `JobTenantIsolationTest`
   enforce this; a new lane needs a worker in `deploy/systemd/README.md` first.
 - **Entry-point inventory**: a new tenant route, job, scheduled task or AI tool is
-  either driven by the generic checks (`CrossTenantRoute*Test`, `AiToolInventoryTest`)
+  either driven by the generic checks (`CrossTenantRouteTest`, `AiToolInventoryTest`)
   or listed in `tests/Inventory/` with the test that covers it.
   `EntryPointInventoryTest` names anything that is neither.
 - **Migrations**: never edit a shipped migration — add a new one. Filenames in

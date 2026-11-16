@@ -107,7 +107,7 @@ it('decides 100 at once in under two seconds', function () {
 
     // Under --parallel every process shares the CPU and the database, so the
     // wall-clock budget gets the same headroom as StayListTest.
-    $budget = ParallelTesting::token() ? 6.0 : 2.0;
+    $budget = ParallelTesting::token() ? 4.0 : 2.0;
 
     expect($elapsed)->toBeLessThan($budget)
         ->and(Recommendation::where('status', 'approved')->count())->toBe(100);

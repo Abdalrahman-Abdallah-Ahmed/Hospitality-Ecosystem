@@ -74,16 +74,13 @@ use App\Support\Proactive\ProactiveSettings;
 use App\Support\Reservations\ReservationCreator;
 use App\Support\Tenancy\TenantContext;
 use Carbon\CarbonInterface;
-use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -95,7 +92,6 @@ use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Smalot\PdfParser\Parser;
-use Tests\Support\EntryPointDiscovery;
 use Tests\TestCase;
 
 /*
@@ -1616,8 +1612,7 @@ function imConfirm($test, User $user, string $previewId, array $body): TestRespo
 }
 
 /*
-| Tenant fixtures shared by TenantIsolationTest and the CrossTenantRoute*Test parts
-| (spec 017).
+| Tenant fixtures shared by TenantIsolationTest and CrossTenantRouteTest (spec 017).
 */
 
 function makeHotel(): Hotel
@@ -2029,92 +2024,6 @@ function crossTenantForeignKeys(Route $route): array
     }
 
     return $keys;
-}
-
-/**
- * Pest builds datasets before the test application exists, so the routes are
- * read from an application booted just for that, once; each case carries only
- * the method and URI, and the test itself runs against its own application.
- *
- * Spec 030: the routes are split across the CrossTenantRoute*Test parts by
- * $slice, a key of crossTenantSlices(); null returns every route of the rule.
- *
- * @return array<string, array{0: string, 1: string}>
- */
-function crossTenantRoutesFor(string $rule, ?string $slice = null): array
-{
-    static $byRule = null;
-
-    if ($byRule === null) {
-        $app = require __DIR__.'/../bootstrap/app.php';
-        $app->make(Kernel::class)->bootstrap();
-        $byRule = [];
-
-        foreach (EntryPointDiscovery::tenantRoutes() as $key => $route) {
-            [$method] = explode(' ', $key, 2);
-            $byRule[crossTenantRuleFor($route, $method) ?? 'none'][$key] = [$method, $route->uri()];
-        }
-
-        // Hand back the global error handlers and facades that booting
-        // installed, or PHPUnit flags every test as risky.
-        HandleExceptions::flushState();
-        Facade::clearResolvedInstances();
-    }
-
-    $routes = $byRule[$rule] ?? [];
-
-    if ($slice === null) {
-        return $routes;
-    }
-
-    $slices = crossTenantSlices();
-
-    if (! isset($slices[$slice])) {
-        throw new InvalidArgumentException("Unknown cross-tenant slice [{$slice}].");
-    }
-
-    return array_filter($routes, fn (array $route) => in_array(crossTenantSegment($route[1]), $slices[$slice], true));
-}
-
-/**
- * Which CrossTenantRoute*Test part checks a route, by the first segment of its
- * URI after api/ (spec 030). A segment belongs to exactly one part; a new one
- * must be added here, or the coverage test in CrossTenantRouteOperationsTest
- * fails and names its routes.
- *
- * @return array<string, list<string>>
- */
-function crossTenantSlices(): array
-{
-    return [
-        'Reservations' => ['reservation', 'stays', 'availability'],
-        'Operations' => ['room', 'room-types', 'housekeeping', 'maintenance', 'task', 'task-category', 'team'],
-        'GuestServices' => ['guest', 'booking', 'activity', 'activity-category', 'recommendation', 'proactive-messages', 'voucher-templates', 'transaction'],
-        'Platform' => [
-            'ai-activity', 'ai-insights', 'analytics', 'available-channels', 'check-paired', 'conversations',
-            'dashboard', 'hotel', 'hotel-policy', 'knowledge-base-articles', 'knowledge-documents', 'permissions',
-            'staff-roles', 'usage', 'user', 'users', 'whatsapp-device', 'superadmin',
-        ],
-    ];
-}
-
-/**
- * The first segment of a route URI after api/: api/superadmin/users gives
- * superadmin.
- */
-function crossTenantSegment(string $uri): string
-{
-    return Str::before(Str::after($uri, 'api/'), '/');
-}
-
-function crossTenantRoute(string $method, string $uri): Route
-{
-    return EntryPointDiscovery::tenantRoutes()->get("{$method} {$uri}");
-}
-
-function crossTenantAdmin(Hotel $hotel): User
-{
-    return adminOfHotel($hotel);
 }
 
 /*

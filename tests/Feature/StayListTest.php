@@ -144,7 +144,7 @@ it('shows the arrivals of a 500-room hotel in under 2 seconds with a fixed numbe
 
     // The query count is what proves the list scales. The wall-clock budget
     // gets headroom under --parallel, where every process shares the database.
-    $budget = ParallelTesting::token() ? 6.0 : 2.0;
+    $budget = ParallelTesting::token() ? 4.0 : 2.0;
 
     expect($response->json('body.stays'))->toHaveCount(500)
         ->and($elapsed)->toBeLessThan($budget)
