@@ -671,7 +671,7 @@ All are within the limit, and no file in the suite exceeds it.
     workers cannot do 2,150 s of work in less than about 270 s plus start-up.
     Lowering it needs less work per test (for example, the slowest files'
     setup) or faster PHP (§6.5), not a different layout of files.
-*   **New flaky test, not fixed here.** `GuestControllerTest` "reuses an
+*   **New flaky test, fixed after the exit check.** `GuestControllerTest` "reuses an
     already-active identity match instead of resurrecting an unrelated trashed
     channel row" failed in 2 of the 10 Stage 1 runs (`s1-r3`, `s1-r7`).
     *   **Cause (in `app/`):** `GuestIdentityService::findExistingGuest()` runs
@@ -681,9 +681,17 @@ All are within the limit, and no file in the suite exceeds it.
     *   **Effect:** when it returns the trashed row, `GuestRegistrar` restores
         it. That is the duplicate the test exists to prevent, so this is a
         production bug as well as a flaky test.
-    *   **Fix:** prefer the live row, for example `orderByRaw('deleted_at is
-        not null')`. It is out of Stage 1's scope (no `app/` change), so it
-        goes in a separate fix.
+    *   **Fix (2026-11-16, at the developer's request, outside Stage 1's
+        `tests/`-only scope):** `findExistingGuest()` now orders live rows
+        first, then by `created_at` and `id`, so a live match always wins and
+        the result is stable.
+    *   **Regression test:** `GuestIdentityServiceTest` "prefers a live guest
+        over a soft-deleted one with the same identity" writes the trashed row
+        first. It failed 3 of 3 runs before the fix and passed 3 of 3 after.
+        The `GuestControllerTest` case then passed 15 of 15 runs in a row.
+    *   **Test count:** this adds 1 test, so the full run is now **3,599**
+        (3,597 + the coverage test + this one). The exit-check figures above
+        were measured before the fix, at 3,598.
 *   **Dev database:** 60 tables, 119 `migrations` rows, 17 `users` rows,
     before and after Stage 1. Unchanged.
 
