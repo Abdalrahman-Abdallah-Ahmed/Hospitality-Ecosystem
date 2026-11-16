@@ -96,6 +96,27 @@ use Tests\TestCase;
 
 /*
 |--------------------------------------------------------------------------
+| Cached Config Guard
+|--------------------------------------------------------------------------
+|
+| A cached config makes Laravel ignore phpunit.xml, so RefreshDatabase would
+| run against the database named in the cache (the dev database). Refuse to
+| run instead, before any test file loads or any database is touched. The
+| cache file is left alone on purpose.
+|
+*/
+
+if (file_exists(dirname(__DIR__).'/bootstrap/cache/config.php')) {
+    fwrite(STDERR, PHP_EOL
+        .'Refusing to run tests: the configuration is cached (bootstrap/cache/config.php).'.PHP_EOL
+        .'Tests would use the cached (dev) database settings instead of phpunit.xml.'.PHP_EOL
+        .'Run `php artisan config:clear` and try again.'.PHP_EOL.PHP_EOL);
+
+    exit(1);
+}
+
+/*
+|--------------------------------------------------------------------------
 | Test Case
 |--------------------------------------------------------------------------
 |
