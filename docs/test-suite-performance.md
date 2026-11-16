@@ -486,3 +486,81 @@ cause.
 **Found during verification.** In parallel mode, `php artisan test` accepts
 only one path argument; serial runs accept several. A module run that covers
 several folders therefore runs serially, which is the default for module runs.
+
+## 6. Stage 1 — speed (2026-11-16)
+
+### 6.1 Split list
+
+Written before any test file was edited. These are the only test files Stage 1
+may touch.
+
+*   **Worker count:** 8, the Stage 0 choice (§4).
+*   **Threshold:** 25% of the 8-worker median wall time, 302.4 s, which is
+    **75.6 s**.
+*   **Files over the threshold:** `CrossTenantRouteTest` (218.0 s) and
+    `PermissionAuthorizationTest` (79.0 s).
+
+The slice times below come from the Stage 0 8-worker runs (`w8-r2..r4`), as a
+median per test case, summed.
+
+**`CrossTenantRouteTest` → four parts, sliced by route.** One test checks a
+large dataset of independent rows, so the design's exception for large
+datasets applies. A route belongs to a part by the first segment of its URI
+after `api/`. Every `api/superadmin/...` route counts as `superadmin`. All
+six `it()` blocks run in every part, each on that part's routes.
+
+| Part | Segments | Cases | Summed (s) |
+| --- | --- | --- | --- |
+| `CrossTenantRouteReservationsTest` | `reservation`, `stays`, `availability` | 68 | 50.6 |
+| `CrossTenantRouteOperationsTest` | `room`, `room-types`, `housekeeping`, `maintenance`, `task`, `task-category`, `team` | 69 (+1 coverage test) | 47.8 |
+| `CrossTenantRouteGuestServicesTest` | `guest`, `booking`, `activity`, `activity-category`, `recommendation`, `proactive-messages`, `voucher-templates`, `transaction` | 80 | 61.6 |
+| `CrossTenantRoutePlatformTest` | `ai-activity`, `ai-insights`, `analytics`, `available-channels`, `check-paired`, `conversations`, `dashboard`, `hotel`, `hotel-policy`, `knowledge-base-articles`, `knowledge-documents`, `permissions`, `staff-roles`, `usage`, `user`, `users`, `whatsapp-device`, `superadmin` | 98 | 57.2 |
+
+**`PermissionAuthorizationTest` → two parts, by consecutive `it()` blocks.**
+The file is about 35 separate tests, not one large dataset, so the design's
+standard rule applies.
+
+| Part | Original lines | Holds | Summed (s) |
+| --- | --- | --- | --- |
+| `PermissionAuthorizationResourcesTest` | 85–324 | role defaults, **the permission dataset** ("read a resource", 35 rows), export, housekeeping, stays, room assignment, no-shows | 38.8 |
+| `PermissionAuthorizationActionsTest` | 326–656 | vouchers, role replacement, guests, other hotel, admin-only areas, unreadable role, knowledge documents, booking actions, recommendations, imports | 40.1 |
+
+**Moving to `tests/Pest.php`,** unchanged unless noted:
+
+*   `crossTenantRoutesFor`. It gains `?string $slice = null`, and its
+    bootstrap path loses one `../`. It still boots its own application once
+    per process while the datasets are collected.
+*   `crossTenantRoute`, `crossTenantAdmin`.
+*   `permissionApiHeaders`, `hotelForPermissions`, `employeeWithPermissions`.
+*   New: `crossTenantSlices()`, the table above as a map, and
+    `crossTenantSegment()`.
+
+**Staying in their one part:** `availabilityProbeUrl` (Resources) and
+`guestForPermissions` (Actions).
+
+**New test:** "puts every tenant route in exactly one cross-tenant part", in
+`CrossTenantRouteOperationsTest`. It checks, for each rule, that:
+
+*   the four slices together equal the full route list;
+*   no route is in two slices;
+*   no segment is listed twice.
+
+A new URL prefix that no part claims fails this test, which names the route.
+**Expected test count: 3,598** (3,597 + this test).
+
+**Imports:** each part starts from the original's `use` imports, `uses(...)`
+and `beforeEach` (neither file has an `afterEach`). Pint's
+`no_unused_imports` then removes the imports a part does not use.
+
+**Other files Stage 1 may touch:**
+
+*   `composer.json`;
+*   `CLAUDE.md` lines 99, 168 and 191;
+*   the message in `tests/Feature/EntryPointInventoryTest.php` line 90;
+*   the comment in `tests/Pest.php` line 1615;
+*   only if §6.3 requires it, `tests/Feature/RecommendationQueueTest.php`
+    line 110 and `tests/Feature/StayListTest.php` line 147.
+
+The design's `docs/usage-metering-api-documentation.md:223` and
+`docs/ai-cost-attribution-api-documentation.md:134, 334` name files that are
+not split, so they are not changed.
