@@ -43,14 +43,14 @@ description: "Task list for Stage 1: faster full parallel run"
 
 **Purpose**: The split list must be in the stage log, committed, before any test file is edited (spec FR-007; contract [stage-log-section-6.md](contracts/stage-log-section-6.md) §6.1).
 
-- [ ] T006 Append `## 6. Stage 1 — speed (2026-11-16)` and `### 6.1 Split list` to `docs/test-suite-performance.md`, after §5. Content per the contract §6.1:
+- [X] T006 Append `## 6. Stage 1 — speed (2026-11-16)` and `### 6.1 Split list` to `docs/test-suite-performance.md`, after §5. Content per the contract §6.1:
   - Worker count 8; Stage 0 wall time 302.4 s; threshold 75.6 s.
   - Table: original → part file → slice → Stage 0 summed time. Use research R1 for the 4 cross-tenant parts (their segment lists, 68/69/80/98 cases, 50.6/47.8/61.6/57.2 s) and research R4 for the 2 permission parts (lines 85–324 → `PermissionAuthorizationResourcesTest` 38.8 s; lines 326–656 → `PermissionAuthorizationActionsTest` 40.1 s).
   - Moving to `tests/Pest.php`: `crossTenantRoutesFor` (gains `?string $slice = null`), `crossTenantRoute`, `crossTenantAdmin`, `permissionApiHeaders`, `hotelForPermissions`, `employeeWithPermissions`. New: `crossTenantSlices`, `crossTenantSegment`. Staying in their part: `availabilityProbeUrl` (Resources), `guestForPermissions` (Actions).
   - The coverage test `it('puts every tenant route in exactly one cross-tenant part')` in `CrossTenantRouteOperationsTest`; expected count 3,598 (3,597 + 1).
   - The other files the stage may touch: `composer.json`; `CLAUDE.md` 99, 168, 191; the `tests/Feature/EntryPointInventoryTest.php:90` message; the `tests/Pest.php:1615` comment; and, only if 6.3 requires it, `tests/Feature/RecommendationQueueTest.php:110` and `tests/Feature/StayListTest.php:147`.
   - Note that Pint removes unused imports from each part (research R5).
-- [ ] T007 Commit `docs/test-suite-performance.md` as `docs: record the Stage 1 split list`
+- [X] T007 Commit `docs/test-suite-performance.md` as `docs: record the Stage 1 split list`
 
 **Checkpoint**: The touch list is fixed. Any later edit outside it is a scope violation.
 
@@ -62,14 +62,14 @@ description: "Task list for Stage 1: faster full parallel run"
 
 **Independent Test**: `composer test -- --filter=StayListTest` shows the config clear first, then 8 processes, and runs only StayListTest.
 
-- [ ] T008 [US1] In `composer.json`, replace the `test` script (currently lines 66–69: `config:clear` + `@php artisan test`) with exactly these three entries, in order (research R8):
+- [X] T008 [US1] In `composer.json`, replace the `test` script (currently lines 66–69: `config:clear` + `@php artisan test`) with exactly these three entries, in order (research R8):
   1. `"Composer\\Config::disableProcessTimeout"`
   2. `"@php artisan config:clear --ansi @no_additional_args"`
   3. `"@php artisan test --parallel --processes=8"`
 
   Add no other script.
-- [ ] T009 [US1] Run `composer validate --no-check-publish`, then `composer test -- --filter=StayListTest`. Confirm the config clear runs first, the header shows 8 processes, only `StayListTest` runs, and it passes
-- [ ] T010 [US1] Commit `composer.json` as `chore: run composer test in parallel at 8 workers without a timeout`
+- [X] T009 [US1] Run `composer validate --no-check-publish`, then `composer test -- --filter=StayListTest`. Confirm the config clear runs first, the header shows 8 processes, only `StayListTest` runs, and it passes
+- [X] T010 [US1] Commit `composer.json` as `chore: run composer test in parallel at 8 workers without a timeout`
 
 **Checkpoint**: US1 is done and works on its own. The runs in later phases use it.
 
@@ -88,8 +88,8 @@ description: "Task list for Stage 1: faster full parallel run"
 
 ### 4a. `CrossTenantRouteTest` → four parts (one commit)
 
-- [ ] T011 [US2] Before editing, record the original case counts: `php artisan test --filter=CrossTenantRouteTest` (expect 315) and `php artisan test tests/Feature/PermissionAuthorizationTest.php`. Note both in `<scratchpad>/stage1/counts-before.txt`
-- [ ] T012 [US2] In `tests/Pest.php`, near the existing `crossTenantRuleFor` (line ~1940), move **unchanged** from `tests/Feature/CrossTenantRouteTest.php` lines 40–78:
+- [X] T011 [US2] Before editing, record the original case counts: `php artisan test --filter=CrossTenantRouteTest` (expect 315) and `php artisan test tests/Feature/PermissionAuthorizationTest.php`. Note both in `<scratchpad>/stage1/counts-before.txt`
+- [X] T012 [US2] In `tests/Pest.php`, near the existing `crossTenantRuleFor` (line ~1940), move **unchanged** from `tests/Feature/CrossTenantRouteTest.php` lines 40–78:
   - the docblock and `crossTenantRoutesFor`, `crossTenantRoute`, `crossTenantAdmin`.
 
   Apply only these changes, per [contracts/cross-tenant-builder.md](contracts/cross-tenant-builder.md):
@@ -100,32 +100,32 @@ description: "Task list for Stage 1: faster full parallel run"
   Add `crossTenantSlices(): array` (keys in order `Reservations`, `Operations`, `GuestServices`, `Platform`, with the segment lists from research R1, verbatim). Add `crossTenantSegment(string $uri): string` (strip a leading `api/`, return the text before the next `/`).
 
   Add the imports `Illuminate\Contracts\Console\Kernel`, `Illuminate\Foundation\Bootstrap\HandleExceptions`, `Illuminate\Support\Facades\Facade` and `Tests\Support\EntryPointDiscovery` (check first that they are not already imported). Update the comment at line 1615 to name `CrossTenantRoute*Test`.
-- [ ] T013 [US2] `git mv tests/Feature/CrossTenantRouteTest.php tests/Feature/CrossTenantRouteReservationsTest.php`. Delete the three moved functions from it (now in `tests/Pest.php`). Change each of the six `->with(fn () => crossTenantRoutesFor('<rule>'))` to pass `'Reservations'` as the second argument; the owner test keeps its `array_filter(..., GET)` around the sliced call. Keep the header comment, every `use` import, `uses(RefreshDatabase::class)`, `beforeEach`, the spec-025 comment block, and every `it('...')` text and body word for word
-- [ ] T014 [P] [US2] Create `tests/Feature/CrossTenantRouteOperationsTest.php` as a copy of the T013 result, with `'Operations'` in all six `with()` calls. Add, at the end, the coverage test `it('puts every tenant route in exactly one cross-tenant part', ...)`. For each rule in `['index', 'bound', 'super_admin', 'foreign_key']`, it checks that:
+- [X] T013 [US2] `git mv tests/Feature/CrossTenantRouteTest.php tests/Feature/CrossTenantRouteReservationsTest.php`. Delete the three moved functions from it (now in `tests/Pest.php`). Change each of the six `->with(fn () => crossTenantRoutesFor('<rule>'))` to pass `'Reservations'` as the second argument; the owner test keeps its `array_filter(..., GET)` around the sliced call. Keep the header comment, every `use` import, `uses(RefreshDatabase::class)`, `beforeEach`, the spec-025 comment block, and every `it('...')` text and body word for word
+- [X] T014 [P] [US2] Create `tests/Feature/CrossTenantRouteOperationsTest.php` as a copy of the T013 result, with `'Operations'` in all six `with()` calls. Add, at the end, the coverage test `it('puts every tenant route in exactly one cross-tenant part', ...)`. For each rule in `['index', 'bound', 'super_admin', 'foreign_key']`, it checks that:
   - no segment appears under two keys of `crossTenantSlices()`;
   - the union of the four sliced key sets equals the keys of `crossTenantRoutesFor($rule)`;
   - the sliced sets are pairwise disjoint.
 
   The failure message names the unmatched routes and their segments.
-- [ ] T015 [P] [US2] Create `tests/Feature/CrossTenantRouteGuestServicesTest.php` as a copy of the T013 result, with `'GuestServices'` in all six `with()` calls
-- [ ] T016 [P] [US2] Create `tests/Feature/CrossTenantRoutePlatformTest.php` as a copy of the T013 result, with `'Platform'` in all six `with()` calls
-- [ ] T017 [US2] In `tests/Feature/EntryPointInventoryTest.php` line 90, change only the message text to `"{$key} is driven by the CrossTenantRoute*Test parts; remove it from the inventory"`. In `CLAUDE.md` line 168, change `CrossTenantRouteTest` to `CrossTenantRoute*Test`
-- [ ] T018 [US2] Run `php artisan test --filter=CrossTenantRoute` (expect 316 cases: 315 + 1, all passing, no risky tests, no "Cannot redeclare"). Then run `php artisan test --filter=EntryPointInventoryTest` and `php artisan test --filter=TenantIsolationTest`. Also run one part alone by path, `php artisan test tests/Feature/CrossTenantRoutePlatformTest.php`, to prove the builder boots on its own (FR-011)
-- [ ] T019 [US2] Negative check of the coverage test (local only, never committed): temporarily delete `'team'` from the Operations list in `crossTenantSlices()`. Run `php artisan test --filter="puts every tenant route"`; it must fail and name the `api/team` routes. Restore, then confirm `git diff tests/Pest.php` shows no leftover change from this check
-- [ ] T020 [US2] Run `./vendor/bin/pint`, then `php artisan test --parallel --processes=8` (full suite green; 3,598 tests). Commit `tests/Pest.php`, the four `CrossTenantRoute*Test.php` files, `tests/Feature/EntryPointInventoryTest.php` and `CLAUDE.md` as `refactor(tests): split CrossTenantRouteTest into four route-segment parts`
+- [X] T015 [P] [US2] Create `tests/Feature/CrossTenantRouteGuestServicesTest.php` as a copy of the T013 result, with `'GuestServices'` in all six `with()` calls
+- [X] T016 [P] [US2] Create `tests/Feature/CrossTenantRoutePlatformTest.php` as a copy of the T013 result, with `'Platform'` in all six `with()` calls
+- [X] T017 [US2] In `tests/Feature/EntryPointInventoryTest.php` line 90, change only the message text to `"{$key} is driven by the CrossTenantRoute*Test parts; remove it from the inventory"`. In `CLAUDE.md` line 168, change `CrossTenantRouteTest` to `CrossTenantRoute*Test`
+- [X] T018 [US2] Run `php artisan test --filter=CrossTenantRoute` (expect 316 cases: 315 + 1, all passing, no risky tests, no "Cannot redeclare"). Then run `php artisan test --filter=EntryPointInventoryTest` and `php artisan test --filter=TenantIsolationTest`. Also run one part alone by path, `php artisan test tests/Feature/CrossTenantRoutePlatformTest.php`, to prove the builder boots on its own (FR-011)
+- [X] T019 [US2] Negative check of the coverage test (local only, never committed): temporarily delete `'team'` from the Operations list in `crossTenantSlices()`. Run `php artisan test --filter="puts every tenant route"`; it must fail and name the `api/team` routes. Restore, then confirm `git diff tests/Pest.php` shows no leftover change from this check
+- [X] T020 [US2] Run `./vendor/bin/pint`, then `php artisan test --parallel --processes=8` (full suite green; 3,598 tests). Commit `tests/Pest.php`, the four `CrossTenantRoute*Test.php` files, `tests/Feature/EntryPointInventoryTest.php` and `CLAUDE.md` as `refactor(tests): split CrossTenantRouteTest into four route-segment parts`
 
 ### 4b. `PermissionAuthorizationTest` → two parts (one commit)
 
-- [ ] T021 [US2] In `tests/Pest.php`, near the other shared helpers, move **unchanged** from `tests/Feature/PermissionAuthorizationTest.php`: `permissionApiHeaders` (line 26), `hotelForPermissions` (31), `employeeWithPermissions` (50), with any docblocks. Add any imports they need that `tests/Pest.php` lacks
-- [ ] T022 [US2] `git mv tests/Feature/PermissionAuthorizationTest.php tests/Feature/PermissionAuthorizationResourcesTest.php`. Delete:
+- [X] T021 [US2] In `tests/Pest.php`, near the other shared helpers, move **unchanged** from `tests/Feature/PermissionAuthorizationTest.php`: `permissionApiHeaders` (line 26), `hotelForPermissions` (31), `employeeWithPermissions` (50), with any docblocks. Add any imports they need that `tests/Pest.php` lacks
+- [X] T022 [US2] `git mv tests/Feature/PermissionAuthorizationTest.php tests/Feature/PermissionAuthorizationResourcesTest.php`. Delete:
   - the three moved helpers;
   - `guestForPermissions`;
   - every block from line 326 (`it('never gives employees without a role the voucher permissions'`) to the end of the file.
 
   Keep `availabilityProbeUrl`, the header (all `use` imports, `uses(RefreshDatabase::class)`, `beforeEach`), and lines 85–324 word for word.
-- [ ] T023 [US2] Create `tests/Feature/PermissionAuthorizationActionsTest.php`: the original header (all `use` imports, `uses(RefreshDatabase::class)`, `beforeEach` with its comment), then `guestForPermissions` (original lines 64–76), then original lines 326–656 word for word. Take the text from `git show HEAD:tests/Feature/PermissionAuthorizationTest.php`
-- [ ] T024 [US2] In `CLAUDE.md` lines 99 and 191, change `tests/Feature/PermissionAuthorizationTest.php` to `tests/Feature/PermissionAuthorizationResourcesTest.php`
-- [ ] T025 [US2] Run `php artisan test --filter=PermissionAuthorization`: the two parts' counts must sum to the T011 count, plus `RoomTypePermissionAuthorizationTest`'s 6, all passing. Run `./vendor/bin/pint`, then `php artisan test --parallel --processes=8` (3,598). Commit `tests/Pest.php`, the two `PermissionAuthorization*Test.php` files and `CLAUDE.md` as `refactor(tests): split PermissionAuthorizationTest into Resources and Actions`
+- [X] T023 [US2] Create `tests/Feature/PermissionAuthorizationActionsTest.php`: the original header (all `use` imports, `uses(RefreshDatabase::class)`, `beforeEach` with its comment), then `guestForPermissions` (original lines 64–76), then original lines 326–656 word for word. Take the text from `git show HEAD:tests/Feature/PermissionAuthorizationTest.php`
+- [X] T024 [US2] In `CLAUDE.md` lines 99 and 191, change `tests/Feature/PermissionAuthorizationTest.php` to `tests/Feature/PermissionAuthorizationResourcesTest.php`
+- [X] T025 [US2] Run `php artisan test --filter=PermissionAuthorization`: the two parts' counts must sum to the T011 count, plus `RoomTypePermissionAuthorizationTest`'s 6, all passing. Run `./vendor/bin/pint`, then `php artisan test --parallel --processes=8` (3,598). Commit `tests/Pest.php`, the two `PermissionAuthorization*Test.php` files and `CLAUDE.md` as `refactor(tests): split PermissionAuthorizationTest into Resources and Actions`
 
 **Checkpoint**: Both splits are committed and the suite is green. Each part's time is confirmed in US5.
 
@@ -137,7 +137,7 @@ description: "Task list for Stage 1: faster full parallel run"
 
 **Independent Test**: The search below returns only historical records.
 
-- [ ] T026 [US3] Run `git grep -n "CrossTenantRouteTest\|PermissionAuthorizationTest" -- . ':!specs' ':!docs/test-suite-performance.md' ':!docs/designs'`. Every match must be one of:
+- [X] T026 [US3] Run `git grep -n "CrossTenantRouteTest\|PermissionAuthorizationTest" -- . ':!specs' ':!docs/test-suite-performance.md' ':!docs/designs'`. Every match must be one of:
   - `RoomTypePermissionAuthorizationTest`;
   - a historical record left as written (`concepts_brief.md`, `goldfish_review_report.md`, `docs/PGRIP_Ecosystem_WP_Conversational_Pitching_v1_0.md`, `docs/production-readiness-checklist.md`).
 
@@ -151,8 +151,8 @@ description: "Task list for Stage 1: faster full parallel run"
 
 **Independent Test**: The §6.3 table has 3 × 2 times and a decision per file that a reader can recompute.
 
-- [ ] T027 [US4] Pre-flight (T002 again). Then run 4 back-to-back full runs: `composer test -- --log-junit=storage/test-reports/s1-r<k>.xml`, k = 1..4, timing each with `date +%s` and logging label, start, end, wall time and exit code to `<scratchpad>/stage1/runs.csv` (quickstart §3). `s1-r1` is cold and discarded. A failing warm run is replaced (`s1-r5`, …) and the failing test is named
-- [ ] T028 [US4] Write `<scratchpad>/stage1/summarize.py` (stdlib only, never committed). From `s1-r2..r4` it reports:
+- [X] T027 [US4] Pre-flight (T002 again). Then run 4 back-to-back full runs: `composer test -- --log-junit=storage/test-reports/s1-r<k>.xml`, k = 1..4, timing each with `date +%s` and logging label, start, end, wall time and exit code to `<scratchpad>/stage1/runs.csv` (quickstart §3). `s1-r1` is cold and discarded. A failing warm run is replaced (`s1-r5`, …) and the failing test is named
+- [X] T028 [US4] Write `<scratchpad>/stage1/summarize.py` (stdlib only, never committed). From `s1-r2..r4` it reports:
   - per-file summed time (median of the 3);
   - the slowest file;
   - each of the six parts against 75.6 s;
@@ -160,8 +160,8 @@ description: "Task list for Stage 1: faster full parallel run"
   - the JUnit `time` of `RecommendationQueueTest` "it decides 100 at once in under two seconds" and `StayListTest` "it shows the arrivals of a 500-room hotel in under 2 seconds…".
 
   When reading the `class` attribute, split on `chr(92)`, not `'\\'`.
-- [ ] T029 [US4] Apply the rule to each file separately: if its slowest observed time is ≥ 3.0 s, set the parallel value in `ParallelTesting::token() ? 4.0 : 2.0` to `ceil(slowest × 1.5 / 0.5) × 0.5`, in `tests/Feature/RecommendationQueueTest.php:110` and/or `tests/Feature/StayListTest.php:147`. Leave the serial `2.0` unchanged. Expected from Stage 0: about 6.5 s and 5.5 s (research R7). If a file changes, run Pint, run that file, and commit `test: raise the parallel timing budgets to the observed load`
-- [ ] T030 [US4] If any part exceeds 75.6 s in T028, re-balance by moving one segment between parts in `crossTenantSlices()` (or move the Resources/Actions boundary by one block). Record the change in §6.1 as an amendment, commit it, and repeat T027–T028. Do not split any file outside the touch list
+- [X] T029 [US4] Apply the rule to each file separately: if its slowest observed time is ≥ 3.0 s, set the parallel value in `ParallelTesting::token() ? 4.0 : 2.0` to `ceil(slowest × 1.5 / 0.5) × 0.5`, in `tests/Feature/RecommendationQueueTest.php:110` and/or `tests/Feature/StayListTest.php:147`. Leave the serial `2.0` unchanged. Expected from Stage 0: about 6.5 s and 5.5 s (research R7). If a file changes, run Pint, run that file, and commit `test: raise the parallel timing budgets to the observed load`
+- [X] T030 [US4] If any part exceeds 75.6 s in T028, re-balance by moving one segment between parts in `crossTenantSlices()` (or move the Resources/Actions boundary by one block). Record the change in §6.1 as an amendment, commit it, and repeat T027–T028. Do not split any file outside the touch list
 
 **Checkpoint**: The budgets are decided. If T029 or T030 changed a file, the exit-check runs (T031) come after that commit.
 
@@ -173,9 +173,9 @@ description: "Task list for Stage 1: faster full parallel run"
 
 **Independent Test**: §6 meets [contracts/stage-log-section-6.md](contracts/stage-log-section-6.md) with no placeholders.
 
-- [ ] T031 [US5] If T029 or T030 changed a file, repeat T027 (as `s1-r5..r8`) so that the exit check measures the committed final state. Otherwise the T027 runs are the exit check
-- [ ] T032 [US5] Dev DB check, after: repeat T004 into `<scratchpad>/stage1/dev-fingerprint-after.txt`. It must match the before file
-- [ ] T033 [US5] Append §6.2–§6.4 to `docs/test-suite-performance.md` per the contract:
+- [X] T031 [US5] If T029 or T030 changed a file, repeat T027 (as `s1-r5..r8`) so that the exit check measures the committed final state. Otherwise the T027 runs are the exit check
+- [X] T032 [US5] Dev DB check, after: repeat T004 into `<scratchpad>/stage1/dev-fingerprint-after.txt`. It must match the before file
+- [X] T033 [US5] Append §6.2–§6.4 to `docs/test-suite-performance.md` per the contract:
   - 6.2: the script, and confirmation that `--filter` passes through.
   - 6.3: the budget table and decisions, with the note that JUnit time includes setup, and the follow-up idea of logging the request's own elapsed time.
   - 6.4: the run table, wall and summed medians beside Stage 0 (302.4 s; ~2,234 s), the slowest file, the six parts against 75.6 s, G3 (count vs 3,597; +1 coverage test), and G1. If the median is > 210 s, give the revised G1 = median rounded up to the next 10 s, with the floor (summed ÷ 8 + start-up), per research R9.
@@ -188,16 +188,16 @@ description: "Task list for Stage 1: faster full parallel run"
 
 **Independent Test**: §6.5 shows both medians, or "Not measured."
 
-- [ ] T034 [US6] In `C:\laragon\bin\php\php-8.4.16-Win32-vs17-x64\php.ini`, uncomment `zend_extension=opcache` (line 833) and set `opcache.enable_cli=1` (line 1519). Confirm with `php -r "var_dump(ini_get('opcache.enable_cli'));"` (expect `"1"`)
-- [ ] T035 [US6] Run 4 runs as in T027, labelled `s1o-r1..r4` (the first discarded), and summarize them with T028's script
-- [ ] T036 [US6] Restore both `php.ini` lines (unless the developer says to keep them), and confirm OPcache is not loaded again. Append §6.5 to `docs/test-suite-performance.md`: the lines changed, the run table, both medians, and whether the setting was kept
+- [X] T034 [US6] In `C:\laragon\bin\php\php-8.4.16-Win32-vs17-x64\php.ini`, uncomment `zend_extension=opcache` (line 833) and set `opcache.enable_cli=1` (line 1519). Confirm with `php -r "var_dump(ini_get('opcache.enable_cli'));"` (expect `"1"`)
+- [X] T035 [US6] Run 4 runs as in T027, labelled `s1o-r1..r4` (the first discarded), and summarize them with T028's script
+- [X] T036 [US6] Restore both `php.ini` lines (unless the developer says to keep them), and confirm OPcache is not loaded again. Append §6.5 to `docs/test-suite-performance.md`: the lines changed, the run table, both medians, and whether the setting was kept
 
 ---
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T037 Run `./vendor/bin/pint --test` (clean). Run `git diff 029-test-suite-measurement --stat` and confirm only files allowed by FR-001/FR-008 changed: nothing in `app/`, `routes/`, `config/`, `database/`, `phpunit.xml` or `.github/`
-- [ ] T038 Mark the completed tasks in this file. Commit `docs/test-suite-performance.md` and `specs/030-parallel-run-speedup/tasks.md` as `docs: record Stage 1 results`. No co-author trailer
+- [X] T037 Run `./vendor/bin/pint --test` (clean). Run `git diff 029-test-suite-measurement --stat` and confirm only files allowed by FR-001/FR-008 changed: nothing in `app/`, `routes/`, `config/`, `database/`, `phpunit.xml` or `.github/`
+- [X] T038 Mark the completed tasks in this file. Commit `docs/test-suite-performance.md` and `specs/030-parallel-run-speedup/tasks.md` as `docs: record Stage 1 results`. No co-author trailer
 
 ---
 

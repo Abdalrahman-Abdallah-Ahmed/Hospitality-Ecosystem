@@ -573,3 +573,148 @@ and `beforeEach` (neither file has an `afterEach`). Pint's
 The design's `docs/usage-metering-api-documentation.md:223` and
 `docs/ai-cost-attribution-api-documentation.md:134, 334` name files that are
 not split, so they are not changed.
+
+### 6.2 `composer test`
+
+```json
+"test": [
+    "Composer\Config::disableProcessTimeout",
+    "@php artisan config:clear --ansi @no_additional_args",
+    "@php artisan test --parallel --processes=8"
+]
+```
+
+*   **Arguments:** `composer test -- --filter=StayListTest` cleared the config
+    and then ran only `StayListTest`'s 6 tests. Arguments reach `artisan test`,
+    not `config:clear`.
+*   **Timeout:** every Stage 1 run took 278–309 s, so several ran past
+    Composer's old 300 s limit, and none was stopped.
+
+### 6.3 Timing budgets
+
+The JUnit `time` of the two timed tests, from the 3 passing warm runs after
+the splits (`s1-r2`, `s1-r4`, `s1-r5`):
+
+| Run | RecommendationQueueTest "decides 100 at once…" (s) | StayListTest "arrivals of a 500-room hotel…" (s) |
+| --- | --- | --- |
+| s1-r2 | 3.89 | 3.58 |
+| s1-r4 | 3.79 | 3.12 |
+| s1-r5 | 3.93 | 3.89 |
+
+Every value is at or above 3.0 s, within 25% of the 4.0 s budget, so both
+budgets were raised:
+
+*   `RecommendationQueueTest` (line 110): 3.93 × 1.5 = 5.90 s, rounded up to
+    the next 0.5 s gives **6.0 s**.
+*   `StayListTest` (line 147): 3.89 × 1.5 = 5.84 s, which gives **6.0 s**.
+
+The serial budget stays at 2.0 s.
+
+JUnit `time` covers the whole test, including the setup that creates 100
+recommendations or 500 rooms. The budget times only the request, so the
+trigger overstates what the budget measures. With 4.0 s, every run passed.
+
+**Possible follow-up:** have each test report the request's own elapsed time,
+and set the budget from that.
+
+### 6.4 Exit check
+
+`composer test -- --log-junit=storage/test-reports/s1-r<k>.xml`, run back to
+back on the final committed state (after §6.3).
+
+| Run | Kind | Wall (s) | Summed (s) | Tests | Result |
+| --- | --- | --- | --- | --- | --- |
+| s1-r6 | cold | 296 | — | 3,598 | discarded |
+| s1-r7 | warm | 305 | 2,205.7 | 3,598 | **excluded:** 1 failure, `GuestControllerTest` (below) |
+| s1-r8 | warm | 297 | 2,146.4 | 3,598 | passed |
+| s1-r9 | warm | 298 | 2,150.0 | 3,598 | passed |
+| s1-r10 | warm (replaces r7) | 303 | 2,193.2 | 3,598 | passed |
+
+The earlier runs `s1-r1`–`s1-r5` (before the budget change) gave the same
+picture: 303, 306 and 305 s for the passing warm runs. `s1-r3` was excluded
+for the same `GuestControllerTest` failure.
+
+| Figure | Stage 0 (8 workers) | Stage 1 |
+| --- | --- | --- |
+| Median wall time | 302.4 s | **298.0 s** |
+| Median summed time | 2,234.5 s | 2,150.0 s |
+| Summed ÷ 8 | 279.3 s | 268.8 s |
+| Slowest file | `CrossTenantRouteTest`, 218.0 s | `AccessLevelSeederTest`, 65.2 s |
+| Tests | 3,597 | 3,598 |
+
+**The six parts** (median summed time; the limit is 75.6 s):
+
+| Part | Summed (s) |
+| --- | --- |
+| `CrossTenantRouteGuestServicesTest` | 60.4 |
+| `CrossTenantRoutePlatformTest` | 59.3 |
+| `CrossTenantRouteReservationsTest` | 50.6 |
+| `CrossTenantRouteOperationsTest` | 48.2 |
+| `PermissionAuthorizationActionsTest` | 38.4 |
+| `PermissionAuthorizationResourcesTest` | 37.3 |
+
+All are within the limit, and no file in the suite exceeds it.
+
+*   **G3:** 3,598 tests on every run. That is 3,597 plus the new coverage test
+    ("puts every tenant route in exactly one cross-tenant part"). No test was
+    lost or duplicated: 315 cross-tenant rows, and 112 permission tests
+    before and after.
+*   **The split removed the long file, but not the wait.** Wall time fell
+    only 4.4 s (1.5%), which is within run-to-run noise (296–305 s). At 8
+    workers, `CrossTenantRouteTest`'s 218 s was already below the run's floor:
+    the summed work divided by 8 (about 270–280 s) plus about 29 s of start-up
+    and migrations (wall time minus summed ÷ 8). Splitting changes which
+    worker runs which test, not how much work there is.
+*   **G1: missed.** 298.0 s against 210 s. **Revised G1: 300 s**, the median
+    rounded up to the next 10 s (Q1). The reason is the floor above. With the
+    test files as they are and no change to database setup (Non-Goals), 8
+    workers cannot do 2,150 s of work in less than about 270 s plus start-up.
+    Lowering it needs less work per test (for example, the slowest files'
+    setup) or faster PHP (§6.5), not a different layout of files.
+*   **New flaky test, not fixed here.** `GuestControllerTest` "reuses an
+    already-active identity match instead of resurrecting an unrelated trashed
+    channel row" failed in 2 of the 10 Stage 1 runs (`s1-r3`, `s1-r7`).
+    *   **Cause (in `app/`):** `GuestIdentityService::findExistingGuest()` runs
+        `Guest::withTrashed()->where(...)->first()` with no ordering. The test's
+        active guest and its trashed guest share an identity hash, so Postgres
+        may return either one.
+    *   **Effect:** when it returns the trashed row, `GuestRegistrar` restores
+        it. That is the duplicate the test exists to prevent, so this is a
+        production bug as well as a flaky test.
+    *   **Fix:** prefer the live row, for example `orderByRaw('deleted_at is
+        not null')`. It is out of Stage 1's scope (no `app/` change), so it
+        goes in a separate fix.
+*   **Dev database:** 60 tables, 119 `migrations` rows, 17 `users` rows,
+    before and after Stage 1. Unchanged.
+
+### 6.5 OPcache for the CLI (optional measurement)
+
+*   **Setting:** in the local
+    `C:\laragon\bin\php\php-8.4.16-Win32-vs17-x64\php.ini`, line 833 became
+    `zend_extension=opcache` (it was commented out, so OPcache was not loaded at
+    all), and line 1519 became `opcache.enable_cli=1`. No repository file
+    changed.
+*   **Runs:** the same command, labelled `s1o`.
+
+| Run | Kind | Wall (s) | Summed (s) | Tests | Result |
+| --- | --- | --- | --- | --- | --- |
+| s1o-r1 | cold | 278 | — | 3,598 | discarded |
+| s1o-r2 | warm | 278 | 2,011.8 | 3,598 | **excluded:** 1 error, a Postgres connect failed with "Address already in use" (Windows error 10048) |
+| s1o-r3 | warm | 282 | 2,038.6 | 3,598 | passed |
+| s1o-r4 | warm | 278 | 2,004.3 | 3,598 | passed |
+| s1o-r5 | warm (replaces r2) | 284 | 2,055.6 | 3,598 | passed |
+
+| | OPcache off | OPcache on |
+| --- | --- | --- |
+| Median wall time | 298.0 s | **282.0 s** (−16 s, −5.4%) |
+| Median summed time | 2,150.0 s | 2,038.6 s |
+
+*   **Result:** OPcache lowers the summed time by about 5% and the wall time
+    by the same share. It does not bring the run near 210 s.
+*   **The 10048 error:** Windows ran out of local ports for new TCP
+    connections. Each test opens a new Postgres connection, and a faster run
+    opens them faster. It was seen once, only with OPcache on. If OPcache is
+    kept, this needs watching.
+*   **Setting kept? No.** `php.ini` was restored after the runs, and
+    `opcache.enable_cli` is off again. Turning it on is the developer's choice
+    for this machine; it is not a repository setting.
