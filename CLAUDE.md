@@ -96,7 +96,7 @@ ones.** When adding one:
    record with no settings.
 5. Add its endpoints to the permission reference in
    `docs/staff-roles-api-documentation.md` and to the dataset in
-   `tests/Feature/PermissionAuthorizationTest.php`.
+   `tests/Feature/PermissionAuthorizationResourcesTest.php`.
 
 `GET /api/permissions` reads the enum, so the frontend's role editor picks up new
 permissions without a separate change.
@@ -188,7 +188,7 @@ or edits a user. A model that is not audited but that a session can write uses
   `tests/Feature/TenantIsolationTest.php` is the pattern.
 - Any new permission needs a test showing an employee is allowed with it and gets
   `403` without it — add the endpoint to the dataset in
-  `tests/Feature/PermissionAuthorizationTest.php`.
+  `tests/Feature/PermissionAuthorizationResourcesTest.php`.
 
 ## Documentation
 

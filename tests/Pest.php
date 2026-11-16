@@ -2330,3 +2330,47 @@ function assertSuperAdminRefused(TestResponse $response): TestResponse
 {
     return $response->assertForbidden()->assertJsonPath('message', DenySuperAdmin::REFUSAL);
 }
+
+/*
+|--------------------------------------------------------------------------
+| Permission fixtures shared by the PermissionAuthorization*Test parts (spec 030)
+|--------------------------------------------------------------------------
+*/
+
+function permissionApiHeaders(): array
+{
+    return ['X-API-KEY' => 'test-api-key'];
+}
+
+function hotelForPermissions(): Hotel
+{
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create([
+        'name' => 'Grand Harbor Hotel',
+        'slug' => 'grand-harbor-'.$admin->id,
+        'currency' => 'USD',
+    ]);
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    return $hotel;
+}
+
+/**
+ * An employee of the hotel. With no permissions given they have no staff role
+ * and so get the defaults; otherwise they hold a role granting exactly those.
+ *
+ * @param  list<Permission>|null  $permissions
+ */
+function employeeWithPermissions(Hotel $hotel, ?array $permissions = null): User
+{
+    $role = $permissions === null ? null : StaffRole::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Role '.uniqid(),
+        'permissions' => array_map(fn (Permission $permission) => $permission->value, $permissions),
+    ]);
+
+    return User::factory()->role(UserRole::EMPLOYEE)->create([
+        'hotel_id' => $hotel->id,
+        'staff_role_id' => $role?->id,
+    ]);
+}
