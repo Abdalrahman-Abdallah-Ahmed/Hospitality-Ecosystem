@@ -1,7 +1,7 @@
 # Faster Test Loop and Module-Scoped Test Runs
 
 *   **Author:** Abdalrahman-Abdallah-Ahmed
-*   **Status:** Proposed (revision 4: Stage 0 results applied)
+*   **Status:** Implemented (Stages 0–3); results in [docs/test-suite-performance.md](../test-suite-performance.md)
 *   **Date:** 2026-11-16
 *   **Reviews:**
     *   [round 1](reviews/test-suite-speed-and-module-runs/consolidated_review_report.md)
