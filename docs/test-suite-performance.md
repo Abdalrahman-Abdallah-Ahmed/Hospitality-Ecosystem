@@ -919,3 +919,76 @@ These are warm serial runs: `php artisan test tests/Feature/<Module>`, with
         paths at the time they were measured.
 *   **Dev database:** 60 tables, 119 `migrations` rows and 17 `users` rows,
     before and after Stage 2. Unchanged.
+
+## 8. Stage 3 — CLAUDE.md (2026-11-17)
+
+Branch `032-test-loop-docs`, based on `031-test-module-folders` at `42decef`.
+
+### 8.1 CLAUDE.md
+
+*   **Commands block** (commit `6301c07`): `php artisan test` was replaced by
+    four commands:
+    *   the module run, with 4 processes;
+    *   the serial run over several folders;
+    *   `composer test`;
+    *   `--filter`.
+
+    The 4 processes come from §7.4: `Reservations` takes 92 s at 4 processes
+    and 225 s serially.
+*   **Testing section** (commit `6301c07`): the folder line was rewritten,
+    and the folder table and the six loop rules were added.
+*   **Git section** (commit `6301c07`): the pre-commit line was replaced by
+    the five rules.
+*   **Added after the exit check:** "Run one test run at a time on this
+    machine" (see §8.3).
+*   **Unchanged:** the shared-fixtures lines and the three Stage 2 paths.
+
+### 8.2 Goals
+
+| Goal | Target | Result | Verdict |
+| --- | --- | --- | --- |
+| G1 — Full run | 3 min 30 s; revised to 300 s (§6.4) | about 304–327 s (§7.5, §8.4) | revised |
+| G2 — After-edit run | slowest module under 180 s | `Reservations` 92 s at 4 processes (§7.4) | met (Q2) |
+| G3 — Same tests | same count as the baseline | 3,598 (3,597 + the `GuestIdentityServiceTest` regression test, §6.4) | met |
+| G4 — Written loop | `CLAUDE.md` gives the loop | §8.1, §8.3 | met |
+
+G1's current runs sit a few seconds above the revised 300 s. The reason is in
+§6.4: the floor is the summed work divided by 8 workers, plus start-up.
+
+### 8.3 Exit check
+
+*   **Session:** a fresh Claude Code session on `032-test-loop-docs` at
+    `6301c07`.
+*   **Task, word for word:** "add a test to
+    tests/Feature/Tasks/TaskControllerTest.php that a task title over 255
+    characters is rejected".
+*   **After the edit,** it ran
+    `php artisan test tests/Feature/Tasks --parallel --processes=4`. That is
+    the module run.
+*   **Folder:** the test went into `tests/Feature/Tasks/TaskControllerTest.php`.
+*   **Before a commit:**
+    *   It did not commit or propose one by itself, which matches "Commit or
+        push only when asked".
+    *   Asked to prepare one, it ran `./vendor/bin/pint` on the file, then
+        `composer test`.
+*   **Change discarded:** the session's test was removed afterwards
+    (`git checkout`).
+*   **Overlapping runs:** the first verification run of `composer test` in
+    this session started while the exit-check session's `composer test` was
+    probably still running.
+    *   It failed after 473 s.
+    *   The Postgres log shows many connections at 10:00:54 UTC with missing
+        tables, then missing columns. That is two runs rebuilding the same
+        worker databases.
+    *   A rerun on its own passed (§8.4).
+    *   `CLAUDE.md` now says to run one test run at a time.
+*   **G4: met.**
+
+### 8.4 Checks
+
+*   **`composer test` on the branch:** 3,598 passed in 327 s (run
+    `s3-r2`). The earlier failed run overlapped another run (§8.3).
+*   **`./vendor/bin/pint --test`:** clean. Only Markdown changed in this
+    stage.
+*   **Scope:** only `CLAUDE.md`, `docs/test-suite-performance.md`, the design
+    doc and `specs/032-test-loop-docs/` changed.
