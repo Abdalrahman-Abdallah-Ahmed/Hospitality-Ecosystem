@@ -106,3 +106,15 @@ it('finds a soft-deleted guest too, so the caller can restore instead of duplica
     expect($found?->id)->toBe($trashed->id);
     expect($found->trashed())->toBeTrue();
 });
+
+it('prefers a live guest over a soft-deleted one with the same identity', function () {
+    $service = app(GuestIdentityService::class);
+    $hotel = identityTestHotel();
+
+    // The trashed row is written first, so an unordered lookup tends to return it.
+    $trashed = Guest::create(['hotel_id' => $hotel->id, 'email' => 'ann@example.com', 'channel' => 'booking_com', 'external_id' => 'bk-1']);
+    $trashed->delete();
+    $live = Guest::create(['hotel_id' => $hotel->id, 'email' => 'ann@example.com']);
+
+    expect($service->findExistingGuest($hotel->id, 'ann@example.com', null)?->id)->toBe($live->id);
+});

@@ -96,6 +96,27 @@ use Tests\TestCase;
 
 /*
 |--------------------------------------------------------------------------
+| Cached Config Guard
+|--------------------------------------------------------------------------
+|
+| A cached config makes Laravel ignore phpunit.xml, so RefreshDatabase would
+| run against the database named in the cache (the dev database). Refuse to
+| run instead, before any test file loads or any database is touched. The
+| cache file is left alone on purpose.
+|
+*/
+
+if (file_exists(dirname(__DIR__).'/bootstrap/cache/config.php')) {
+    fwrite(STDERR, PHP_EOL
+        .'Refusing to run tests: the configuration is cached (bootstrap/cache/config.php).'.PHP_EOL
+        .'Tests would use the cached (dev) database settings instead of phpunit.xml.'.PHP_EOL
+        .'Run `php artisan config:clear` and try again.'.PHP_EOL.PHP_EOL);
+
+    exit(1);
+}
+
+/*
+|--------------------------------------------------------------------------
 | Test Case
 |--------------------------------------------------------------------------
 |
@@ -1166,6 +1187,20 @@ function rapEmployee(Hotel $hotel, array $permissions = []): User
 }
 
 /**
+ * A random room number not yet used in the hotel. A plain random number
+ * collides on rooms_hotel_id_room_number_unique when a test creates many
+ * stays in one hotel.
+ */
+function rapFreeRoomNumber(Hotel $hotel): string
+{
+    do {
+        $number = (string) random_int(1000, 9999);
+    } while (Room::withoutGlobalScope('hotel')->where('hotel_id', $hotel->id)->where('room_number', $number)->exists());
+
+    return $number;
+}
+
+/**
  * A guest reachable on WhatsApp, in-house since yesterday (hotel time) and
  * leaving in four days, with one stay per room number.
  *
@@ -1176,7 +1211,7 @@ function rapInHouseStay(Hotel $hotel, array $guest = [], ?array $roomNumbers = n
 {
     $guest = gsGuest($hotel, ['preferred_language' => 'en', ...$guest]);
     $type = avType($hotel, 'Deluxe '.Str::random(4));
-    $roomNumbers ??= [(string) random_int(1000, 9999)];
+    $roomNumbers ??= [rapFreeRoomNumber($hotel)];
     $rooms = array_map(fn (string $number) => aatRoom($hotel, $type, $number), $roomNumbers);
 
     $reservation = ReservationCreator::create([
@@ -2224,4 +2259,48 @@ function impersonationTokenFor($test, User $superAdmin, User $target): string
 function assertSuperAdminRefused(TestResponse $response): TestResponse
 {
     return $response->assertForbidden()->assertJsonPath('message', DenySuperAdmin::REFUSAL);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Permission fixtures shared by the PermissionAuthorization*Test parts (spec 030)
+|--------------------------------------------------------------------------
+*/
+
+function permissionApiHeaders(): array
+{
+    return ['X-API-KEY' => 'test-api-key'];
+}
+
+function hotelForPermissions(): Hotel
+{
+    $admin = User::factory()->role(UserRole::ADMIN)->create();
+    $hotel = Hotel::create([
+        'name' => 'Grand Harbor Hotel',
+        'slug' => 'grand-harbor-'.$admin->id,
+        'currency' => 'USD',
+    ]);
+    $admin->update(['hotel_id' => $hotel->id]);
+
+    return $hotel;
+}
+
+/**
+ * An employee of the hotel. With no permissions given they have no staff role
+ * and so get the defaults; otherwise they hold a role granting exactly those.
+ *
+ * @param  list<Permission>|null  $permissions
+ */
+function employeeWithPermissions(Hotel $hotel, ?array $permissions = null): User
+{
+    $role = $permissions === null ? null : StaffRole::create([
+        'hotel_id' => $hotel->id,
+        'name' => 'Role '.uniqid(),
+        'permissions' => array_map(fn (Permission $permission) => $permission->value, $permissions),
+    ]);
+
+    return User::factory()->role(UserRole::EMPLOYEE)->create([
+        'hotel_id' => $hotel->id,
+        'staff_role_id' => $role?->id,
+    ]);
 }

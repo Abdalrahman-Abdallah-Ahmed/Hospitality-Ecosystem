@@ -4,8 +4,10 @@ namespace Tests;
 
 use App\Support\Ai\AiRun;
 use App\Support\Tenancy\TenantContext;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\ParallelTesting;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -25,5 +27,19 @@ abstract class TestCase extends BaseTestCase
         // unfaked call succeeds (and costs money); on CI it fails with a 403.
         // Failing it everywhere keeps the two in step.
         Http::preventStrayRequests();
+    }
+
+    protected function refreshApplication()
+    {
+        parent::refreshApplication();
+
+        // In a parallel run, Laravel checks the worker database before every
+        // test and, if that check fails for any reason (even a slow
+        // connection), drops it and creates an empty one. The worker still
+        // believes it has migrated, so every later test on it fails with
+        // "relation does not exist". Make the next refresh migrate again.
+        ParallelTesting::setUpTestDatabase(function () {
+            RefreshDatabaseState::$migrated = false;
+        });
     }
 }

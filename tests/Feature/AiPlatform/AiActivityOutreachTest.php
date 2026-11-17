@@ -48,6 +48,10 @@ it('records how the guest answered a pitch', function (string $action, string $e
     rapRecommendation($reservation, rapActivity($hotel, 'Snorkeling'), 'approved');
     $turn = rapPitch($guest, $reservation);
 
+    // occurred_at has one-second precision: without this the offer and the
+    // answer can share a second and come back in either order.
+    $this->travel(1)->seconds();
+
     rapGuestSays($turn, $reservation, $action);
 
     expect(outreachRows()->pluck('action')->all())->toBe(['pitch.offered', $expected]);

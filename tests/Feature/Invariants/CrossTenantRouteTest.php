@@ -49,7 +49,7 @@ function crossTenantRoutesFor(string $rule): array
     static $byRule = null;
 
     if ($byRule === null) {
-        $app = require __DIR__.'/../../bootstrap/app.php';
+        $app = require dirname(__DIR__, 3).'/bootstrap/app.php';
         $app->make(Kernel::class)->bootstrap();
         $byRule = [];
 

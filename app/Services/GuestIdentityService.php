@@ -36,7 +36,9 @@ class GuestIdentityService
 
     /**
      * An existing guest at this hotel with the exact identity-hash match.
-     * Soft-deleted profiles remain eligible for restoration by registration flows.
+     * Soft-deleted profiles remain eligible for restoration by registration flows,
+     * but a live match always wins: restoring a trashed one beside it would
+     * recreate the duplicate the match exists to prevent.
      */
     public function findExistingGuest(string $hotelId, ?string $email, ?string $phoneNumber): ?Guest
     {
@@ -49,6 +51,9 @@ class GuestIdentityService
         return Guest::withTrashed()
             ->where('hotel_id', $hotelId)
             ->where('identity_hash', $hash)
+            ->orderByRaw('deleted_at is not null')
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->first();
     }
 

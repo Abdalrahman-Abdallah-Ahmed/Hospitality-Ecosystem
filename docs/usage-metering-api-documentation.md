@@ -220,7 +220,7 @@ only hotel-facing reader of `ai_usage_logs`. Its query selects counts and token
 sums only, never `cost_usd`, the estimate flag, `model` or `provider`. Three
 automated checks back this up:
 
-- `tests/Feature/CostVisibilityTest.php` scans `app/` so that only allowlisted classes can reference cost data at all.
+- `tests/Feature/Invariants/CostVisibilityTest.php` scans `app/` so that only allowlisted classes can reference cost data at all.
 - The same test calls every hotel-facing `GET` route, and every Admin AI read tool, against seeded sentinel cost, model and provider values.
 - `UsageMeteringTest` asserts this body mentions no cost, margin or contract.
 
