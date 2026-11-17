@@ -212,6 +212,9 @@ or edits a user. A model that is not audited but that a session can write uses
   - If a test run stops with the cached-config message, run `php artisan config:clear`
     and rerun. Never delete the guard.
   - New test files go in their module's folder; never directly under `tests/Feature/`.
+  - Run one test run at a time on this machine. Parallel runs share the worker
+    databases (`Hospitality_Ecosystem_testing_test_<n>`), so two runs at once
+    rebuild each other's schemas and fail with "relation does not exist".
 - `uses(RefreshDatabase::class)` per file; `tests/Pest.php` does **not** apply it globally.
 - Set the API key in `beforeEach`: `putenv('API_KEY=test-api-key')` +
   `config(['app.api_key' => 'test-api-key'])`, then send `X-API-KEY` on requests.
