@@ -33,7 +33,7 @@ return [
     // template had no place for.
     'exposed_headers' => ['Retry-After', 'Content-Disposition', 'X-Voucher-Unplaced'],
 
-    'max_age' => 0,
+    'max_age' => 7200,
 
     'supports_credentials' => false,
 
