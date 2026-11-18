@@ -1,6 +1,6 @@
 # Hotel API Documentation
 
-This document describes the hotel management APIs, defined by `App\Http\Controllers\HotelController` and gated by `App\Policies\HotelPolicy`.
+This document describes the hotel management APIs, defined by `App\Http\Controllers\Core\HotelController` and gated by `App\Policies\HotelPolicy`.
 
 It covers `index`, `show` and `update`. Creating and deleting a hotel moved to the super admin API on 2026-11-06: see [superadmin-accounts-api-documentation.md](superadmin-accounts-api-documentation.md). `POST /api/hotel` and `DELETE /api/hotel/{id}` now return `405` for everyone.
 

@@ -1,6 +1,6 @@
 # Dashboard API Documentation
 
-This document describes the dashboard summary endpoint, defined by `App\Http\Controllers\DashboardController`.
+This document describes the dashboard summary endpoint, defined by `App\Http\Controllers\Core\DashboardController`.
 
 The caller needs the `dashboard.view` permission and must belong to a hotel; otherwise the
 answer is `403`.

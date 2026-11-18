@@ -1,0 +1,474 @@
+<?php
+
+namespace App\Http\Controllers\Reservations;
+
+use App\Http\Controllers\Controller;
+use App\Enums\ExportFormat;
+use App\Enums\ImportDateOrder;
+use App\Enums\ImportDecimalMark;
+use App\Enums\ImportStatus;
+use App\Enums\ReservationChannels;
+use App\Enums\ReservationStatus;
+use App\Http\Controllers\Concerns\ExportsLists;
+use App\Http\Controllers\Concerns\HandlesFrontDeskActions;
+use App\Http\Requests\CheckInRequest;
+use App\Http\Requests\CheckOutRequest;
+use App\Http\Requests\ImportReservationsRequest;
+use App\Http\Requests\NoShowRequest;
+use App\Http\Requests\ReservationExportRequest;
+use App\Http\Requests\ReservationIndexRequest;
+use App\Http\Requests\StoreReservationRequest;
+use App\Http\Requests\UpdateReservationRequest;
+use App\Http\Resources\ReservationImportResource;
+use App\Http\Resources\ReservationResource;
+use App\Jobs\PrepareReservationImportJob;
+use App\Models\Hotel;
+use App\Models\Reservation;
+use App\Models\ReservationImport;
+use App\Models\Stay;
+use App\Services\NoShowService;
+use App\Services\Reservations\ReservationCommands;
+use App\Services\StayLifecycleService;
+use App\Support\Export\ReservationsExport;
+use App\Support\RequestRules\GenericQuery;
+use App\Support\Reservations\ReservationCreator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+
+class ReservationController extends Controller
+{
+    use ExportsLists, HandlesFrontDeskActions;
+
+    private const RELATIONS = ['hotel', 'guest', 'reservationGuests.guest', 'reservationRooms.roomType', 'reservationRooms.room.roomType', 'reservationRooms.stay'];
+
+    public function __construct(
+        private readonly StayLifecycleService $lifecycle,
+        private readonly ReservationCommands $reservations,
+        private readonly NoShowService $noShows,
+    ) {}
+
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(ReservationIndexRequest $request)
+    {
+        $this->authorize('viewAny', Reservation::class);
+
+        $reservations = GenericQuery::paginate($this->listQuery($request), $request);
+
+        return apiResponse('Reservations fetched successfully.', 200, ReservationResource::collection($reservations));
+    }
+
+    /**
+     * The filtered, sorted reservation list without pagination. Shared by
+     * index() and export(), so an export holds exactly what the list shows.
+     */
+    private function listQuery(ReservationIndexRequest $request): Builder
+    {
+        $query = Reservation::with(self::RELATIONS);
+
+        // Room type and room live on the lines, not the reservation: match any
+        // live line, then hand the rest of the filters to the generic query.
+        // Values behave like Filterable's: empty is ignored, a list matches
+        // any of its ids. Ids are compared lowercased, and a value that is not
+        // a uuid matches nothing rather than reaching Postgres.
+        $filters = (array) $request->input('filter', []);
+
+        foreach (ReservationIndexRequest::LINE_FILTERS as $column) {
+            $value = $filters[$column] ?? null;
+            unset($filters[$column]);
+
+            if ($value === null || $value === '' || $value === []) {
+                continue;
+            }
+
+            $ids = collect((array) $value)
+                ->filter(fn ($id) => is_string($id) && Str::isUuid($id))
+                ->map(fn (string $id) => strtolower($id))
+                ->values()
+                ->all();
+
+            $query->whereHas('reservationRooms', fn ($lines) => $lines->active()->whereIn($column, $ids));
+        }
+
+        $request->merge(['filter' => $filters]);
+
+        return GenericQuery::query($query, $request);
+    }
+
+    /**
+     * Download the reservation list as Excel, CSV or SQL, filtered and sorted exactly
+     * as the list is (spec 021).
+     */
+    public function export(ReservationExportRequest $request)
+    {
+        return $this->exportList('reservations', Reservation::class, $this->listQuery($request), $request,
+            fn (Builder $query, ExportFormat $format) => new ReservationsExport($query, $format));
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(StoreReservationRequest $request): JsonResponse
+    {
+        $this->authorize('create', Reservation::class);
+
+        $validated = $request->validated();
+
+        $hotel = resolveHotel($request->user());
+        if (! $hotel) {
+            return apiResponse('You must belong to a hotel.', 403);
+        }
+
+        $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
+
+        $overbook = $this->overbookOverride($request);
+
+        if ($error = $this->guardHotelScopedReferences($validated, $hotel->id)) {
+            return $error;
+        }
+
+        if (ReservationCreator::isReservationIdInUse($hotel->id, $validated['reservation_id'])) {
+            throw $this->reservationIdTaken();
+        }
+
+        $this->authorizeRoomChoice($request, new Reservation(['hotel_id' => $hotel->id]));
+
+        $lifecycle = $this->lifecycleStatus($validated['status'] ?? null);
+
+        if ($lifecycle === ReservationStatus::CHECKED_OUT) {
+            throw ValidationException::withMessages(['status' => 'Only the reservation import can record a checked-out reservation.']);
+        }
+
+        if ($lifecycle === ReservationStatus::CHECKED_IN) {
+            $this->authorize('checkIn', [Stay::class, new Reservation(['hotel_id' => $hotel->id])]);
+            $validated['status'] = ReservationStatus::CONFIRMED->value;
+        }
+
+        $reservation = DB::transaction(function () use ($validated, $hotel, $request, $overbook, $lifecycle) {
+            $reservation = ReservationCreator::create(
+                [...$validated, 'hotel_id' => $hotel->id],
+                $request->input('rooms', []),
+                $request->boolean('capacity_override'),
+                overbookOverride: $overbook,
+            );
+
+            if ($lifecycle === ReservationStatus::CHECKED_IN) {
+                $this->lifecycle->checkInReservation($reservation);
+            }
+
+            return $reservation->fresh();
+        });
+
+        return $this->deprecated(
+            apiResponse('Reservation created successfully.'.$this->deprecationNote($reservation, $lifecycle), 201, ReservationResource::make($reservation->load(self::RELATIONS))),
+            $reservation,
+            $lifecycle,
+        );
+    }
+
+    /**
+     * Display the specified resource.
+     */
+    public function show(Reservation $reservation)
+    {
+        $this->authorize('view', $reservation);
+
+        $reservation->load(self::RELATIONS);
+
+        return apiResponse('Reservation fetched successfully.', 200, ReservationResource::make($reservation));
+    }
+
+    /**
+     * Update the specified resource in storage. `rooms`, when sent, is the
+     * full desired list of live lines; the raw input is passed on so an
+     * explicit `room_id: null` (clear) stays distinct from a missing one.
+     */
+    public function update(UpdateReservationRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('update', $reservation);
+
+        $validated = $request->validated();
+        $validated = unsetAttributes($validated, ['hotel_id', 'rooms', 'capacity_override', 'overbook_override']);
+
+        $overbook = $this->overbookOverride($request);
+
+        if ($error = $this->guardHotelScopedReferences($validated, $reservation->hotel_id)) {
+            return $error;
+        }
+
+        if (isset($validated['reservation_id']) && $this->usedByAnotherReservation($reservation, $validated['reservation_id'])) {
+            throw $this->reservationIdTaken();
+        }
+
+        $this->authorizeRoomChoice($request, $reservation);
+
+        // Deprecated (D4, FR-020): checking in or out by setting the status.
+        // It runs the real check-in or check-out, with its rules and audit.
+        $lifecycle = $this->lifecycleStatus($validated['status'] ?? null);
+        $lifecycle = $lifecycle !== $reservation->status ? $lifecycle : null;
+
+        if ($lifecycle !== null) {
+            $this->authorize($lifecycle === ReservationStatus::CHECKED_IN ? 'checkIn' : 'checkOut', [Stay::class, $reservation]);
+        }
+
+        if ($lifecycle !== null || $this->lifecycleStatus($validated['status'] ?? null) === $reservation->status) {
+            unset($validated['status']);
+        }
+
+        DB::transaction(function () use ($reservation, $validated, $request, $overbook, $lifecycle) {
+            $this->reservations->update(
+                $reservation,
+                $validated,
+                $request->has('rooms') ? $request->input('rooms') : null,
+                $request->boolean('capacity_override'),
+                $overbook,
+            );
+
+            match ($lifecycle) {
+                ReservationStatus::CHECKED_IN => $this->lifecycle->checkInReservation($reservation),
+                ReservationStatus::CHECKED_OUT => $this->lifecycle->checkOutReservation($reservation),
+                default => null,
+            };
+        });
+
+        $reservation->refresh();
+
+        return $this->deprecated(
+            apiResponse(
+                'Reservation updated successfully.'.$this->deprecationNote($reservation, $lifecycle).collect($reservation->roomWarnings)->map(fn (string $warning) => " {$warning}")->implode(''),
+                200,
+                ReservationResource::make($reservation->load(self::RELATIONS)),
+            ),
+            $reservation,
+            $lifecycle,
+        );
+    }
+
+    /**
+     * Choosing, changing or clearing a line's physical room on create or
+     * edit needs reservations.assign_room too (spec 020 FR-020). Echoing a
+     * line's current room back changes nothing and needs nothing more.
+     */
+    private function authorizeRoomChoice(Request $request, Reservation $reservation): void
+    {
+        $current = $reservation->exists ? $reservation->reservationRooms()->pluck('room_id', 'id') : collect();
+
+        $choosesRoom = collect((array) $request->input('rooms', []))->contains(function ($item) use ($current) {
+            $item = (array) $item;
+            $roomId = isset($item['room_id']) ? strtolower((string) $item['room_id']) : null;
+
+            if (! isset($item['id'])) {
+                return $roomId !== null;
+            }
+
+            return array_key_exists('room_id', $item) && $roomId !== $current->get(strtolower((string) $item['id']));
+        });
+
+        if ($choosesRoom) {
+            $this->authorize('assignRoom', $reservation);
+        }
+    }
+
+    /**
+     * The check-in or check-out a status value asks for, if any.
+     */
+    private function lifecycleStatus(mixed $status): ?ReservationStatus
+    {
+        $status = $status instanceof ReservationStatus ? $status : ReservationStatus::tryFrom((string) $status);
+
+        return in_array($status, [ReservationStatus::CHECKED_IN, ReservationStatus::CHECKED_OUT], true) ? $status : null;
+    }
+
+    private function deprecationNote(Reservation $reservation, ?ReservationStatus $lifecycle): string
+    {
+        if ($lifecycle === null) {
+            return '';
+        }
+
+        $action = $lifecycle === ReservationStatus::CHECKED_IN ? 'check-in' : 'check-out';
+
+        return " Setting status to {$lifecycle->value} here is deprecated; use POST /reservation/{$reservation->id}/{$action}.";
+    }
+
+    /**
+     * Marks a response that used the deprecated status path (RFC 9745), with
+     * a link to the endpoint that replaces it.
+     */
+    private function deprecated(JsonResponse $response, Reservation $reservation, ?ReservationStatus $lifecycle): JsonResponse
+    {
+        if ($lifecycle === null) {
+            return $response;
+        }
+
+        $action = $lifecycle === ReservationStatus::CHECKED_IN ? 'check-in' : 'check-out';
+
+        return $response
+            ->header('Deprecation', 'true')
+            ->header('Link', "</api/reservation/{$reservation->id}/{$action}>; rel=\"successor-version\"");
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    /**
+     * Checks in every room of the reservation waiting to (SPEC-024 FR-009);
+     * `rooms` puts a guest in a named room for a line that has none.
+     */
+    public function checkIn(CheckInRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('checkIn', [Stay::class, $reservation]);
+
+        return $this->checkedIn($this->lifecycle->checkInReservation(
+            $reservation,
+            $request->roomsByStayId(),
+            $request->validated('checked_in_at'),
+        ));
+    }
+
+    /**
+     * Checks out every room of the reservation still in the house (SPEC-025).
+     */
+    public function checkOut(CheckOutRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('checkOut', [Stay::class, $reservation]);
+
+        return $this->checkedOut($this->lifecycle->checkOutReservation($reservation, $request->validated('checked_out_at')));
+    }
+
+    /**
+     * Every room of the reservation never arrived (SPEC-012 FR-005).
+     */
+    public function noShow(NoShowRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('noShow', $reservation);
+
+        return $this->noShowResult('Marked as a no-show.', $this->noShows->markReservation($reservation, $request->validated('reason')));
+    }
+
+    /**
+     * Restores a no-show reservation to the status it had (SPEC-012 FR-009).
+     */
+    public function undoNoShow(NoShowRequest $request, Reservation $reservation): JsonResponse
+    {
+        $this->authorize('noShow', $reservation);
+
+        return $this->noShowResult('No-show undone.', $this->noShows->undoReservation(
+            $reservation,
+            $request->validated('reason'),
+            $this->overbookOverride($request),
+        ));
+    }
+
+    public function destroy(Reservation $reservation)
+    {
+        $this->authorize('delete', $reservation);
+        ReservationCreator::delete($reservation);
+
+        return apiResponse('Reservation deleted successfully.', 200);
+    }
+
+    /**
+     * Queues a reservation import of an uploaded spreadsheet (SPEC-100/101)
+     * and answers at once with the import, whose progress and report are
+     * read from ReservationImportController. Scoped to the hotel the request
+     * works in; never a hotel_id from the file.
+     */
+    public function import(ImportReservationsRequest $request): JsonResponse
+    {
+        $this->authorize('import', Reservation::class);
+
+        $hotel = resolveHotel($request->user());
+        if (! $hotel) {
+            throw ValidationException::withMessages(['hotel_id' => 'Name a valid hotel to import into.']);
+        }
+
+        $file = $request->file('file');
+        // Time-ordered, so two uploads in the same second still queue in order.
+        $id = (string) Str::uuid7();
+        $path = $file->storeAs("reservation-imports/{$hotel->id}", "{$id}.".strtolower($file->getClientOriginalExtension() ?: 'csv'), config('reservation_import.disk'));
+
+        $import = ReservationImport::create([
+            'id' => $id,
+            'hotel_id' => $hotel->id,
+            'uploaded_by' => $request->user()->id,
+            'file_name' => Str::limit($file->getClientOriginalName(), 250, ''),
+            'file_path' => $path,
+            'dry_run' => $request->boolean('dry_run'),
+            'date_order' => $request->validated('date_order') ?? ImportDateOrder::DAY_FIRST->value,
+            'decimal_mark' => $request->validated('decimal_mark') ?? ImportDecimalMark::AUTO->value,
+            'status' => ImportStatus::QUEUED,
+        ]);
+
+        // The rows are processed in the background (F11): the upload only
+        // stores the file. A hotel's imports run one at a time, in order.
+        PrepareReservationImportJob::dispatch($import->id)->afterCommit();
+
+        return apiResponse('Reservation import queued.', 202, new ReservationImportResource($import->refresh()->load('uploader')->setAttribute('warned_rows_count', 0)));
+    }
+
+    /**
+     * The booking channels the system recognises, served from the enum itself
+     * so a channel picker is built from the server's list rather than a
+     * hard-coded copy that quietly drifts when a channel is added.
+     *
+     * The list is the same for every account — there is no model behind it and
+     * nothing hotel-specific to authorise against, so it carries no policy
+     * check beyond the authentication its route already requires.
+     */
+    public function availableChannels(): JsonResponse
+    {
+        return apiResponse(
+            'Available channels fetched successfully.',
+            200,
+            ReservationChannels::cases(),
+        );
+    }
+
+    /**
+     * Ensure a guest_id present in a validated payload actually belongs to
+     * the given hotel, since exists:guests,id alone only confirms the row
+     * exists somewhere, not that it's in scope. Room types and rooms on the
+     * lines are checked by ReservationRoomSync.
+     */
+    private function guardHotelScopedReferences(array $validated, string $hotelId): ?JsonResponse
+    {
+        $invalidRelation = invalidRelation(Hotel::findOrFail($hotelId), [
+            'guests' => $validated['guest_id'] ?? null,
+        ]);
+
+        if ($invalidRelation) {
+            return apiResponse('The selected '.Str::singular($invalidRelation).' does not belong to this hotel.', 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * On update a soft-deleted reservation still holds its code in the unique
+     * index, so it counts as taken — unlike on create, where it is restored.
+     */
+    private function usedByAnotherReservation(Reservation $reservation, string $reservationId): bool
+    {
+        return Reservation::withTrashed()
+            ->where('hotel_id', $reservation->hotel_id)
+            ->where('reservation_id', $reservationId)
+            ->whereKeyNot($reservation->getKey())
+            ->exists();
+    }
+
+    /**
+     * Same shape and wording the column's old single-column unique rule
+     * produced, so clients reading `errors.reservation_id` see no change.
+     */
+    private function reservationIdTaken(): ValidationException
+    {
+        return ValidationException::withMessages([
+            'reservation_id' => 'The reservation id has already been taken.',
+        ]);
+    }
+}

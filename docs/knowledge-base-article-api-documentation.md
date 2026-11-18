@@ -1,6 +1,6 @@
 # Knowledge Base Article API Documentation
 
-This document describes the knowledge-base-article management APIs, defined by `App\Http\Controllers\KnowledgeBaseArticleController` and gated by `App\Policies\KnowledgeBaseArticlePolicy`.
+This document describes the knowledge-base-article management APIs, defined by `App\Http\Controllers\Knowledge\KnowledgeBaseArticleController` and gated by `App\Policies\KnowledgeBaseArticlePolicy`.
 
 A "knowledge base article" is a hotel-scoped content entry (e.g. an FAQ, a destination guide, a communication-tone guideline) used to ground the hotel's AI assistant. It is conceptually similar to a [hotel policy](/D:/Hospitality%20Ecosystem/docs/hotel-policy-api-documentation.md), but with an editorial `status` (`draft` / `published`) instead of an `is_active` flag, and a `category` restricted to a fixed, code-level enum rather than a free-text column.
 

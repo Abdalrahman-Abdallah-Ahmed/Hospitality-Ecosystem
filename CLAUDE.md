@@ -135,7 +135,7 @@ or edits a user. A model that is not audited but that a session can write uses
 
 | Directory | Role |
 | --- | --- |
-| `app/Http/Controllers` | Thin: authorize, validate, delegate, return `apiResponse()` |
+| `app/Http/Controllers` | Thin: authorize, validate, delegate, return `apiResponse()`. Grouped by module in the same folders as `tests/Feature/` (`Core/`, `Rooms/`, `Reservations/`…), plus `Auth/`, `Superadmin/` and shared `Concerns/` |
 | `app/Http/Requests` | Validation; `Generic/` holds the shared index/store/update rules |
 | `app/Http/Resources` | Every response body goes through a Resource |
 | `app/Services` | Business logic with more than one caller (bookings, transactions, stays, metering, AI cost) |

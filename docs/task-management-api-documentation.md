@@ -2,7 +2,7 @@
 
 This document describes the **team, task-category, and task** APIs — the three new resources that let a hotel organize work: group employees into **teams**, group work types into **task categories** owned by a team, and create **tasks** that reference a room/guest/reservation and are routed to a team + category + assignee.
 
-Controllers: `App\Http\Controllers\TeamController`, `App\Http\Controllers\TaskCategoryController`, `App\Http\Controllers\TaskController`.
+Controllers: `App\Http\Controllers\Tasks\TeamController`, `App\Http\Controllers\Tasks\TaskCategoryController`, `App\Http\Controllers\Tasks\TaskController`.
 Policies: `App\Policies\TeamPolicy`, `App\Policies\TaskCategoryPolicy`, `App\Policies\TaskPolicy`.
 
 > **Super admins (spec 028, 2026-11-10):** a super admin's own token gets `403` `Super admins use /api/superadmin.` on every endpoint in this document, before any record is looked up. A super admin reaches a hotel only through an [impersonation session](superadmin-impersonation-api-documentation.md), which acts as the hotel user with that user's permissions.

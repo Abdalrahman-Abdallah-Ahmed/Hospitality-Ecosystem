@@ -1,6 +1,6 @@
 # AI Insights API Documentation
 
-This document describes the AI-insights API, defined by `App\Http\Controllers\AiInsightsController` and gated by `App\Policies\AiInsightsPolicy`.
+This document describes the AI-insights API, defined by `App\Http\Controllers\AiPlatform\AiInsightsController` and gated by `App\Policies\AiInsightsPolicy`.
 
 It covers **only two actions**: `index` (list insights) and `store` (kick off AI generation of new insights). There is no `show`, `update`, or `destroy` — insights are read-only once created, and are only ever produced by the AI job, never edited directly by a client.
 

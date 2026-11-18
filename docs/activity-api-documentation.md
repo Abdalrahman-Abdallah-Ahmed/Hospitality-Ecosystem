@@ -1,6 +1,6 @@
 # Activity API Documentation
 
-This document describes the hotel **activity** and **activity category** management APIs — the admin-facing CRUD endpoints (`index`, `store`, `show`, `update`, `destroy`) defined by `App\Http\Controllers\ActivityController` / `App\Policies\ActivityPolicy` and `App\Http\Controllers\ActivityCategoryController` / `App\Policies\ActivityCategoryPolicy`.
+This document describes the hotel **activity** and **activity category** management APIs — the admin-facing CRUD endpoints (`index`, `store`, `show`, `update`, `destroy`) defined by `App\Http\Controllers\Activities\ActivityController` / `App\Policies\ActivityPolicy` and `App\Http\Controllers\Activities\ActivityCategoryController` / `App\Policies\ActivityCategoryPolicy`.
 
 An activity is something a hotel sells to guests beyond the room itself (spa treatment, airport transfer, breakfast buffet, etc.), optionally grouped under an activity category (e.g. "Wellness", "Transport"). Build the category picker first — an activity's `category_id` references it — but categories aren't required; an activity can exist with none.
 
@@ -550,7 +550,7 @@ A missing or badly formatted `from`, a `to` before `from`, or a range longer tha
 
 ## Activity Category API
 
-Endpoints defined by `App\Http\Controllers\ActivityCategoryController`, gated by `App\Policies\ActivityCategoryPolicy`.
+Endpoints defined by `App\Http\Controllers\Activities\ActivityCategoryController`, gated by `App\Policies\ActivityCategoryPolicy`.
 
 ### The Activity Category Object
 

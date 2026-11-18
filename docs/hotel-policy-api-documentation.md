@@ -1,6 +1,6 @@
 # Hotel Policy API Documentation
 
-This document describes the hotel-policy management APIs, defined by `App\Http\Controllers\HotelPolicyController` and gated by `App\Policies\HotelPolicyPolicy`.
+This document describes the hotel-policy management APIs, defined by `App\Http\Controllers\Core\HotelPolicyController` and gated by `App\Policies\HotelPolicyPolicy`.
 
 A "hotel policy" is a knowledge-base entry attached to a hotel (e.g. a cancellation policy, a check-in rule) — used, among other things, to ground the hotel's AI assistant in that hotel's actual rules.
 

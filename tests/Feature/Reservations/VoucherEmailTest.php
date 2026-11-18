@@ -2,7 +2,7 @@
 
 use App\Enums\Permission;
 use App\Enums\VoucherEmailStatus;
-use App\Http\Controllers\ReservationVoucherController;
+use App\Http\Controllers\Reservations\ReservationVoucherController;
 use App\Jobs\SendReservationVoucherEmailJob;
 use App\Mail\ReservationVoucherMail;
 use App\Models\EventLog;

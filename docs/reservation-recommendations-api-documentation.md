@@ -1,6 +1,6 @@
 # Recommendations API Documentation
 
-This document describes the activity-recommendations API, defined by `App\Http\Controllers\RecommendationController` and gated by `App\Policies\RecommendationPolicy`.
+This document describes the activity-recommendations API, defined by `App\Http\Controllers\Recommendations\RecommendationController` and gated by `App\Policies\RecommendationPolicy`.
 
 It covers **four CRUD-style actions** (`index`, `show`, `update`, `destroy`) plus one **trigger action** (`generate`) that kicks off AI generation of new recommendations for a reservation's guest.
 

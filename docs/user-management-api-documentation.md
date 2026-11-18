@@ -1,6 +1,6 @@
 # User Management API Documentation
 
-This document describes the user-management APIs, defined by `App\Http\Controllers\UserController` and gated by `App\Policies\UserPolicy`.
+This document describes the user-management APIs, defined by `App\Http\Controllers\Core\UserController` and gated by `App\Policies\UserPolicy`.
 
 It covers `index`, `store`, `show`, `update`, and `destroy` — full CRUD, unlike some other resources in this app (e.g. Hotel Policy has no `show`).
 

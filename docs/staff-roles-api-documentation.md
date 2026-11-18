@@ -2,7 +2,7 @@
 
 A **staff role** is a named set of permissions an admin creates for their hotel (for example "Front Desk" or "Housekeeping") and assigns to employees. It controls what each employee can view, create, update and delete.
 
-Defined by `App\Http\Controllers\StaffRoleController` and `App\Http\Controllers\PermissionController`, gated by `App\Policies\StaffRolePolicy`. The permission list is `App\Enums\Permission`.
+Defined by `App\Http\Controllers\Core\StaffRoleController` and `App\Http\Controllers\Core\PermissionController`, gated by `App\Policies\StaffRolePolicy`. The permission list is `App\Enums\Permission`.
 
 ## How Permissions Work
 
